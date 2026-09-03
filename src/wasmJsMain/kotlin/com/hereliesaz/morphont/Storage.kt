@@ -5,6 +5,8 @@ import kotlinx.browser.window
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.khronos.webgl.ArrayBuffer
+import org.khronos.webgl.DataView
 import org.w3c.dom.HTMLAnchorElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.events.Event
@@ -44,6 +46,13 @@ object Storage {
     fun saveGlyph(name: String, glyph: Glyph) {
         val project = readProject()
         project[name] = glyph
+        writeProject(project)
+    }
+
+    /** Merges every entry in [glyphs] into the project in one write, overwriting any existing glyph with the same name. */
+    fun saveGlyphs(glyphs: Map<String, Glyph>) {
+        val project = readProject()
+        project.putAll(glyphs)
         writeProject(project)
     }
 
@@ -88,6 +97,38 @@ object Storage {
                 }
             }
             reader.readAsText(file)
+        })
+        input.click()
+    }
+
+    /**
+     * Opens a file picker for a single `.ttf`; on selection, reads its raw
+     * bytes and invokes [onLoaded]. Parsing/importing those bytes into
+     * glyphs is [buildFamilyFromVariableFont]'s job, not this function's --
+     * this only handles getting the file's bytes out of the browser.
+     */
+    fun pickTtfBytes(onLoaded: (ByteArray) -> Unit, onError: (String) -> Unit) {
+        val input = document.createElement("input") as HTMLInputElement
+        input.type = "file"
+        input.accept = ".ttf,font/ttf"
+        input.addEventListener("change", { _: Event ->
+            val file: File? = input.files?.item(0)
+            if (file == null) {
+                onError("No file selected.")
+                return@addEventListener
+            }
+            val reader = FileReader()
+            reader.onload = {
+                try {
+                    val buffer = reader.result as ArrayBuffer
+                    val view = DataView(buffer)
+                    val bytes = ByteArray(buffer.byteLength) { view.getUint8(it).toByte() }
+                    onLoaded(bytes)
+                } catch (e: Exception) {
+                    onError("Couldn't read file: ${e.message}")
+                }
+            }
+            reader.readAsArrayBuffer(file)
         })
         input.click()
     }
