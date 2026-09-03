@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Transfontmation</title>
+  <meta name="description" content="Build a variable-font character from five hand-drawn anchors and watch every weight and width in between fall out of the math." />
+  <meta name="theme-color" content="#1e1e1e" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <style>
+    html, body, #root { height: 100%; margin: 0; padding: 0; background: #1e1e1e; }
+    body { overflow: hidden; }
+  </style>
+</head>
+<body>
+  <script src="transfontmation.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js').catch(() => {
+          // offline install is a nice-to-have, not a hard requirement -- fail quietly
+        });
+      });
+    }
+  </script>
+</body>
+</html>
