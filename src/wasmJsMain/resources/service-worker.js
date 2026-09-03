@@ -1,6 +1,6 @@
 // Minimal offline cache: shell files first, network for everything else,
 // falling back to cache when offline. Bump CACHE_NAME to force an update.
-const CACHE_NAME = "transfontmation-v1";
+const CACHE_NAME = "morphont-v1";
 const SHELL_FILES = ["./", "index.html", "manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

@@ -1,4 +1,4 @@
-# Transfontmation
+# Morphont
 
 A Progressive Web App for building a variable-font character from five
 hand-drawn anchors — **extra thin**, **extra black**, **condensed**,
@@ -33,21 +33,34 @@ host anywhere. It's installable as a PWA from a supporting browser.
 
 ## The model
 
-Every glyph is drawn at five fixed points in (weight, width) space:
+Every glyph is drawn at five fixed points, each varying only **one axis**
+from the center:
 
 ```
-              condensed (wdth=0)   wide (wdth=1)
-extra thin  (wght=0)   extraThin        condensed*
-extra black (wght=1)   extraBlack       wide*
-                    regular (wght=0.5, wdth=0.5)
+                     extraBlack (wght=1, wdth=0.5)
+                            |
+condensed (wght=0.5, wdth=0) --- regular (0.5, 0.5) --- wide (wght=0.5, wdth=1)
+                            |
+                     extraThin (wght=0, wdth=0.5)
 ```
 
-The four named drawings are the corners of that square; `regular` sits at
-its exact center. Any other instance is produced by bilinear
-interpolation of the four corners, plus a displacement term that pulls
-the result toward `regular`'s hand-corrected shape at the center and
-fades to nothing at the edges. That fade isn't a tunable curve — it's
-forced: a real quadratic Bezier only passes through a chosen midpoint `M`
+`extraThin`/`extraBlack` are the weight extremes at regular width;
+`condensed`/`wide` are the width extremes at regular weight. This is
+deliberately **not** a 2x2 grid of four joint corners (there's no
+"simultaneously thin and condensed" drawing) -- nobody draws that shape,
+and a real variable font's own named instances (Thin, Black, Regular
+Condensed, ...) are structured the same single-axis-from-center way, not
+as joint corners either.
+
+The interpolated value at any (weight, width) is the weight axis's
+forced-parabola curve plus the width axis's, minus Regular once so it
+isn't counted twice: an additive combination, the same "sum the per-axis
+deltas from default" model real OpenType variable fonts use internally
+(`gvar` tuples are literally added together).
+
+Each axis curve reproduces its own three points (an extreme, Regular, the
+opposite extreme) exactly, and that curve isn't a tunable choice — it's
+forced. A real quadratic Bezier only passes through a chosen midpoint `M`
 (with fixed endpoints `A`, `B`) if its control point is
 `C = 2M - (A+B)/2`, and substituting that in simplifies to
 `linear(t) + 4t(1-t) * (M - linear(0.5))`. So dragging Regular's point is
@@ -58,7 +71,10 @@ consequence of that drag, not a second, independent decision. See
 Editing is deliberately confined to these five anchors — not to arbitrary
 interpolated weights, the way most variable-font editors work. If an
 automatic in-between shape looks wrong, the fix is to adjust `regular`,
-not to add another editable point.
+not to add another editable point. The Regular panel's travel-path
+overlay only offers the two axis sweeps (Weight, Width) rather than an
+arbitrary pair of anchors, since those are the only two pairs guaranteed
+to pass through Regular.
 
 Interpolation requires the five anchors to be point-for-point compatible
 (same contour count, same points per contour, same on/off-curve types) --
@@ -69,7 +85,7 @@ so anchors can then be reshaped without adding or removing points.
 ## Project layout
 
 - `Model.kt` -- the glyph data model (points, contours, corners)
-- `Interpolation.kt` -- the interpolation math (bilinear + forced-Bezier displacement), independent of any UI
+- `Interpolation.kt` -- the interpolation math (additive per-axis forced-Bezier), independent of any UI
 - `Geometry.kt` -- font-space <-> canvas-space mapping, outline path building
 - `Hit.kt` / `Gestures.kt` -- point hit-testing and pointer-gesture handling (select, drag, rubber-band, draw)
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)

@@ -1,4 +1,4 @@
-package com.hereliesaz.transfontmation
+package com.hereliesaz.morphont
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -100,8 +100,8 @@ class AppState {
     var previewWeight by mutableStateOf(0.5f)
     var previewWidth by mutableStateOf(0.5f)
 
-    var pathCornerA by mutableStateOf("extraThin")
-    var pathCornerB by mutableStateOf("extraBlack")
+    /** Which of the two meaningful sweeps the travel-path overlay shows -- the only pairs that pass through Regular by construction. */
+    var pathAxis by mutableStateOf(Axis.WEIGHT)
 
     var currentGlyphName by mutableStateOf<String?>(null)
     var glyphNames by mutableStateOf<List<String>>(emptyList())

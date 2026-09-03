@@ -1,4 +1,4 @@
-package com.hereliesaz.transfontmation
+package com.hereliesaz.morphont
 
 import kotlinx.serialization.Serializable
 
@@ -39,8 +39,19 @@ val ANCHOR_LABELS = mapOf(
     "regular" to "Regular",
 )
 
-/** The four grid corners only, i.e. every anchor except `regular`. */
+/** The four single-axis extremes, i.e. every anchor except `regular`. */
 val CORNER_ANCHORS = ANCHORS.filter { it != "regular" }
+
+/**
+ * The two axes each anchor pair sweeps. Each pair passes exactly through
+ * Regular at its midpoint by construction (see [axisInterp]) -- these are
+ * the only two anchor pairs for which that's true, since extraThin/
+ * extraBlack vary weight alone and condensed/wide vary width alone.
+ */
+enum class Axis(val lo: String, val hi: String, val label: String) {
+    WEIGHT("extraThin", "extraBlack", "Weight: Extra Thin -> Extra Black"),
+    WIDTH("condensed", "wide", "Width: Condensed -> Wide"),
+}
 
 @Serializable
 data class Glyph(

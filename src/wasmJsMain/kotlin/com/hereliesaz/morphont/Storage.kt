@@ -1,10 +1,12 @@
-package com.hereliesaz.transfontmation
+package com.hereliesaz.morphont
 
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.khronos.webgl.ArrayBuffer
+import org.khronos.webgl.DataView
 import org.w3c.dom.HTMLAnchorElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.events.Event
@@ -21,7 +23,7 @@ external fun encodeURIComponent(str: String): String
  * localStorage entry -- this tool has no server, so the browser's own
  * storage is the only persistence unless the user exports/imports JSON.
  */
-private const val STORAGE_KEY = "transfontmation:project"
+private const val STORAGE_KEY = "morphont:project"
 
 private fun readProject(): MutableMap<String, Glyph> {
     val raw = window.localStorage.getItem(STORAGE_KEY) ?: return mutableMapOf()
@@ -47,6 +49,13 @@ object Storage {
         writeProject(project)
     }
 
+    /** Merges every entry in [glyphs] into the project in one write, overwriting any existing glyph with the same name. */
+    fun saveGlyphs(glyphs: Map<String, Glyph>) {
+        val project = readProject()
+        project.putAll(glyphs)
+        writeProject(project)
+    }
+
     fun glyphExists(name: String): Boolean = readProject().containsKey(name)
 
     /** Triggers a browser download of [glyph] as a standalone JSON file. */
@@ -55,7 +64,7 @@ object Storage {
         val href = "data:application/json;charset=utf-8," + encodeURIComponent(text)
         val anchor = document.createElement("a") as HTMLAnchorElement
         anchor.href = href
-        anchor.download = "$name.transfontmation.json"
+        anchor.download = "$name.morphont.json"
         document.body?.appendChild(anchor)
         anchor.click()
         document.body?.removeChild(anchor)
@@ -88,6 +97,38 @@ object Storage {
                 }
             }
             reader.readAsText(file)
+        })
+        input.click()
+    }
+
+    /**
+     * Opens a file picker for a single `.ttf`; on selection, reads its raw
+     * bytes and invokes [onLoaded]. Parsing/importing those bytes into
+     * glyphs is [buildFamilyFromVariableFont]'s job, not this function's --
+     * this only handles getting the file's bytes out of the browser.
+     */
+    fun pickTtfBytes(onLoaded: (ByteArray) -> Unit, onError: (String) -> Unit) {
+        val input = document.createElement("input") as HTMLInputElement
+        input.type = "file"
+        input.accept = ".ttf,font/ttf"
+        input.addEventListener("change", { _: Event ->
+            val file: File? = input.files?.item(0)
+            if (file == null) {
+                onError("No file selected.")
+                return@addEventListener
+            }
+            val reader = FileReader()
+            reader.onload = {
+                try {
+                    val buffer = reader.result as ArrayBuffer
+                    val view = DataView(buffer)
+                    val bytes = ByteArray(buffer.byteLength) { view.getUint8(it).toByte() }
+                    onLoaded(bytes)
+                } catch (e: Exception) {
+                    onError("Couldn't read file: ${e.message}")
+                }
+            }
+            reader.readAsArrayBuffer(file)
         })
         input.click()
     }

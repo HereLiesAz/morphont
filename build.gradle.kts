@@ -7,7 +7,7 @@ plugins {
     kotlin("plugin.serialization") version "2.1.20"
 }
 
-group = "com.hereliesaz.transfontmation"
+group = "com.hereliesaz.morphont"
 version = "0.1.0"
 
 repositories {
@@ -18,10 +18,10 @@ repositories {
 kotlin {
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
-        outputModuleName = "transfontmation"
+        outputModuleName = "morphont"
         browser {
             commonWebpackConfig {
-                outputFileName = "transfontmation.js"
+                outputFileName = "morphont.js"
             }
         }
         binaries.executable()

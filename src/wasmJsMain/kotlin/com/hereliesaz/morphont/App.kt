@@ -1,10 +1,10 @@
-package com.hereliesaz.transfontmation
+package com.hereliesaz.morphont
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.sp
 private val appBg = Color(0xFF1E1E1E)
 private val toolbarBg = Color(0xFF262626)
 
-private val TransfontmationColors = darkColorScheme(
+private val MorphontColors = darkColorScheme(
     primary = Color(0xFF2D6CDF),
     background = appBg,
     surface = Color(0xFF262626),
@@ -40,7 +40,7 @@ private val TransfontmationColors = darkColorScheme(
 
 @Composable
 fun App() {
-    MaterialTheme(colorScheme = TransfontmationColors) {
+    MaterialTheme(colorScheme = MorphontColors) {
         val app = remember { AppState() }
 
         Column(Modifier.fillMaxSize().background(appBg)) {
@@ -74,14 +74,16 @@ fun App() {
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun Toolbar(app: AppState) {
     var newName by remember { mutableStateOf("") }
     var glyphMenuOpen by remember { mutableStateOf(false) }
 
-    Row(
+    FlowRow(
         Modifier.fillMaxWidth().background(toolbarBg).padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Button(onClick = {
             app.glyphNames = Storage.listGlyphNames()
@@ -119,8 +121,6 @@ private fun Toolbar(app: AppState) {
             }
         }) { Text("New", fontSize = 12.sp) }
 
-        Spacer(Modifier.weight(1f))
-
         Button(onClick = { app.copyActiveToOthers() }) {
             Text("Copy ${ANCHOR_LABELS[app.activeAnchor]} to other 4", fontSize = 12.sp)
         }
@@ -152,5 +152,22 @@ private fun Toolbar(app: AppState) {
                 onError = { msg -> app.setStatus(msg, isError = true) },
             )
         }) { Text("Import JSON", fontSize = 12.sp) }
+        Button(onClick = {
+            Storage.pickTtfBytes(
+                onLoaded = { bytes ->
+                    try {
+                        val result = buildFamilyFromVariableFont(bytes)
+                        Storage.saveGlyphs(result.glyphs)
+                        app.glyphNames = Storage.listGlyphNames()
+                        val skippedNote = if (result.skippedCharacters.isEmpty()) "" else
+                            " Skipped: " + result.skippedCharacters.joinToString { (cp, reason) -> "U+${cp.toString(16)} ($reason)" }
+                        app.setStatus("Imported ${result.glyphs.size} character(s) from the variable font.$skippedNote")
+                    } catch (e: Exception) {
+                        app.setStatus("Import failed: ${e.message}", isError = true)
+                    }
+                },
+                onError = { msg -> app.setStatus(msg, isError = true) },
+            )
+        }) { Text("Import variable font (.ttf)", fontSize = 12.sp) }
     }
 }

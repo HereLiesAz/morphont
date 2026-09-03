@@ -1,4 +1,4 @@
-package com.hereliesaz.transfontmation
+package com.hereliesaz.morphont
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -11,14 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -31,19 +28,20 @@ import androidx.compose.ui.unit.sp
 data class TravelPathOverlay(val segments: List<Triple<Offset, Offset, Offset>>)
 
 /**
- * Builds the travel-path overlay for the currently picked corner pair, or
- * null if either corner isn't loaded or the trio isn't point-compatible
- * with Regular (same silent-skip behavior as the original tool -- the
- * panel's own mismatch text already explains incompatibility).
+ * Builds the travel-path overlay for the currently picked axis ([AppState.pathAxis]),
+ * or null if either of that axis's two anchors isn't loaded or the trio
+ * isn't point-compatible with Regular (same silent-skip behavior as the
+ * original tool -- the panel's own mismatch text already explains
+ * incompatibility).
  */
 fun computeTravelPathOverlay(app: AppState): TravelPathOverlay? {
+    val axis = app.pathAxis
     val regular = app.anchors.getValue("regular").glyph
-    val a = app.anchors[app.pathCornerA]?.glyph ?: return null
-    val b = app.anchors[app.pathCornerB]?.glyph ?: return null
-    if (app.pathCornerA == app.pathCornerB) return null
+    val a = app.anchors[axis.lo]?.glyph ?: return null
+    val b = app.anchors[axis.hi]?.glyph ?: return null
     val issue = compatibilityIssue(
-        mapOf(app.pathCornerA to a, app.pathCornerB to b, "regular" to regular),
-        listOf(app.pathCornerA, app.pathCornerB, "regular"),
+        mapOf(axis.lo to a, axis.hi to b, "regular" to regular),
+        listOf(axis.lo, axis.hi, "regular"),
     )
     if (issue != null) return null
 
@@ -69,17 +67,17 @@ fun AnchorToolbar(state: AnchorState, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun AnchorDropdown(label: String, value: String, onSelect: (String) -> Unit, options: List<String> = CORNER_ANCHORS) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        Button(onClick = { expanded = true }) { Text("$label: ${ANCHOR_LABELS[value]}", fontSize = 11.sp) }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            for (opt in options) {
-                DropdownMenuItem(text = { Text(ANCHOR_LABELS[opt] ?: opt) }, onClick = {
-                    onSelect(opt)
-                    expanded = false
-                })
-            }
+fun AxisToggle(value: Axis, onSelect: (Axis) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (axis in Axis.entries) {
+            Button(
+                onClick = { onSelect(axis) },
+                colors = if (axis == value) {
+                    ButtonDefaults.buttonColors(containerColor = Color(0xFF2D6CDF))
+                } else {
+                    ButtonDefaults.buttonColors(containerColor = Color(0xFF3A3A3A))
+                },
+            ) { Text(axis.label, fontSize = 11.sp) }
         }
     }
 }
@@ -106,8 +104,7 @@ fun AnchorPanel(
         }
         if (anchorName == "regular") {
             Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AnchorDropdown("Path from", app.pathCornerA, { app.pathCornerA = it })
-                AnchorDropdown("to", app.pathCornerB, { app.pathCornerB = it })
+                AxisToggle(app.pathAxis) { app.pathAxis = it }
             }
         }
         Box(Modifier.weight(1f, fill = true).fillMaxWidth()) {
