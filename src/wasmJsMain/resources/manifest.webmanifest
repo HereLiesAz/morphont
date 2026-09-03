@@ -1,6 +1,6 @@
 {
-  "name": "Transfontmation",
-  "short_name": "Transfontmation",
+  "name": "Morphont",
+  "short_name": "Morphont",
   "description": "Build a variable-font character from five hand-drawn anchors and watch every weight and width in between fall out of the math.",
   "start_url": ".",
   "display": "standalone",

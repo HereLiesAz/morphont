@@ -1,4 +1,4 @@
-package com.hereliesaz.transfontmation
+package com.hereliesaz.morphont
 
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -21,7 +21,7 @@ external fun encodeURIComponent(str: String): String
  * localStorage entry -- this tool has no server, so the browser's own
  * storage is the only persistence unless the user exports/imports JSON.
  */
-private const val STORAGE_KEY = "transfontmation:project"
+private const val STORAGE_KEY = "morphont:project"
 
 private fun readProject(): MutableMap<String, Glyph> {
     val raw = window.localStorage.getItem(STORAGE_KEY) ?: return mutableMapOf()
@@ -55,7 +55,7 @@ object Storage {
         val href = "data:application/json;charset=utf-8," + encodeURIComponent(text)
         val anchor = document.createElement("a") as HTMLAnchorElement
         anchor.href = href
-        anchor.download = "$name.transfontmation.json"
+        anchor.download = "$name.morphont.json"
         document.body?.appendChild(anchor)
         anchor.click()
         document.body?.removeChild(anchor)

@@ -1,4 +1,4 @@
-package com.hereliesaz.transfontmation
+package com.hereliesaz.morphont
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.sp
 private val appBg = Color(0xFF1E1E1E)
 private val toolbarBg = Color(0xFF262626)
 
-private val TransfontmationColors = darkColorScheme(
+private val MorphontColors = darkColorScheme(
     primary = Color(0xFF2D6CDF),
     background = appBg,
     surface = Color(0xFF262626),
@@ -40,7 +40,7 @@ private val TransfontmationColors = darkColorScheme(
 
 @Composable
 fun App() {
-    MaterialTheme(colorScheme = TransfontmationColors) {
+    MaterialTheme(colorScheme = MorphontColors) {
         val app = remember { AppState() }
 
         Column(Modifier.fillMaxSize().background(appBg)) {

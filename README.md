@@ -1,4 +1,4 @@
-# Transfontmation
+# Morphont
 
 A Progressive Web App for building a variable-font character from five
 hand-drawn anchors — **extra thin**, **extra black**, **condensed**,

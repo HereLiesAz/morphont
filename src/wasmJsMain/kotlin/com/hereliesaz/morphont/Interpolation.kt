@@ -1,4 +1,4 @@
-package com.hereliesaz.transfontmation
+package com.hereliesaz.morphont
 
 /** T=thin/B=black, C=condensed/W=wide. Plain bilinear interpolation of the four grid corners. */
 fun bilerp(vTC: Float, vTW: Float, vBC: Float, vBW: Float, wght: Float, wdth: Float): Float {

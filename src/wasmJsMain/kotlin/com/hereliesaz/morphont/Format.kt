@@ -1,4 +1,4 @@
-package com.hereliesaz.transfontmation
+package com.hereliesaz.morphont
 
 import kotlin.math.abs
 import kotlin.math.round
