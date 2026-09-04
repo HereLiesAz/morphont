@@ -14,27 +14,56 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import compose.conveyance.ConveySystem
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import compose.conveyance.tokens.ConveyShape
+
+/** How long an edit has to sit still before autosave writes it -- coalesces a whole drag gesture's frame-by-frame updates into one write. */
+private const val AUTOSAVE_DEBOUNCE_MS = 400L
 
 @Composable
 fun App() {
     MorphontTheme {
+        // The real Conveyance behavioral contract, not just a copied philosophy: every
+        // MonoButton registers its own visual weight here via Modifier.conveyWeight, and
+        // this is what actually enforces it (throws in debug if e.g. two Hero elements or
+        // too many Primary ones land on screen at once).
+        ConveySystem {
         val app = remember { AppState() }
+
+        // Autosave, always on: every edit to the open glyph's five anchors
+        // -- point drags, new/deleted contours, toggled point types --
+        // lands in localStorage on its own. No "unsaved changes" state to
+        // lose if the tab closes; the toolbar's "Save" button still exists
+        // for an explicit JSON export/import round-trip, not because a
+        // click is required to persist.
+        LaunchedEffect(Unit) {
+            snapshotFlow { app.currentGlyphName to app.toGlyph() }
+                .collectLatest { (name, glyph) ->
+                    if (name == null) return@collectLatest
+                    delay(AUTOSAVE_DEBOUNCE_MS)
+                    Storage.saveGlyph(name, glyph)
+                }
+        }
 
         Column(Modifier.fillMaxSize().background(Mono.ground)) {
             Toolbar(app)
             if (app.status.isNotEmpty()) {
                 Text(
                     (if (app.statusIsError) "! " else "") + app.status,
-                    color = Mono.ink,
+                    color = if (app.statusIsError) Mono.error else Mono.ink,
                     fontWeight = if (app.statusIsError) FontWeight.Bold else FontWeight.Normal,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
@@ -57,6 +86,7 @@ fun App() {
                     PreviewPanel(app, modifier = Modifier.weight(1f).fillMaxWidth())
                 }
             }
+        }
         }
     }
 }
@@ -93,7 +123,7 @@ private fun Toolbar(app: AppState) {
             placeholder = { Text("new glyph name", fontSize = 12.sp) },
             textStyle = TextStyle(fontSize = 12.sp, color = Mono.ink),
             colors = monoTextFieldColors(),
-            shape = Mono.buttonShape,
+            shape = ConveyShape.CutSmall,
             modifier = Modifier.height(48.dp),
         )
         MonoButton(onClick = {
