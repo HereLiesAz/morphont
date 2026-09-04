@@ -6,10 +6,15 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -64,9 +69,10 @@ fun AnchorToolbar(state: AnchorState, modifier: Modifier = Modifier) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AxisToggle(value: Axis, onSelect: (Axis) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+fun AxisToggle(value: Axis, onSelect: (Axis) -> Unit, modifier: Modifier = Modifier) {
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for (axis in Axis.ALL) {
             MonoButton(onClick = { onSelect(axis) }, selected = axis == value) {
                 Text(axis.label, fontSize = 11.sp)
@@ -102,9 +108,7 @@ fun AnchorPanel(
             )
         }
         if (anchorName == "regular") {
-            Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AxisToggle(app.selectedAxis) { app.selectedAxis = it }
-            }
+            AxisToggle(app.selectedAxis, onSelect = { app.selectedAxis = it }, modifier = Modifier.fillMaxWidth().padding(4.dp))
         }
         Box(Modifier.weight(1f, fill = true).fillMaxWidth()) {
             AnchorCanvas(
@@ -130,7 +134,7 @@ fun PreviewPanel(app: AppState, modifier: Modifier = Modifier) {
         Box(Modifier.fillMaxWidth().background(Mono.tertiary).padding(6.dp)) {
             Text("Preview (read-only, interpolated)", color = Mono.onTertiary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
-        Column(Modifier.padding(8.dp)) {
+        Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()).padding(8.dp)) {
             for (axis in Axis.ALL) {
                 val t = app.previewValues[axis.tag] ?: 0.5f
                 Text("${axis.label}: ${axis.loLabel} ${fmt2(t)} ${axis.hiLabel}", fontSize = 10.sp, color = Mono.inkDim)

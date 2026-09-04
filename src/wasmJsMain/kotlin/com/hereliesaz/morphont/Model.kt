@@ -48,16 +48,39 @@ data class Axis(val tag: String, val label: String, val loLabel: String, val hiL
         val WIDTH = Axis("wdth", "Width", "Condensed", "Wide")
         val SERIF = Axis("SERF", "Serif", "Sans", "Slab")
 
+        // Roboto Flex's own remaining registered + parametric axes. Every one
+        // of these sweeps a real dimension that font already exposes;
+        // importing from it (see FamilyImport.kt) extracts each straight
+        // from its own fvar min/max, same as weight/width/serif above.
+        // Labels stay short (the axis toggle wraps, but 14 axes' worth of
+        // multi-word labels would still crowd it) -- standard typographic
+        // terms (x-height, cap-height) where one exists, otherwise a short
+        // description rather than the literal parametric-axis name.
+        val GRADE = Axis("GRAD", "Grade", "Low", "High")
+        val SLANT = Axis("slnt", "Slant", "Slanted", "Upright")
+        val OPTICAL_SIZE = Axis("opsz", "Optical", "Small", "Large")
+        val COUNTER_WIDTH = Axis("XTRA", "Counters", "Narrow", "Wide")
+        val STEM_THICKNESS_X = Axis("XOPQ", "X Thickness", "Thin", "Thick")
+        val STEM_THICKNESS_Y = Axis("YOPQ", "Y Thickness", "Thin", "Thick")
+        val LOWERCASE_HEIGHT = Axis("YTLC", "x-height", "Short", "Tall")
+        val UPPERCASE_HEIGHT = Axis("YTUC", "Cap Height", "Short", "Tall")
+        val ASCENDER_HEIGHT = Axis("YTAS", "Ascender", "Short", "Tall")
+        val DESCENDER_DEPTH = Axis("YTDE", "Descender", "Shallow", "Deep")
+        val FIGURE_HEIGHT = Axis("YTFI", "Figures", "Short", "Tall")
+
         /**
-         * Every axis Morphont currently exposes for hand-editing, in UI order.
-         * Roboto Flex's own remaining axes (`GRAD`, `slnt`, `opsz`, `XTRA`,
-         * `XOPQ`, `YOPQ`, `YTLC`, `YTUC`, `YTAS`, `YTDE`, `YTFI`) are a
-         * planned fast-follow, not yet added here -- this list, and every
-         * anchor/interpolation/import path built on it, is already
-         * N-axis-general; adding one is only ever a matter of appending
-         * another [Axis] value.
+         * Every axis Morphont currently exposes for hand-editing, in UI
+         * order. This list, and every anchor/interpolation/import path
+         * built on it, is N-axis-general; adding one more axis (whether
+         * from another font or a wholly custom one) is only ever a matter
+         * of appending another [Axis] value here.
          */
-        val ALL = listOf(WEIGHT, WIDTH, SERIF)
+        val ALL = listOf(
+            WEIGHT, WIDTH, SERIF,
+            GRADE, SLANT, OPTICAL_SIZE, COUNTER_WIDTH,
+            STEM_THICKNESS_X, STEM_THICKNESS_Y,
+            LOWERCASE_HEIGHT, UPPERCASE_HEIGHT, ASCENDER_HEIGHT, DESCENDER_DEPTH, FIGURE_HEIGHT,
+        )
     }
 }
 
