@@ -30,16 +30,16 @@ host anywhere. It's installable as a PWA from a supporting browser.
 Every glyph is drawn at `2N + 1` fixed points for `N` axes -- each
 axis's own two extremes, each varying **that axis alone** from the
 center, plus the one shared `regular` at every axis's center at once.
-With today's three axes (weight, width, serif):
+With weight and width (the two easiest to draw on paper):
 
 ```
-                     Extra Black (wght=1, wdth=0.5, SERF=0.5)
+                     Extra Black (wght=1, wdth=0.5, ...)
                             |
-Condensed (wght=0.5, wdth=0, SERF=0.5) --- regular (0.5, 0.5, 0.5) --- Wide (wght=0.5, wdth=1, SERF=0.5)
+Condensed (wght=0.5, wdth=0, ...) --- regular (0.5, 0.5, ...) --- Wide (wght=0.5, wdth=1, ...)
                             |
-                     Extra Thin (wght=0, wdth=0.5, SERF=0.5)
+                     Extra Thin (wght=0, wdth=0.5, ...)
 
-                         (Sans/Slab sweep Serif alone, off this diagram)
+               (every other axis sweeps the same way, off this diagram)
 ```
 
 Each axis's lo/hi extremes hold every *other* axis at Regular's own
@@ -78,10 +78,14 @@ Every axis Morphont currently exposes is defined once, in `Model.kt`'s
 `Axis.ALL` -- adding one is only ever a matter of appending another
 `Axis` value there; the anchor naming, interpolation, UI, storage
 format and variable-font import are all already general over however
-many axes that list holds. Today: `wght` (Weight), `wdth` (Width), and
-Azrienoch's own `SERF` (Serif). Roboto Flex's remaining axes (`GRAD`,
-`slnt`, `opsz`, `XTRA`, `XOPQ`, `YOPQ`, `YTLC`, `YTUC`, `YTAS`, `YTDE`,
-`YTFI`) are a planned fast-follow, not yet added.
+many axes that list holds. Today, all 14: `wght` (Weight), `wdth`
+(Width), Azrienoch's own `SERF` (Serif), and Roboto Flex's remaining
+registered and parametric axes -- `GRAD` (Grade), `slnt` (Slant),
+`opsz` (Optical), `XTRA` (Counters), `XOPQ`/`YOPQ` (X/Y Thickness),
+`YTLC`/`YTUC` (x-height/Cap Height), `YTAS`/`YTDE` (Ascender/Descender),
+and `YTFI` (Figures) -- for `2*14 + 1 = 29` total anchors. The Regular
+panel's own axis toggle wraps to fit all 14 at once; the Preview panel's
+per-axis sliders scroll rather than crowd the canvas out.
 
 Interpolation requires every anchor to be point-for-point compatible
 (same contour count, same points per contour, same on/off-curve types) --
@@ -171,9 +175,11 @@ reimplementation of its ideas:
   both schemes.
 - Verified so far: the production build compiles and bundles cleanly, and
   a manual smoke pass in headless Chromium confirms the axis-selector
-  layout renders and switches correctly (Weight/Width/Serif), glyph
-  creation and naming work, contour drawing places points on the correct
-  anchor, and the live compatibility-mismatch message updates correctly.
-  Full interactive coverage (drag-to-reshape across every anchor, the
-  travel-path overlay, save/export/import round-trips) has not yet had a
-  dedicated automated test pass.
+  layout renders and switches correctly across all 14 axes, the axis
+  toggle wraps and the Preview panel's sliders scroll instead of
+  crowding out the canvas, glyph creation and naming work, contour
+  drawing places points on the correct anchor, and the live
+  compatibility-mismatch message updates correctly. Full interactive
+  coverage (drag-to-reshape across every anchor, the travel-path overlay,
+  save/export/import round-trips) has not yet had a dedicated automated
+  test pass.
