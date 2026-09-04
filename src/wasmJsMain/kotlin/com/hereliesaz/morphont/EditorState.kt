@@ -126,6 +126,14 @@ class AppState {
         setStatus("Loaded \"$name\".")
     }
 
+    /** Clears the open glyph (used after loading a whole project, since the previously open glyph may no longer exist under that name). */
+    fun clearEditor() {
+        currentGlyphName = null
+        for (anchor in ANCHORS) {
+            anchors.getValue(anchor).loadFresh(GlyphCorner())
+        }
+    }
+
     fun toGlyph(): Glyph = Glyph(
         corners = cornersSnapshot().mapValues { it.value.deepCopy() }.toMutableMap(),
     )

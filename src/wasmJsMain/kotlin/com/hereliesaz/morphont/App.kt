@@ -152,6 +152,17 @@ private fun Toolbar(app: AppState) {
                 onError = { msg -> app.setStatus(msg, isError = true) },
             )
         }) { Text("Import JSON", fontSize = 12.sp) }
+        Button(onClick = { Storage.exportProject() }) { Text("Save project", fontSize = 12.sp) }
+        Button(onClick = {
+            Storage.importProject(
+                onLoaded = { names ->
+                    app.clearEditor()
+                    app.glyphNames = names
+                    app.setStatus("Loaded project (${names.size} glyph(s)).")
+                },
+                onError = { msg -> app.setStatus(msg, isError = true) },
+            )
+        }) { Text("Load project", fontSize = 12.sp) }
         Button(onClick = {
             Storage.pickTtfBytes(
                 onLoaded = { bytes ->
