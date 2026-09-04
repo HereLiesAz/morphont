@@ -51,7 +51,15 @@ kotlin {
                 // repo. Pinned to a real commit rather than a branch/tag so this build stays
                 // reproducible regardless of what happens on convey's own default branch
                 // afterward; bump deliberately, not automatically.
-                implementation("com.github.HereLiesAz.convey:convey:11b4ca7")
+                //
+                // Must be 265cdde or later: earlier commits (including 11b4ca7, this
+                // dependency's first pin) have no jitpack.yml, so JitPack's default build
+                // dies on convey's androidTarget (no Android SDK on JitPack's runner)
+                // before ever publishing the wasmJs target's Compose resources artifact --
+                // the app compiles clean against those commits and then throws
+                // MissingResourceException at runtime trying to load Azrienoch. See
+                // HereLiesAz/convey#26.
+                implementation("com.github.HereLiesAz.convey:convey:265cdde")
             }
         }
     }

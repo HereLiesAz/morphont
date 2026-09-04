@@ -25,10 +25,29 @@ external fun encodeURIComponent(str: String): String
  */
 private const val STORAGE_KEY = "morphont:project"
 
+/**
+ * Anchor names from before the N-axis rework (`extraThin`/`extraBlack`/
+ * `condensed`/`wide`) -> today's tag-based ones (`wght_lo`/`wght_hi`/...),
+ * so a glyph saved under the old scheme still loads instead of silently
+ * losing its extremes. `regular` is unchanged in both schemes.
+ */
+private val LEGACY_ANCHOR_NAMES = mapOf(
+    "extraThin" to Axis.WEIGHT.lo,
+    "extraBlack" to Axis.WEIGHT.hi,
+    "condensed" to Axis.WIDTH.lo,
+    "wide" to Axis.WIDTH.hi,
+)
+
+private fun migrateGlyph(glyph: Glyph): Glyph {
+    if (LEGACY_ANCHOR_NAMES.keys.none { it in glyph.corners }) return glyph
+    val migrated = glyph.corners.mapKeys { (name, _) -> LEGACY_ANCHOR_NAMES[name] ?: name }
+    return Glyph(migrated.toMutableMap())
+}
+
 private fun readProject(): MutableMap<String, Glyph> {
     val raw = window.localStorage.getItem(STORAGE_KEY) ?: return mutableMapOf()
     return try {
-        json.decodeFromString<Map<String, Glyph>>(raw).toMutableMap()
+        json.decodeFromString<Map<String, Glyph>>(raw).mapValues { migrateGlyph(it.value) }.toMutableMap()
     } catch (e: Exception) {
         mutableMapOf()
     }
@@ -90,7 +109,7 @@ object Storage {
             reader.onload = {
                 try {
                     val text = reader.result as String
-                    val project = json.decodeFromString<Map<String, Glyph>>(text)
+                    val project = json.decodeFromString<Map<String, Glyph>>(text).mapValues { migrateGlyph(it.value) }
                     writeProject(project)
                     onLoaded(project.keys.sorted())
                 } catch (e: Exception) {
@@ -133,7 +152,7 @@ object Storage {
             reader.onload = {
                 try {
                     val text = reader.result as String
-                    val glyph = json.decodeFromString<Glyph>(text)
+                    val glyph = migrateGlyph(json.decodeFromString<Glyph>(text))
                     saveGlyph(name, glyph)
                     onLoaded(glyph)
                 } catch (e: Exception) {

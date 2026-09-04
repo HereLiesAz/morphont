@@ -2,13 +2,15 @@ package com.hereliesaz.morphont
 
 /**
  * Builds a whole roster of glyphs from ONE variable TTF: for every
- * character it defines, extract that character's outline at five points
- * in the font's own (wght, wdth) design space -- extraThin/extraBlack
- * varying weight alone at regular width, condensed/wide varying width
- * alone at regular weight, regular at both axes' default -- matching this
- * app's five-anchor, single-axis-from-center model exactly (see
- * Interpolation.kt). Every other axis the font defines (e.g. Azrienoch's
- * `SERF`) is held at its own default throughout.
+ * character it defines, extract that character's outline at every point
+ * [Axis.ALL] defines in the font's own design space -- each axis's own
+ * lo/hi extremes at every other axis's default, and regular at every
+ * axis's default -- matching this app's anchor model exactly (see
+ * Interpolation.kt). An axis the font doesn't define at all is simply
+ * left out of that character's coordinates (every anchor renders
+ * identically along it, contributing no variation); an axis the font
+ * defines but Morphont doesn't yet expose is held at its own default
+ * throughout, same as before.
  */
 
 data class FamilyImportResult(
@@ -16,24 +18,23 @@ data class FamilyImportResult(
     val skippedCharacters: List<Pair<Int, String>>, // codepoint -> reason
 )
 
-private fun axisCoordsFor(anchor: String, axes: List<AxisInfo>): Map<String, Float> {
-    val coords = axes.associate { it.tag to it.default }.toMutableMap()
-    val wght = axes.find { it.tag == "wght" }
-    val wdth = axes.find { it.tag == "wdth" }
-    when (anchor) {
-        "extraThin" -> wght?.let { coords[it.tag] = it.min }
-        "extraBlack" -> wght?.let { coords[it.tag] = it.max }
-        "condensed" -> wdth?.let { coords[it.tag] = it.min }
-        "wide" -> wdth?.let { coords[it.tag] = it.max }
-        "regular" -> {} // already all defaults
+private fun axisCoordsFor(anchorName: String, fontAxes: List<AxisInfo>): Map<String, Float> {
+    val coords = fontAxes.associate { it.tag to it.default }.toMutableMap()
+    for (axis in Axis.ALL) {
+        val info = fontAxes.find { it.tag == axis.tag } ?: continue
+        when (anchorName) {
+            axis.lo -> coords[axis.tag] = info.min
+            axis.hi -> coords[axis.tag] = info.max
+        }
     }
     return coords
 }
 
 fun buildFamilyFromVariableFont(bytes: ByteArray): FamilyImportResult {
     val font = VariableFont.parse(bytes)
-    require(font.axes.any { it.tag == "wght" } && font.axes.any { it.tag == "wdth" }) {
-        "This font doesn't define both a 'wght' and a 'wdth' axis -- can't derive all five anchors from it."
+    require(Axis.ALL.any { axis -> font.axes.any { it.tag == axis.tag } }) {
+        "This font doesn't define any axis Morphont currently supports (" +
+            Axis.ALL.joinToString { it.tag } + ") -- can't derive any anchor from it."
     }
 
     val coordsPerAnchor = ANCHORS.associateWith { axisCoordsFor(it, font.axes) }
