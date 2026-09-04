@@ -6,12 +6,6 @@ hand-drawn anchors — **extra thin**, **extra black**, **condensed**,
 — and watching every other weight and width fall out of the math rather
 than being drawn separately.
 
-This is a Kotlin/Compose Multiplatform (Wasm, web target) port of the
-`corner-editor` tool originally prototyped in
-[Azrienoch](https://github.com/HereLiesAz/azrienoch), rebuilt from scratch
-as its own standalone client-only app: no server, no dependency on any
-particular font project. Everything lives in the browser (`localStorage`,
-plus JSON export/import for backup and sharing).
 
 ## Running it
 
