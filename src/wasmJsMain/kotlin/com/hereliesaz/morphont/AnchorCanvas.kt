@@ -17,20 +17,21 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import kotlin.math.abs
 
-// Strictly monochromatic: on-curve/off-curve/selected points are distinguished by fill vs.
-// hollow and by size, never by hue -- see Theme.kt's doc comment on why.
-private val bgColor = Color(0xFF0A0A0A)
-private val outlineFill = Color(0xFFEDEDED).copy(alpha = 0.55f)
-private val outlineStroke = Color(0xFF9A9A9A)
+// The outline, guide lines and background stay neutral; on-curve/off-curve/selected points use
+// Theme.kt's Primary/Secondary roles, so the one thing selected right now is also the one thing
+// colored -- Conveyance's "contrasting tone prioritizes implicitly" rule applied to the canvas.
+private val bgColor = Mono.ground
+private val outlineFill = Mono.ink.copy(alpha = 0.55f)
+private val outlineStroke = Mono.inkDim
 private val baselineColor = Color(0xFF2A2A2A)
 private val ctrlLineColor = Color(0xFF4A4A4A)
-private val onCurveColor = Color(0xFFEDEDED)
-private val offCurveColor = Color(0xFF8A8A8A)
-private val selectedFill = Color(0xFFEDEDED)
-private val selectedRing = Color(0xFF0A0A0A)
-private val rubberFill = Color(0xFFEDEDED).copy(alpha = 0.12f)
-private val rubberStroke = Color(0xFFEDEDED)
-private val pathCurveColor = Color(0xFFBFBFBF).copy(alpha = 0.7f)
+private val onCurveColor = Mono.primary
+private val offCurveColor = Mono.secondary
+private val selectedFill = Mono.primary
+private val selectedRing = Mono.ground
+private val rubberFill = Mono.primary.copy(alpha = 0.15f)
+private val rubberStroke = Mono.primary
+private val pathCurveColor = Mono.secondary.copy(alpha = 0.8f)
 
 /**
  * One anchor's editable canvas: renders the outline, control-point handles

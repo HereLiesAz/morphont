@@ -84,37 +84,55 @@ so anchors can then be reshaped without adding or removing points.
 - `Hit.kt` / `Gestures.kt` -- point hit-testing and pointer-gesture handling (select, drag, rubber-band, draw)
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)
 - `AnchorCanvas.kt` / `Panels.kt` -- the actual UI
-- `Theme.kt` / `Type.kt` -- the monochrome visual language and the Azrienoch UI typeface (see below)
+- `Theme.kt` -- the visual language, built on `HereLiesAz/convey` directly (see below)
 - `Storage.kt` -- `localStorage` persistence + JSON export/import
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point
 - `VariableFont.kt` / `FamilyImport.kt` -- the from-scratch OpenType variable-font parser used to import a whole character family from one variable TTF
 
 ## Design
 
-Strictly monochromatic (grayscale + white), sharp cut-corner controls, no
-drop shadows -- a tool for shaping type shouldn't look like a demo app.
-The structure follows [HereLiesAz/Conveyance](https://github.com/HereLiesAz/Conveyance)'s
-manifesto: a semantic color-role vocabulary rather than arbitrary hex
-values (`ConveyColor`'s own doc comment: "match your brand colors to
-these roles, not to arbitrary hex values"), and shape as a deliberate
-signal -- `Theme.kt`'s cut-corner button shape follows `ConveyShape.Cut`'s
-own rationale for that token to the letter ("mechanical, precise,
-systematic... developer tools, system UI, anything that signals this is
-infrastructure, not content"). Conveyance's own Compose library
-(`conveyance-compose`/`convey`) isn't wired in directly as a dependency:
-it's unpublished, and its multi-target Gradle modules require an Android
-SDK just to configure, which this wasmJs-only project has no other
-reason to need.
+Built directly on [HereLiesAz/convey](https://github.com/HereLiesAz/convey)
+-- the Compose Multiplatform implementation of the Conveyance manifesto
+-- as a real Gradle dependency (`build.gradle.kts`, resolved through
+JitPack since `convey` isn't published to Maven Central), not a
+reimplementation of its ideas:
 
-The UI's own typeface is [Azrienoch](https://github.com/HereLiesAz/Azrienoch)
-(SIL OFL 1.1; `licenses/Azrienoch-OFL.txt` travels with the compiled font
-here), the multiplex variable font this tool exists to help shape --
-loaded the same way Conveyance's own `ConveyType.kt` loads it, via
-Compose Multiplatform's resource-based `Font()`. This project's pinned
-Compose Multiplatform version (1.7.3) predates the `Font(variationSettings
-= ...)` overload Conveyance's own loader uses, so `Type.kt` renders
-Azrienoch at its single default instance rather than baking a live
-`wght`/`wdth` point -- see that file's doc comment.
+- **Color.** A semantic role vocabulary (surface/onSurface/outline/
+  primary/secondary/tertiary/error) filled with Morphont's own values
+  rather than `ConveyColor`'s own reference palette -- its own doc
+  comment says as much ("match your brand colors to these roles, not
+  to arbitrary hex values"). Its actual rule for color itself --
+  "Dynamic Color: use contrasting primary, secondary, and tertiary
+  tones to prioritize actions implicitly" -- is spent deliberately
+  rather than everywhere: most of the interface stays a dark,
+  near-neutral ground, and color marks only the few things that carry
+  real hierarchy. `Mono.primary` (indigo) marks the active corner
+  panel and a selected point, `Mono.secondary` (verdigris) marks
+  off-curve handles, `Mono.tertiary` (brass) marks the Preview panel
+  alone -- and `Mono.error` (the palette's only red) stays visually
+  unambiguous from `Mono.primary` precisely because primary isn't a
+  shade of red too.
+- **Shape.** `MonoButton` uses `ConveyShape.CutSmall` -- the library's
+  own chamfered-corner token, not a locally redefined lookalike.
+- **Hierarchy enforcement.** Every `MonoButton` tags itself with
+  `Modifier.conveyWeight(ConveyWeight.Primary/.Secondary)`, and the
+  whole app is wrapped in `ConveySystem` (`App.kt`), which actually
+  enforces that hierarchy at runtime -- too many `Primary`-weighted
+  elements on screen at once throws in debug builds, the same as it
+  would in any other Conveyance-built surface. The visual weight
+  (`Mono.primary`'s color) and the structural weight are the same
+  claim, not two independent ones that could drift apart.
+- **Typeface.** The UI is set in [Azrienoch](https://github.com/HereLiesAz/Azrienoch)
+  (SIL OFL 1.1; `licenses/Azrienoch-OFL.txt` documents the license
+  here too) -- the multiplex variable font this tool exists to help
+  shape -- loaded via `convey`'s own `conveyTypeFontFamily()`
+  (`tokens/ConveyType.kt`) directly: the actual composable and its
+  actual bundled font resource, not a copy of either. `convey`'s
+  pinned Compose Multiplatform version (1.8.2, which this project
+  matches -- see `build.gradle.kts`'s own comment on why the two must
+  agree) supports `Font(variationSettings = ...)`, so this is Azrienoch
+  rendered with real, live `wght`/`wdth` control, not a single baked
+  instance.
 
 ## Known gaps
 

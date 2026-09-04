@@ -83,20 +83,20 @@ fun AnchorPanel(
 ) {
     val state = app.anchors.getValue(anchorName)
     val isActive = app.activeAnchor == anchorName
-    val headerInverted = isActive && anchorName != "regular"
+    val headerActive = isActive && anchorName != "regular"
     Column(
         modifier
             .background(Mono.panel)
-            .border(1.dp, if (isActive) Mono.borderBright else Mono.border),
+            .border(1.dp, if (isActive) Mono.primary else Mono.border),
     ) {
         Box(
             Modifier.fillMaxWidth()
-                .background(if (headerInverted) Mono.ink else Mono.panelHeader)
+                .background(if (headerActive) Mono.primary else Mono.panelHeader)
                 .padding(6.dp),
         ) {
             Text(
                 ANCHOR_LABELS[anchorName] ?: anchorName,
-                color = if (headerInverted) Mono.ground else Mono.ink,
+                color = if (headerActive) Mono.onPrimary else Mono.ink,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
             )
@@ -125,10 +125,10 @@ fun PreviewPanel(app: AppState, modifier: Modifier = Modifier) {
     Column(
         modifier
             .background(Mono.panel)
-            .border(1.dp, Mono.border),
+            .border(1.dp, Mono.tertiary),
     ) {
-        Box(Modifier.fillMaxWidth().background(Mono.panelHeader).padding(6.dp)) {
-            Text("Preview (read-only, interpolated)", color = Mono.ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        Box(Modifier.fillMaxWidth().background(Mono.tertiary).padding(6.dp)) {
+            Text("Preview (read-only, interpolated)", color = Mono.onTertiary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
         Column(Modifier.padding(8.dp)) {
             Text("Weight: extra thin ${fmt2(app.previewWeight)} extra black", fontSize = 10.sp, color = Mono.inkDim)
@@ -146,7 +146,7 @@ fun PreviewPanel(app: AppState, modifier: Modifier = Modifier) {
             if (issue != null) {
                 Text(
                     "! Anchors aren't interpolation-compatible yet:\n$issue\n\nUse \"Copy active anchor's outline to other 4\" to seed matching topology, then reshape each without adding/removing points.",
-                    color = Mono.ink,
+                    color = Mono.error,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(8.dp),
