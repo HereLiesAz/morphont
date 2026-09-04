@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,8 +17,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -59,10 +57,10 @@ fun computeTravelPathOverlay(app: AppState): TravelPathOverlay? {
 @Composable
 fun AnchorToolbar(state: AnchorState, modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Button(onClick = { state.startNewContour() }) { Text("New contour", fontSize = 11.sp) }
-        Button(onClick = { state.toggleTypeSelected() }) { Text("Toggle on/off", fontSize = 11.sp) }
-        Button(onClick = { state.deleteSelected() }) { Text("Delete sel.", fontSize = 11.sp) }
-        Button(onClick = { state.undo() }) { Text("Undo", fontSize = 11.sp) }
+        MonoButton(onClick = { state.startNewContour() }) { Text("New contour", fontSize = 11.sp) }
+        MonoButton(onClick = { state.toggleTypeSelected() }) { Text("Toggle on/off", fontSize = 11.sp) }
+        MonoButton(onClick = { state.deleteSelected() }) { Text("Delete sel.", fontSize = 11.sp) }
+        MonoButton(onClick = { state.undo() }) { Text("Undo", fontSize = 11.sp) }
     }
 }
 
@@ -70,14 +68,9 @@ fun AnchorToolbar(state: AnchorState, modifier: Modifier = Modifier) {
 fun AxisToggle(value: Axis, onSelect: (Axis) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         for (axis in Axis.entries) {
-            Button(
-                onClick = { onSelect(axis) },
-                colors = if (axis == value) {
-                    ButtonDefaults.buttonColors(containerColor = Color(0xFF2D6CDF))
-                } else {
-                    ButtonDefaults.buttonColors(containerColor = Color(0xFF3A3A3A))
-                },
-            ) { Text(axis.label, fontSize = 11.sp) }
+            MonoButton(onClick = { onSelect(axis) }, selected = axis == value) {
+                Text(axis.label, fontSize = 11.sp)
+            }
         }
     }
 }
@@ -90,17 +83,23 @@ fun AnchorPanel(
 ) {
     val state = app.anchors.getValue(anchorName)
     val isActive = app.activeAnchor == anchorName
-    val headerColor = when (anchorName) {
-        "regular" -> Color(0xFF4A3D2D)
-        else -> if (isActive) Color(0xFF2D6CDF) else Color(0xFF2D2D2D)
-    }
+    val headerInverted = isActive && anchorName != "regular"
     Column(
         modifier
-            .background(Color(0xFF262626))
-            .border(1.dp, Color(0xFF3A3A3A)),
+            .background(Mono.panel)
+            .border(1.dp, if (isActive) Mono.borderBright else Mono.border),
     ) {
-        Box(Modifier.fillMaxWidth().background(headerColor).padding(6.dp)) {
-            Text(ANCHOR_LABELS[anchorName] ?: anchorName, color = Color(0xFFDDDDDD), fontSize = 13.sp)
+        Box(
+            Modifier.fillMaxWidth()
+                .background(if (headerInverted) Mono.ink else Mono.panelHeader)
+                .padding(6.dp),
+        ) {
+            Text(
+                ANCHOR_LABELS[anchorName] ?: anchorName,
+                color = if (headerInverted) Mono.ground else Mono.ink,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+            )
         }
         if (anchorName == "regular") {
             Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -125,18 +124,18 @@ fun AnchorPanel(
 fun PreviewPanel(app: AppState, modifier: Modifier = Modifier) {
     Column(
         modifier
-            .background(Color(0xFF262626))
-            .border(1.dp, Color(0xFF3A3A3A)),
+            .background(Mono.panel)
+            .border(1.dp, Mono.border),
     ) {
-        Box(Modifier.fillMaxWidth().background(Color(0xFF2D4A2D)).padding(6.dp)) {
-            Text("Preview (read-only, interpolated)", color = Color(0xFFDDDDDD), fontSize = 13.sp)
+        Box(Modifier.fillMaxWidth().background(Mono.panelHeader).padding(6.dp)) {
+            Text("Preview (read-only, interpolated)", color = Mono.ink, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
         Column(Modifier.padding(8.dp)) {
-            Text("Weight: extra thin ${fmt2(app.previewWeight)} extra black", fontSize = 10.sp, color = Color(0xFFAAAAAA))
-            Slider(value = app.previewWeight, onValueChange = { app.previewWeight = it }, valueRange = 0f..1f)
-            Text("Width: condensed ${fmt2(app.previewWidth)} wide", fontSize = 10.sp, color = Color(0xFFAAAAAA))
-            Slider(value = app.previewWidth, onValueChange = { app.previewWidth = it }, valueRange = 0f..1f)
-            Button(onClick = { app.previewWeight = 0.5f; app.previewWidth = 0.5f }) {
+            Text("Weight: extra thin ${fmt2(app.previewWeight)} extra black", fontSize = 10.sp, color = Mono.inkDim)
+            Slider(value = app.previewWeight, onValueChange = { app.previewWeight = it }, valueRange = 0f..1f, colors = monoSliderColors())
+            Text("Width: condensed ${fmt2(app.previewWidth)} wide", fontSize = 10.sp, color = Mono.inkDim)
+            Slider(value = app.previewWidth, onValueChange = { app.previewWidth = it }, valueRange = 0f..1f, colors = monoSliderColors())
+            MonoButton(onClick = { app.previewWeight = 0.5f; app.previewWidth = 0.5f }) {
                 Text("Jump to regular (0.5 / 0.5)", fontSize = 11.sp)
             }
         }
@@ -146,20 +145,21 @@ fun PreviewPanel(app: AppState, modifier: Modifier = Modifier) {
         Box(Modifier.weight(1f, fill = true).fillMaxWidth()) {
             if (issue != null) {
                 Text(
-                    "Anchors aren't interpolation-compatible yet:\n$issue\n\nUse \"Copy active anchor's outline to other 4\" to seed matching topology, then reshape each without adding/removing points.",
-                    color = Color(0xFFEE7777),
+                    "! Anchors aren't interpolation-compatible yet:\n$issue\n\nUse \"Copy active anchor's outline to other 4\" to seed matching topology, then reshape each without adding/removing points.",
+                    color = Mono.ink,
+                    fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(8.dp),
                 )
             } else {
                 val inst = interpolateGlyph(corners, app.previewWeight, app.previewWidth)
-                Canvas(Modifier.fillMaxSize().background(Color(0xFF111111))) {
+                Canvas(Modifier.fillMaxSize().background(Mono.ground)) {
                     if (size.width <= 0f || size.height <= 0f) return@Canvas
                     val vb = computeViewBox(inst)
                     val mapper = SpaceMapper(vb, size)
                     val path = buildOutlinePath(inst.contours) { x, y -> mapper.toCanvas(x, y) }
-                    drawPath(path, color = Color(0xFFDDDDDD).copy(alpha = 0.55f))
-                    drawPath(path, color = Color(0xFF888888), style = Stroke(width = 1f))
+                    drawPath(path, color = Mono.ink.copy(alpha = 0.55f))
+                    drawPath(path, color = Mono.inkDim, style = Stroke(width = 1f))
                 }
             }
         }

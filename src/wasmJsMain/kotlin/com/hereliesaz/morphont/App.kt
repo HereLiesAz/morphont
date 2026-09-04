@@ -9,46 +9,33 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val appBg = Color(0xFF1E1E1E)
-private val toolbarBg = Color(0xFF262626)
-
-private val MorphontColors = darkColorScheme(
-    primary = Color(0xFF2D6CDF),
-    background = appBg,
-    surface = Color(0xFF262626),
-    onBackground = Color(0xFFDDDDDD),
-    onSurface = Color(0xFFDDDDDD),
-)
-
 @Composable
 fun App() {
-    MaterialTheme(colorScheme = MorphontColors) {
+    MorphontTheme {
         val app = remember { AppState() }
 
-        Column(Modifier.fillMaxSize().background(appBg)) {
+        Column(Modifier.fillMaxSize().background(Mono.ground)) {
             Toolbar(app)
             if (app.status.isNotEmpty()) {
                 Text(
-                    app.status,
-                    color = if (app.statusIsError) Color(0xFFEE7777) else Color(0xFF99AA99),
+                    (if (app.statusIsError) "! " else "") + app.status,
+                    color = Mono.ink,
+                    fontWeight = if (app.statusIsError) FontWeight.Bold else FontWeight.Normal,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
                 )
@@ -81,11 +68,11 @@ private fun Toolbar(app: AppState) {
     var glyphMenuOpen by remember { mutableStateOf(false) }
 
     FlowRow(
-        Modifier.fillMaxWidth().background(toolbarBg).padding(8.dp),
+        Modifier.fillMaxWidth().background(Mono.panel).padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Button(onClick = {
+        MonoButton(onClick = {
             app.glyphNames = Storage.listGlyphNames()
             glyphMenuOpen = true
         }) {
@@ -104,10 +91,12 @@ private fun Toolbar(app: AppState) {
             value = newName,
             onValueChange = { newName = it },
             placeholder = { Text("new glyph name", fontSize = 12.sp) },
-            textStyle = TextStyle(fontSize = 12.sp),
+            textStyle = TextStyle(fontSize = 12.sp, color = Mono.ink),
+            colors = monoTextFieldColors(),
+            shape = Mono.buttonShape,
             modifier = Modifier.height(48.dp),
         )
-        Button(onClick = {
+        MonoButton(onClick = {
             if (newName.isBlank()) {
                 app.setStatus("Type a name for the new glyph first.", isError = true)
             } else if (Storage.glyphExists(newName)) {
@@ -121,13 +110,13 @@ private fun Toolbar(app: AppState) {
             }
         }) { Text("New", fontSize = 12.sp) }
 
-        Button(onClick = { app.copyActiveToOthers() }) {
+        MonoButton(onClick = { app.copyActiveToOthers() }) {
             Text("Copy ${ANCHOR_LABELS[app.activeAnchor]} to other 4", fontSize = 12.sp)
         }
-        Button(onClick = { app.anchors.getValue(app.activeAnchor).undo() }) {
+        MonoButton(onClick = { app.anchors.getValue(app.activeAnchor).undo() }) {
             Text("Undo (active)", fontSize = 12.sp)
         }
-        Button(onClick = {
+        MonoButton(onClick = {
             val name = app.currentGlyphName
             if (name == null) {
                 app.setStatus("No glyph loaded.", isError = true)
@@ -136,7 +125,7 @@ private fun Toolbar(app: AppState) {
                 app.setStatus("Saved \"$name\".")
             }
         }) { Text("Save", fontSize = 12.sp) }
-        Button(onClick = {
+        MonoButton(onClick = {
             val name = app.currentGlyphName
             if (name == null) {
                 app.setStatus("No glyph loaded to export.", isError = true)
@@ -144,7 +133,7 @@ private fun Toolbar(app: AppState) {
                 Storage.exportGlyph(name, app.toGlyph())
             }
         }) { Text("Export JSON", fontSize = 12.sp) }
-        Button(onClick = {
+        MonoButton(onClick = {
             val name = app.currentGlyphName ?: newName.ifBlank { "imported" }
             Storage.importGlyph(
                 name = name,
@@ -152,8 +141,8 @@ private fun Toolbar(app: AppState) {
                 onError = { msg -> app.setStatus(msg, isError = true) },
             )
         }) { Text("Import JSON", fontSize = 12.sp) }
-        Button(onClick = { Storage.exportProject() }) { Text("Save project", fontSize = 12.sp) }
-        Button(onClick = {
+        MonoButton(onClick = { Storage.exportProject() }) { Text("Save project", fontSize = 12.sp) }
+        MonoButton(onClick = {
             Storage.importProject(
                 onLoaded = { names ->
                     app.clearEditor()
@@ -163,7 +152,7 @@ private fun Toolbar(app: AppState) {
                 onError = { msg -> app.setStatus(msg, isError = true) },
             )
         }) { Text("Load project", fontSize = 12.sp) }
-        Button(onClick = {
+        MonoButton(onClick = {
             Storage.pickTtfBytes(
                 onLoaded = { bytes ->
                     try {
