@@ -59,7 +59,13 @@ kotlin {
                 // the app compiles clean against those commits and then throws
                 // MissingResourceException at runtime trying to load Azrienoch. See
                 // HereLiesAz/convey#26.
-                implementation("com.github.HereLiesAz.convey:convey:265cdde")
+                //
+                // Bumped to 185c093 (HereLiesAz/convey#28): the vendored Azrienoch font
+                // resource itself was stale (pinned back at #24), missing several
+                // letterform fixes landed on Azrienoch's own root pipeline since. Same
+                // wght/wdth/SERF/GRAD axes, same OFL 1.1 text -- a drop-in data update,
+                // plus everything else merged into convey between 265cdde and this commit.
+                implementation("com.github.HereLiesAz.convey:convey:185c093")
             }
         }
     }
