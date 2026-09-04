@@ -84,8 +84,37 @@ so anchors can then be reshaped without adding or removing points.
 - `Hit.kt` / `Gestures.kt` -- point hit-testing and pointer-gesture handling (select, drag, rubber-band, draw)
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)
 - `AnchorCanvas.kt` / `Panels.kt` -- the actual UI
+- `Theme.kt` / `Type.kt` -- the monochrome visual language and the Azrienoch UI typeface (see below)
 - `Storage.kt` -- `localStorage` persistence + JSON export/import
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point
+- `VariableFont.kt` / `FamilyImport.kt` -- the from-scratch OpenType variable-font parser used to import a whole character family from one variable TTF
+
+## Design
+
+Strictly monochromatic (grayscale + white), sharp cut-corner controls, no
+drop shadows -- a tool for shaping type shouldn't look like a demo app.
+The structure follows [HereLiesAz/Conveyance](https://github.com/HereLiesAz/Conveyance)'s
+manifesto: a semantic color-role vocabulary rather than arbitrary hex
+values (`ConveyColor`'s own doc comment: "match your brand colors to
+these roles, not to arbitrary hex values"), and shape as a deliberate
+signal -- `Theme.kt`'s cut-corner button shape follows `ConveyShape.Cut`'s
+own rationale for that token to the letter ("mechanical, precise,
+systematic... developer tools, system UI, anything that signals this is
+infrastructure, not content"). Conveyance's own Compose library
+(`conveyance-compose`/`convey`) isn't wired in directly as a dependency:
+it's unpublished, and its multi-target Gradle modules require an Android
+SDK just to configure, which this wasmJs-only project has no other
+reason to need.
+
+The UI's own typeface is [Azrienoch](https://github.com/HereLiesAz/Azrienoch)
+(SIL OFL 1.1; `licenses/Azrienoch-OFL.txt` travels with the compiled font
+here), the multiplex variable font this tool exists to help shape --
+loaded the same way Conveyance's own `ConveyType.kt` loads it, via
+Compose Multiplatform's resource-based `Font()`. This project's pinned
+Compose Multiplatform version (1.7.3) predates the `Font(variationSettings
+= ...)` overload Conveyance's own loader uses, so `Type.kt` renders
+Azrienoch at its single default instance rather than baking a live
+`wght`/`wdth` point -- see that file's doc comment.
 
 ## Known gaps
 

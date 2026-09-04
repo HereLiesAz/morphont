@@ -17,17 +17,20 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import kotlin.math.abs
 
-private val bgColor = Color(0xFF111111)
-private val outlineFill = Color(0xFFDDDDDD).copy(alpha = 0.55f)
-private val outlineStroke = Color(0xFF888888)
-private val baselineColor = Color(0xFF224422)
-private val ctrlLineColor = Color(0xFF555555)
-private val onCurveColor = Color(0xFF4EA1FF)
-private val offCurveColor = Color(0xFFFF9D4E)
-private val selectedColor = Color(0xFFFFE14E)
-private val rubberFill = Color(0xFF4EA1FF).copy(alpha = 0.15f)
-private val rubberStroke = Color(0xFF4EA1FF)
-private val pathCurveColor = Color(0xFF4EC9FF).copy(alpha = 0.65f)
+// Strictly monochromatic: on-curve/off-curve/selected points are distinguished by fill vs.
+// hollow and by size, never by hue -- see Theme.kt's doc comment on why.
+private val bgColor = Color(0xFF0A0A0A)
+private val outlineFill = Color(0xFFEDEDED).copy(alpha = 0.55f)
+private val outlineStroke = Color(0xFF9A9A9A)
+private val baselineColor = Color(0xFF2A2A2A)
+private val ctrlLineColor = Color(0xFF4A4A4A)
+private val onCurveColor = Color(0xFFEDEDED)
+private val offCurveColor = Color(0xFF8A8A8A)
+private val selectedFill = Color(0xFFEDEDED)
+private val selectedRing = Color(0xFF0A0A0A)
+private val rubberFill = Color(0xFFEDEDED).copy(alpha = 0.12f)
+private val rubberStroke = Color(0xFFEDEDED)
+private val pathCurveColor = Color(0xFFBFBFBF).copy(alpha = 0.7f)
 
 /**
  * One anchor's editable canvas: renders the outline, control-point handles
@@ -117,12 +120,17 @@ fun AnchorCanvas(
             c.points.forEachIndexed { pi, p ->
                 val selected = (ci to pi) in state.selection
                 val center = map(p.x, p.y)
-                val color = if (selected) selectedColor else if (p.onCurve) onCurveColor else offCurveColor
-                if (p.onCurve) {
-                    drawCircle(color, radius = 5f, center = center)
-                    drawCircle(Color.White, radius = 5f, center = center, style = Stroke(width = 0.6f))
+                if (selected) {
+                    // A "target" mark -- filled, with a punched-out ring -- instead of a
+                    // third hue, so selection reads as a state change, not a new color.
+                    val radius = if (p.onCurve) 6f else 4.5f
+                    drawCircle(selectedFill, radius = radius, center = center)
+                    drawCircle(selectedRing, radius = radius * 0.5f, center = center)
+                } else if (p.onCurve) {
+                    drawCircle(onCurveColor, radius = 5f, center = center)
+                    drawCircle(bgColor, radius = 5f, center = center, style = Stroke(width = 0.6f))
                 } else {
-                    drawCircle(color, radius = 3.5f, center = center, style = Stroke(width = 1.5f))
+                    drawCircle(offCurveColor, radius = 3.5f, center = center, style = Stroke(width = 1.5f))
                 }
             }
         }

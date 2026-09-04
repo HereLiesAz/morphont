@@ -10,6 +10,10 @@ plugins {
 group = "com.hereliesaz.morphont"
 version = "0.1.0"
 
+compose.resources {
+    packageOfResClass = "com.hereliesaz.morphont.generated.resources"
+}
+
 repositories {
     google()
     mavenCentral()
@@ -28,6 +32,11 @@ kotlin {
     }
 
     sourceSets {
+        val commonMain by getting {
+            dependencies {
+                implementation(compose.components.resources)
+            }
+        }
         val wasmJsMain by getting {
             dependencies {
                 implementation(compose.runtime)
