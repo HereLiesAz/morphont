@@ -1,0 +1,63 @@
+name: Publish to GitHub Pages
+
+# Builds the Kotlin/Wasm production distribution and publishes it to
+# GitHub Pages every time it changes on the default branch -- so
+# https://<owner>.github.io/morphont/ always reflects the current build,
+# with no local Gradle/JDK setup required to try it.
+#
+# One-time setup this workflow can't do for you: GitHub Pages has to be
+# switched to "GitHub Actions" as its source at least once, in this
+# repo's Settings -> Pages. After that, every run here keeps the site in
+# sync automatically.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build production Wasm distribution
+        run: ./gradlew wasmJsBrowserDistribution --no-daemon
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload distribution as Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/dist/wasmJs/productionExecutable
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
