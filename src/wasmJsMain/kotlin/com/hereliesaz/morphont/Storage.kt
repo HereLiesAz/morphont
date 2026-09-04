@@ -58,6 +58,50 @@ object Storage {
 
     fun glyphExists(name: String): Boolean = readProject().containsKey(name)
 
+    /** Triggers a browser download of the whole project (every glyph) as a single JSON file. */
+    fun exportProject() {
+        val text = json.encodeToString(readProject())
+        val href = "data:application/json;charset=utf-8," + encodeURIComponent(text)
+        val anchor = document.createElement("a") as HTMLAnchorElement
+        anchor.href = href
+        anchor.download = "morphont-project.json"
+        document.body?.appendChild(anchor)
+        anchor.click()
+        document.body?.removeChild(anchor)
+    }
+
+    /**
+     * Opens a file picker for a whole-project JSON file (as written by
+     * [exportProject]); on selection, replaces the entire stored project
+     * with its contents and invokes [onLoaded] with the new glyph name
+     * list. Errors are reported via [onError].
+     */
+    fun importProject(onLoaded: (List<String>) -> Unit, onError: (String) -> Unit) {
+        val input = document.createElement("input") as HTMLInputElement
+        input.type = "file"
+        input.accept = ".json,application/json"
+        input.addEventListener("change", { _: Event ->
+            val file: File? = input.files?.item(0)
+            if (file == null) {
+                onError("No file selected.")
+                return@addEventListener
+            }
+            val reader = FileReader()
+            reader.onload = {
+                try {
+                    val text = reader.result as String
+                    val project = json.decodeFromString<Map<String, Glyph>>(text)
+                    writeProject(project)
+                    onLoaded(project.keys.sorted())
+                } catch (e: Exception) {
+                    onError("Import failed: ${e.message}")
+                }
+            }
+            reader.readAsText(file)
+        })
+        input.click()
+    }
+
     /** Triggers a browser download of [glyph] as a standalone JSON file. */
     fun exportGlyph(name: String, glyph: Glyph) {
         val text = json.encodeToString(glyph)
