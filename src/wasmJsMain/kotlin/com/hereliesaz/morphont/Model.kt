@@ -28,30 +28,52 @@ data class GlyphCorner(
     fun deepCopy() = GlyphCorner(width, contours.map { it.deepCopy() }.toMutableList())
 }
 
-/** The five fixed, hand-editable anchors. Order matters for UI layout. */
-val ANCHORS = listOf("extraThin", "extraBlack", "condensed", "wide", "regular")
-
-val ANCHOR_LABELS = mapOf(
-    "extraThin" to "Extra Thin",
-    "extraBlack" to "Extra Black",
-    "condensed" to "Condensed",
-    "wide" to "Wide",
-    "regular" to "Regular",
-)
-
-/** The four single-axis extremes, i.e. every anchor except `regular`. */
-val CORNER_ANCHORS = ANCHORS.filter { it != "regular" }
-
 /**
- * The two axes each anchor pair sweeps. Each pair passes exactly through
- * Regular at its midpoint by construction (see [axisInterp]) -- these are
- * the only two anchor pairs for which that's true, since extraThin/
- * extraBlack vary weight alone and condensed/wide vary width alone.
+ * One variable-font axis Morphont can shape by hand: an OpenType axis tag
+ * (registered, like `wght`, or custom, like Azrienoch's own `SERF`), and
+ * the two hand-drawn extreme anchors that sweep it -- named `<tag>_lo`/
+ * `<tag>_hi` so a saved project stays keyed the same way regardless of
+ * how many axes are defined. Every axis shares the single `regular`
+ * anchor as its own midpoint (see [Interpolation.kt]'s `axisInterp`).
  */
-enum class Axis(val lo: String, val hi: String, val label: String) {
-    WEIGHT("extraThin", "extraBlack", "Weight: Extra Thin -> Extra Black"),
-    WIDTH("condensed", "wide", "Width: Condensed -> Wide"),
+data class Axis(val tag: String, val label: String, val loLabel: String, val hiLabel: String) {
+    val lo: String get() = "${tag}_lo"
+    val hi: String get() = "${tag}_hi"
+
+    /** e.g. "Weight: Extra Thin -> Extra Black", for the axis picker. */
+    val toggleLabel: String get() = "$label: $loLabel -> $hiLabel"
+
+    companion object {
+        val WEIGHT = Axis("wght", "Weight", "Extra Thin", "Extra Black")
+        val WIDTH = Axis("wdth", "Width", "Condensed", "Wide")
+        val SERIF = Axis("SERF", "Serif", "Sans", "Slab")
+
+        /**
+         * Every axis Morphont currently exposes for hand-editing, in UI order.
+         * Roboto Flex's own remaining axes (`GRAD`, `slnt`, `opsz`, `XTRA`,
+         * `XOPQ`, `YOPQ`, `YTLC`, `YTUC`, `YTAS`, `YTDE`, `YTFI`) are a
+         * planned fast-follow, not yet added here -- this list, and every
+         * anchor/interpolation/import path built on it, is already
+         * N-axis-general; adding one is only ever a matter of appending
+         * another [Axis] value.
+         */
+        val ALL = listOf(WEIGHT, WIDTH, SERIF)
+    }
 }
+
+/** Every hand-editable anchor: each axis's lo/hi extremes, in axis order, plus the one shared Regular. */
+val ANCHORS: List<String> = Axis.ALL.flatMap { listOf(it.lo, it.hi) } + "regular"
+
+val ANCHOR_LABELS: Map<String, String> = buildMap {
+    for (axis in Axis.ALL) {
+        put(axis.lo, axis.loLabel)
+        put(axis.hi, axis.hiLabel)
+    }
+    put("regular", "Regular")
+}
+
+/** Every anchor except `regular` -- the hand-drawn extremes of every axis. */
+val CORNER_ANCHORS = ANCHORS.filter { it != "regular" }
 
 @Serializable
 data class Glyph(

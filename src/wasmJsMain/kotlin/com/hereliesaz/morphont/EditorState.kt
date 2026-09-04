@@ -1,6 +1,7 @@
 package com.hereliesaz.morphont
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
@@ -91,17 +92,25 @@ class AnchorState(initial: GlyphCorner) {
     }
 }
 
-/** Overall application state: the current glyph's five anchors, preview and UI selections. */
+/** Overall application state: every axis's anchors, preview and UI selections. */
 class AppState {
     val anchors: Map<String, AnchorState> = ANCHORS.associateWith { AnchorState(GlyphCorner()) }
 
-    var activeAnchor by mutableStateOf("extraThin")
+    var activeAnchor by mutableStateOf(Axis.WEIGHT.lo)
 
-    var previewWeight by mutableStateOf(0.5f)
-    var previewWidth by mutableStateOf(0.5f)
+    /** 0..1 position per axis tag, for the read-only Preview panel. Starts at Regular (0.5) everywhere. */
+    val previewValues = mutableStateMapOf<String, Float>().apply {
+        Axis.ALL.forEach { put(it.tag, 0.5f) }
+    }
 
-    /** Which of the two meaningful sweeps the travel-path overlay shows -- the only pairs that pass through Regular by construction. */
-    var pathAxis by mutableStateOf(Axis.WEIGHT)
+    /**
+     * Which axis is currently being hand-edited: drives both which lo/hi
+     * anchor pair the two corner panels show, and which axis's travel-path
+     * overlay the Regular panel draws -- the only pairs guaranteed to pass
+     * through Regular by construction, and naturally the same axis a
+     * designer editing one wants to see the other for.
+     */
+    var selectedAxis by mutableStateOf(Axis.WEIGHT)
 
     var currentGlyphName by mutableStateOf<String?>(null)
     var glyphNames by mutableStateOf<List<String>>(emptyList())
@@ -138,15 +147,17 @@ class AppState {
         corners = cornersSnapshot().mapValues { it.value.deepCopy() }.toMutableMap(),
     )
 
-    /** Copies the active anchor's outline into the other four, seeding matching topology. */
+    /** Copies the active anchor's outline into every other anchor, seeding matching topology. */
     fun copyActiveToOthers() {
         val src = anchors.getValue(activeAnchor)
+        var count = 0
         for (name in ANCHORS) {
             if (name == activeAnchor) continue
             val dst = anchors.getValue(name)
             dst.pushHistory()
             dst.loadFresh(src.glyph.deepCopy())
+            count++
         }
-        setStatus("Copied $activeAnchor's outline to the other four anchors -- reshape each toward its extreme without adding or removing points.")
+        setStatus("Copied ${ANCHOR_LABELS[activeAnchor]}'s outline to the other $count anchor(s) -- reshape each toward its extreme without adding or removing points.")
     }
 }

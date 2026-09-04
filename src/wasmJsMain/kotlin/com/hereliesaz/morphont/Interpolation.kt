@@ -63,45 +63,59 @@ fun compatibilityIssue(glyphs: Map<String, GlyphCorner?>, names: List<String> = 
 }
 
 /**
- * Five shapes are drawn total, each varying only ONE axis from the
- * center: extraThin/extraBlack are the weight extremes at regular width;
- * condensed/wide are the width extremes at regular weight; regular sits
- * at both axes' center. This is deliberately NOT a 2x2 grid of four joint
- * corners (thin+condensed, thin+wide, etc.) -- nobody draws a "thin AND
- * condensed simultaneously" shape here, and a real variable font's own
- * named instances (Thin, Black, Regular Condensed, ...) are structured
- * the same single-axis-from-center way, not as joint corners either.
+ * `2 * axes.size + 1` shapes are drawn total, each varying only ONE axis
+ * from the center: each axis's own lo/hi extremes at every other axis's
+ * regular value, and the one shared Regular at every axis's center. This
+ * is deliberately NOT a joint grid of simultaneous corners (thin+condensed,
+ * thin+condensed+slab-serif, etc.) -- nobody draws a "thin AND condensed
+ * simultaneously" shape here, and a real variable font's own named
+ * instances (Thin, Black, Regular Condensed, ...) are structured the same
+ * single-axis-from-center way, not as joint corners either.
  *
- * The interpolated value at (wght, wdth) is the weight axis's forced-
- * parabola curve (see [axisInterp]) plus the width axis's, minus Regular
- * once so it isn't counted twice -- an additive combination, the same
- * "sum the per-axis deltas from default" model real OpenType variable
- * fonts use internally (gvar tuples are literally added together). This
- * reproduces all five anchors exactly along their own axis; away from
- * both axes (e.g. simultaneously thin AND condensed) it's a reasoned
- * extrapolation, not a measurement, since no anchor was ever drawn there.
+ * The interpolated value at a given point in [axisValues] is the sum of
+ * every axis's own forced-parabola curve (see [axisInterp]), minus Regular
+ * `axes.size - 1` times so it isn't counted once per axis -- an additive
+ * combination, the same "sum the per-axis deltas from default" model real
+ * OpenType variable fonts use internally (gvar tuples are literally added
+ * together). This reproduces every anchor exactly along its own axis;
+ * away from every axis (e.g. simultaneously thin AND condensed) it's a
+ * reasoned extrapolation, not a measurement, since no anchor was ever
+ * drawn there.
  *
- * Requires [glyphs] to already be point-compatible; see
- * [compatibilityIssue].
+ * [axisValues] maps each axis's tag (see [Axis.tag]) to its 0..1 position;
+ * an axis missing from the map defaults to 0.5 (Regular). Requires
+ * [glyphs] to already be point-compatible; see [compatibilityIssue].
  */
-fun interpolateGlyph(glyphs: Map<String, GlyphCorner>, wght: Float, wdth: Float): GlyphCorner {
-    val gThin = glyphs.getValue("extraThin")
-    val gBlack = glyphs.getValue("extraBlack")
-    val gCond = glyphs.getValue("condensed")
-    val gWide = glyphs.getValue("wide")
+fun interpolateGlyph(
+    glyphs: Map<String, GlyphCorner>,
+    axisValues: Map<String, Float>,
+    axes: List<Axis> = Axis.ALL,
+): GlyphCorner {
     val gReg = glyphs.getValue("regular")
+    val regularCountedExtra = (axes.size - 1).coerceAtLeast(0)
 
-    val outWidth = axisInterp(gThin.width, gBlack.width, gReg.width, wght) +
-        axisInterp(gCond.width, gWide.width, gReg.width, wdth) - gReg.width
+    var outWidth = 0f
+    for (axis in axes) {
+        val t = axisValues[axis.tag] ?: 0.5f
+        val gLo = glyphs.getValue(axis.lo)
+        val gHi = glyphs.getValue(axis.hi)
+        outWidth += axisInterp(gLo.width, gHi.width, gReg.width, t)
+    }
+    outWidth -= regularCountedExtra * gReg.width
 
     val outContours = gReg.contours.mapIndexed { ci, c ->
         val pts = c.points.mapIndexed { pi, pReg ->
-            val pThin = gThin.contours[ci].points[pi]
-            val pBlack = gBlack.contours[ci].points[pi]
-            val pCond = gCond.contours[ci].points[pi]
-            val pWide = gWide.contours[ci].points[pi]
-            val x = axisInterp(pThin.x, pBlack.x, pReg.x, wght) + axisInterp(pCond.x, pWide.x, pReg.x, wdth) - pReg.x
-            val y = axisInterp(pThin.y, pBlack.y, pReg.y, wght) + axisInterp(pCond.y, pWide.y, pReg.y, wdth) - pReg.y
+            var x = 0f
+            var y = 0f
+            for (axis in axes) {
+                val t = axisValues[axis.tag] ?: 0.5f
+                val pLo = glyphs.getValue(axis.lo).contours[ci].points[pi]
+                val pHi = glyphs.getValue(axis.hi).contours[ci].points[pi]
+                x += axisInterp(pLo.x, pHi.x, pReg.x, t)
+                y += axisInterp(pLo.y, pHi.y, pReg.y, t)
+            }
+            x -= regularCountedExtra * pReg.x
+            y -= regularCountedExtra * pReg.y
             Pt(x, y, pReg.onCurve, pReg.smooth)
         }.toMutableList()
         ContourData(pts)

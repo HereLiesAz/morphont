@@ -26,14 +26,14 @@ import androidx.compose.ui.unit.sp
 data class TravelPathOverlay(val segments: List<Triple<Offset, Offset, Offset>>)
 
 /**
- * Builds the travel-path overlay for the currently picked axis ([AppState.pathAxis]),
- * or null if either of that axis's two anchors isn't loaded or the trio
- * isn't point-compatible with Regular (same silent-skip behavior as the
- * original tool -- the panel's own mismatch text already explains
- * incompatibility).
+ * Builds the travel-path overlay for the currently picked axis
+ * ([AppState.selectedAxis]), or null if either of that axis's two anchors
+ * isn't loaded or the trio isn't point-compatible with Regular (same
+ * silent-skip behavior as the original tool -- the panel's own mismatch
+ * text already explains incompatibility).
  */
 fun computeTravelPathOverlay(app: AppState): TravelPathOverlay? {
-    val axis = app.pathAxis
+    val axis = app.selectedAxis
     val regular = app.anchors.getValue("regular").glyph
     val a = app.anchors[axis.lo]?.glyph ?: return null
     val b = app.anchors[axis.hi]?.glyph ?: return null
@@ -67,7 +67,7 @@ fun AnchorToolbar(state: AnchorState, modifier: Modifier = Modifier) {
 @Composable
 fun AxisToggle(value: Axis, onSelect: (Axis) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (axis in Axis.entries) {
+        for (axis in Axis.ALL) {
             MonoButton(onClick = { onSelect(axis) }, selected = axis == value) {
                 Text(axis.label, fontSize = 11.sp)
             }
@@ -103,7 +103,7 @@ fun AnchorPanel(
         }
         if (anchorName == "regular") {
             Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AxisToggle(app.pathAxis) { app.pathAxis = it }
+                AxisToggle(app.selectedAxis) { app.selectedAxis = it }
             }
         }
         Box(Modifier.weight(1f, fill = true).fillMaxWidth()) {
@@ -131,12 +131,18 @@ fun PreviewPanel(app: AppState, modifier: Modifier = Modifier) {
             Text("Preview (read-only, interpolated)", color = Mono.onTertiary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
         Column(Modifier.padding(8.dp)) {
-            Text("Weight: extra thin ${fmt2(app.previewWeight)} extra black", fontSize = 10.sp, color = Mono.inkDim)
-            Slider(value = app.previewWeight, onValueChange = { app.previewWeight = it }, valueRange = 0f..1f, colors = monoSliderColors())
-            Text("Width: condensed ${fmt2(app.previewWidth)} wide", fontSize = 10.sp, color = Mono.inkDim)
-            Slider(value = app.previewWidth, onValueChange = { app.previewWidth = it }, valueRange = 0f..1f, colors = monoSliderColors())
-            MonoButton(onClick = { app.previewWeight = 0.5f; app.previewWidth = 0.5f }) {
-                Text("Jump to regular (0.5 / 0.5)", fontSize = 11.sp)
+            for (axis in Axis.ALL) {
+                val t = app.previewValues[axis.tag] ?: 0.5f
+                Text("${axis.label}: ${axis.loLabel} ${fmt2(t)} ${axis.hiLabel}", fontSize = 10.sp, color = Mono.inkDim)
+                Slider(
+                    value = t,
+                    onValueChange = { app.previewValues[axis.tag] = it },
+                    valueRange = 0f..1f,
+                    colors = monoSliderColors(),
+                )
+            }
+            MonoButton(onClick = { Axis.ALL.forEach { app.previewValues[it.tag] = 0.5f } }) {
+                Text("Jump to regular", fontSize = 11.sp)
             }
         }
 
@@ -145,14 +151,14 @@ fun PreviewPanel(app: AppState, modifier: Modifier = Modifier) {
         Box(Modifier.weight(1f, fill = true).fillMaxWidth()) {
             if (issue != null) {
                 Text(
-                    "! Anchors aren't interpolation-compatible yet:\n$issue\n\nUse \"Copy active anchor's outline to other 4\" to seed matching topology, then reshape each without adding/removing points.",
+                    "! Anchors aren't interpolation-compatible yet:\n$issue\n\nUse \"Copy active anchor's outline to other anchors\" to seed matching topology, then reshape each without adding/removing points.",
                     color = Mono.error,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(8.dp),
                 )
             } else {
-                val inst = interpolateGlyph(corners, app.previewWeight, app.previewWidth)
+                val inst = interpolateGlyph(corners, app.previewValues)
                 Canvas(Modifier.fillMaxSize().background(Mono.ground)) {
                     if (size.width <= 0f || size.height <= 0f) return@Canvas
                     val vb = computeViewBox(inst)

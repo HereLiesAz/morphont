@@ -69,17 +69,18 @@ fun App() {
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
                 )
             }
-            // 3 columns x 2 rows, matching the original tool's layout:
-            //   [Extra Thin] [Condensed] [Regular]
-            //   [Extra Black] [Wide]     [Preview]
+            // 2 columns, the left one swapping to whichever axis is selected
+            // (via the Regular panel's own axis toggle) instead of being
+            // fixed to weight/width -- this is what lets an arbitrary
+            // number of axes share one screen: only the selected axis's
+            // lo/hi panels are ever shown at once, matching Regular's own
+            // travel-path overlay to whichever axis they're editing.
+            //   [Lo (selected axis)] [Regular]
+            //   [Hi (selected axis)] [Preview]
             Row(Modifier.weight(1f).fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AnchorPanel("extraThin", app, modifier = Modifier.weight(1f).fillMaxWidth())
-                    AnchorPanel("extraBlack", app, modifier = Modifier.weight(1f).fillMaxWidth())
-                }
-                Column(Modifier.weight(1f).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AnchorPanel("condensed", app, modifier = Modifier.weight(1f).fillMaxWidth())
-                    AnchorPanel("wide", app, modifier = Modifier.weight(1f).fillMaxWidth())
+                    AnchorPanel(app.selectedAxis.lo, app, modifier = Modifier.weight(1f).fillMaxWidth())
+                    AnchorPanel(app.selectedAxis.hi, app, modifier = Modifier.weight(1f).fillMaxWidth())
                 }
                 Column(Modifier.weight(1f).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     AnchorPanel("regular", app, modifier = Modifier.weight(1f).fillMaxWidth())
@@ -141,7 +142,7 @@ private fun Toolbar(app: AppState) {
         }) { Text("New", fontSize = 12.sp) }
 
         MonoButton(onClick = { app.copyActiveToOthers() }) {
-            Text("Copy ${ANCHOR_LABELS[app.activeAnchor]} to other 4", fontSize = 12.sp)
+            Text("Copy ${ANCHOR_LABELS[app.activeAnchor]} to other ${ANCHORS.size - 1}", fontSize = 12.sp)
         }
         MonoButton(onClick = { app.anchors.getValue(app.activeAnchor).undo() }) {
             Text("Undo (active)", fontSize = 12.sp)
