@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
   pages: write
   id-token: write
 
@@ -40,7 +41,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # GITHUB_ACTOR/GITHUB_TOKEN authenticate against HereLiesAz/convey's GitHub Packages
+      # repository (see build.gradle.kts's convey dependency) -- required even to download a
+      # public package.
       - name: Build production Wasm distribution
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew wasmJsBrowserDistribution --no-daemon
 
       - name: Configure Pages
