@@ -2,13 +2,17 @@ package com.hereliesaz.morphont
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
@@ -32,6 +36,12 @@ import compose.conveyance.tokens.ConveyShape
 
 /** How long an edit has to sit still before autosave writes it -- coalesces a whole drag gesture's frame-by-frame updates into one write. */
 private const val AUTOSAVE_DEBOUNCE_MS = 400L
+
+/** Below this width, the 4-panel grid stacks into one scrollable column instead of a 2x2 grid -- a phone-width viewport, not just a narrowed desktop window. */
+private val MOBILE_BREAKPOINT = 700.dp
+
+/** Each stacked panel's height on a narrow screen -- enough room to actually place points, not an equal quarter-share of a short viewport. */
+private val MOBILE_PANEL_HEIGHT = 420.dp
 
 @Composable
 fun App() {
@@ -69,22 +79,44 @@ fun App() {
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
                 )
             }
-            // 2 columns, the left one swapping to whichever axis is selected
-            // (via the Regular panel's own axis toggle) instead of being
-            // fixed to weight/width -- this is what lets an arbitrary
-            // number of axes share one screen: only the selected axis's
-            // lo/hi panels are ever shown at once, matching Regular's own
-            // travel-path overlay to whichever axis they're editing.
+            // 2 columns on a wide-enough screen, the left one swapping to
+            // whichever axis is selected (via the Regular panel's own axis
+            // toggle) instead of being fixed to weight/width -- this is
+            // what lets an arbitrary number of axes share one screen: only
+            // the selected axis's lo/hi panels are ever shown at once,
+            // matching Regular's own travel-path overlay to whichever axis
+            // they're editing.
             //   [Lo (selected axis)] [Regular]
             //   [Hi (selected axis)] [Preview]
-            Row(Modifier.weight(1f).fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AnchorPanel(app.selectedAxis.lo, app, modifier = Modifier.weight(1f).fillMaxWidth())
-                    AnchorPanel(app.selectedAxis.hi, app, modifier = Modifier.weight(1f).fillMaxWidth())
-                }
-                Column(Modifier.weight(1f).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AnchorPanel("regular", app, modifier = Modifier.weight(1f).fillMaxWidth())
-                    PreviewPanel(app, modifier = Modifier.weight(1f).fillMaxWidth())
+            //
+            // Below MOBILE_BREAKPOINT, that 2x2 grid has no room to draw
+            // in -- each panel needs real width to place points precisely,
+            // not a sliver of a phone screen split four ways. Stack the
+            // same four panels into one scrollable column instead, each
+            // given a fixed, actually-usable height rather than an equal
+            // share of whatever's left.
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                if (maxWidth < MOBILE_BREAKPOINT) {
+                    Column(
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        AnchorPanel(app.selectedAxis.lo, app, modifier = Modifier.fillMaxWidth().height(MOBILE_PANEL_HEIGHT))
+                        AnchorPanel(app.selectedAxis.hi, app, modifier = Modifier.fillMaxWidth().height(MOBILE_PANEL_HEIGHT))
+                        AnchorPanel("regular", app, modifier = Modifier.fillMaxWidth().height(MOBILE_PANEL_HEIGHT))
+                        PreviewPanel(app, modifier = Modifier.fillMaxWidth().height(MOBILE_PANEL_HEIGHT))
+                    }
+                } else {
+                    Row(Modifier.fillMaxSize().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AnchorPanel(app.selectedAxis.lo, app, modifier = Modifier.weight(1f).fillMaxWidth())
+                            AnchorPanel(app.selectedAxis.hi, app, modifier = Modifier.weight(1f).fillMaxWidth())
+                        }
+                        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AnchorPanel("regular", app, modifier = Modifier.weight(1f).fillMaxWidth())
+                            PreviewPanel(app, modifier = Modifier.weight(1f).fillMaxWidth())
+                        }
+                    }
                 }
             }
         }
