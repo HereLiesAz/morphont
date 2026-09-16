@@ -15,11 +15,9 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import kotlin.math.abs
 
-// The outline, guide lines and background stay neutral; on-curve/off-curve/selected points use
-// Theme.kt's Primary/Secondary roles, so the one thing selected right now is also the one thing
-// colored -- Conveyance's "contrasting tone prioritizes implicitly" rule applied to the canvas.
 private val bgColor = Mono.ground
 private val outlineFill = Mono.ink.copy(alpha = 0.55f)
 private val outlineStroke = Mono.inkDim
@@ -34,11 +32,10 @@ private val rubberStroke = Mono.primary
 private val pathCurveColor = Mono.secondary.copy(alpha = 0.8f)
 
 /**
- * One anchor's editable canvas: renders the outline, control-point handles
- * and (for Regular) the travel-path overlay, and handles all pointer
- * interaction -- click/select, shift-click multi-select, drag-to-move,
- * rubber-band select on empty space, and click-to-place while a new
- * contour is being drawn.
+ * Shared editable canvas. [interactionScale] is 1 for the web/mouse
+ * surface and larger on Android; all handles and hit targets are also
+ * density-aware, so a 3x phone screen does not turn a five-pixel point
+ * into a two-millimetre practical joke.
  */
 @Composable
 fun AnchorCanvas(
@@ -47,10 +44,14 @@ fun AnchorCanvas(
     isActive: Boolean,
     onActivate: () -> Unit,
     travelPathOverlay: TravelPathOverlay? = null,
+    interactionScale: Float = 1f,
     modifier: Modifier = Modifier,
 ) {
     var canvasSize by remember { mutableStateOf(Size.Zero) }
     var rubberRect by remember { mutableStateOf<Pair<Offset, Offset>?>(null) }
+    val density = LocalDensity.current.density
+    val uiScale = density * interactionScale
+    val hitRadiusPx = 12f * uiScale
 
     val vb = remember(state.glyph) { computeViewBox(state.glyph) }
 
@@ -58,12 +59,13 @@ fun AnchorCanvas(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { canvasSize = Size(it.width.toFloat(), it.height.toFloat()) }
-            .pointerInput(state, vb, canvasSize) {
+            .pointerInput(state, vb, canvasSize, hitRadiusPx) {
                 if (canvasSize.width <= 0f || canvasSize.height <= 0f) return@pointerInput
                 handleAnchorGestures(
                     state = state,
                     vb = vb,
                     canvasSize = canvasSize,
+                    hitRadiusPx = hitRadiusPx,
                     onActivate = onActivate,
                     onRubberUpdate = { rubberRect = it },
                 )
@@ -74,15 +76,8 @@ fun AnchorCanvas(
         val map: (Float, Float) -> Offset = { x, y -> mapper.toCanvas(x, y) }
 
         drawRect(bgColor, size = size)
+        drawLine(baselineColor, map(-10000f, 0f), map(10000f, 0f), strokeWidth = uiScale.coerceAtLeast(1f))
 
-        // baseline
-        drawLine(baselineColor, map(-10000f, 0f), map(10000f, 0f), strokeWidth = 1f)
-
-        // travel-path overlay (Regular panel only). A quadratic Bezier does
-        // NOT pass through its own control point -- to draw the curve that
-        // actually passes through Regular's point (r) at the midpoint, the
-        // real control point has to be derived via bezierControlFor(), not
-        // r itself.
         travelPathOverlay?.let { overlay ->
             for ((a, r, b) in overlay.segments) {
                 val controlX = bezierControlFor(a.x, b.x, r.x)
@@ -97,41 +92,40 @@ fun AnchorCanvas(
                 drawPath(
                     path,
                     color = pathCurveColor,
-                    style = Stroke(width = 1f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 3f))),
+                    style = Stroke(
+                        width = uiScale.coerceAtLeast(1f),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f * uiScale, 3f * uiScale)),
+                    ),
                 )
-                drawCircle(pathCurveColor, radius = 3f, center = ca, style = Stroke(width = 1f))
-                drawCircle(pathCurveColor, radius = 3f, center = cb, style = Stroke(width = 1f))
+                drawCircle(pathCurveColor, radius = 3f * uiScale, center = ca, style = Stroke(width = uiScale))
+                drawCircle(pathCurveColor, radius = 3f * uiScale, center = cb, style = Stroke(width = uiScale))
             }
         }
 
-        // filled outline
         val outlinePath = buildOutlinePath(state.glyph.contours, map)
         drawPath(outlinePath, color = outlineFill)
-        drawPath(outlinePath, color = outlineStroke, style = Stroke(width = 1f))
+        drawPath(outlinePath, color = outlineStroke, style = Stroke(width = uiScale.coerceAtLeast(1f)))
 
-        // control-point dashed lines + handles
         state.glyph.contours.forEachIndexed { ci, c ->
             val n = c.points.size
             c.points.forEachIndexed { pi, p ->
                 val next = c.points[(pi + 1) % n]
                 if (!p.onCurve || !next.onCurve) {
-                    drawLine(ctrlLineColor, map(p.x, p.y), map(next.x, next.y), strokeWidth = 1f)
+                    drawLine(ctrlLineColor, map(p.x, p.y), map(next.x, next.y), strokeWidth = uiScale.coerceAtLeast(1f))
                 }
             }
             c.points.forEachIndexed { pi, p ->
                 val selected = (ci to pi) in state.selection
                 val center = map(p.x, p.y)
                 if (selected) {
-                    // A "target" mark -- filled, with a punched-out ring -- instead of a
-                    // third hue, so selection reads as a state change, not a new color.
-                    val radius = if (p.onCurve) 6f else 4.5f
+                    val radius = (if (p.onCurve) 6f else 4.5f) * uiScale
                     drawCircle(selectedFill, radius = radius, center = center)
                     drawCircle(selectedRing, radius = radius * 0.5f, center = center)
                 } else if (p.onCurve) {
-                    drawCircle(onCurveColor, radius = 5f, center = center)
-                    drawCircle(bgColor, radius = 5f, center = center, style = Stroke(width = 0.6f))
+                    drawCircle(onCurveColor, radius = 5f * uiScale, center = center)
+                    drawCircle(bgColor, radius = 5f * uiScale, center = center, style = Stroke(width = uiScale.coerceAtLeast(1f)))
                 } else {
-                    drawCircle(offCurveColor, radius = 3.5f, center = center, style = Stroke(width = 1.5f))
+                    drawCircle(offCurveColor, radius = 3.5f * uiScale, center = center, style = Stroke(width = 1.5f * uiScale))
                 }
             }
         }
@@ -142,7 +136,7 @@ fun AnchorCanvas(
             val w = abs(current.x - start.x)
             val h = abs(current.y - start.y)
             drawRect(rubberFill, topLeft = Offset(x0, y0), size = Size(w, h))
-            drawRect(rubberStroke, topLeft = Offset(x0, y0), size = Size(w, h), style = Stroke(width = 1f))
+            drawRect(rubberStroke, topLeft = Offset(x0, y0), size = Size(w, h), style = Stroke(width = uiScale.coerceAtLeast(1f)))
         }
     }
 }

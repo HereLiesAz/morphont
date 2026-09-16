@@ -10,24 +10,15 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * One anchor panel's full pointer-gesture handling: click-to-select,
- * drag-to-move, rubber-band select on empty space, and click-to-place
- * while a new contour is being drawn. Mirrors the
- * mousedown/mousemove/mouseup handling of the original browser tool this
- * was ported from.
- *
- * Known gap vs. the original: shift-click additive/toggle selection isn't
- * implemented here. `PointerEvent.keyboardModifiers.isShiftPressed`,
- * expected to carry this, didn't resolve against this Compose Multiplatform
- * version's wasmJs pointer-input API -- rather than guess at an
- * unconfirmed alternative, this drops shift-multi-select for now.
- * Rubber-band selection (drag from empty space) still covers most
- * multi-select needs.
+ * Pointer handling shared by wasm and Android. [hitRadiusPx] is supplied by
+ * the rendering surface so a mouse can stay precise while a finger gets a
+ * humane target instead of being asked to impersonate a dental instrument.
  */
 suspend fun PointerInputScope.handleAnchorGestures(
     state: AnchorState,
     vb: ViewBox,
     canvasSize: Size,
+    hitRadiusPx: Float = 12f,
     onActivate: () -> Unit,
     onRubberUpdate: (Pair<Offset, Offset>?) -> Unit,
 ) {
@@ -38,10 +29,9 @@ suspend fun PointerInputScope.handleAnchorGestures(
         onActivate()
         val startPos = down.position
 
-        // Draw mode: a single click places a new on-curve point; no drag needed.
         val drawingIndex = state.drawingContourIndex
         if (drawingIndex != null) {
-            val hit = hitTestPoint(state.glyph, mapper, startPos)
+            val hit = hitTestPoint(state.glyph, mapper, startPos, radiusPx = hitRadiusPx)
             if (hit == null) {
                 val font = mapper.toFont(startPos)
                 state.addDrawPoint(font.x, font.y)
@@ -51,7 +41,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
             return@awaitEachGesture
         }
 
-        val hitKey = hitTestPoint(state.glyph, mapper, startPos)
+        val hitKey = hitTestPoint(state.glyph, mapper, startPos, radiusPx = hitRadiusPx)
         if (hitKey != null) {
             if (hitKey !in state.selection) state.selection = setOf(hitKey)
             val origGlyph = state.glyph.deepCopy()
