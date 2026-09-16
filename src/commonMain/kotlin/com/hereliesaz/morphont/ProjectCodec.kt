@@ -32,8 +32,12 @@ object ProjectCodec {
 
     fun decodeGlyph(text: String): Glyph = migrateGlyph(json.decodeFromString(text))
 
-    fun encodeProject(project: Map<String, Glyph>): String =
-        json.encodeToString(project.toSortedMap())
+    fun encodeProject(project: Map<String, Glyph>): String {
+        val ordered = project.entries
+            .sortedBy { it.key }
+            .associate { (name, glyph) -> name to glyph }
+        return json.encodeToString(ordered)
+    }
 
     fun decodeProject(text: String): MutableMap<String, Glyph> =
         json.decodeFromString<Map<String, Glyph>>(text)

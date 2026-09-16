@@ -26,7 +26,7 @@ repositories {
 kotlin {
     android {
         namespace = "com.hereliesaz.morphont.shared"
-        compileSdk = 36
+        compileSdk = 37
         minSdk = 24
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
@@ -34,6 +34,7 @@ kotlin {
         androidResources {
             enable = true
         }
+        withHostTest {}
     }
 
     @OptIn(ExperimentalWasmDsl::class)
@@ -55,7 +56,7 @@ kotlin {
                 implementation(compose.material3)
                 implementation(compose.ui)
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-                implementation("compose.conveyance:convey:5cd5334")
+                implementation("compose.conveyance:convey:6f467bb")
             }
         }
         val commonTest by getting {
@@ -78,6 +79,11 @@ kotlin {
 
 tasks.register("parityCheck") {
     group = "verification"
-    description = "Builds both wasm and Android application surfaces from the shared editor core."
-    dependsOn("wasmJsBrowserDistribution", ":androidApp:assembleDebug")
+    description = "Builds Android and wasm and runs the shared test suite on both targets."
+    dependsOn(
+        "wasmJsBrowserDistribution",
+        ":androidApp:assembleDebug",
+        "testAndroidHostTest",
+        "wasmJsBrowserTest",
+    )
 }

@@ -120,7 +120,7 @@ object Storage {
         input.type = "file"
         input.accept = accept
         input.addEventListener("change", { _: Event ->
-            val file: File? = input.files?.item(0) ?: return@addEventListener
+            val file = input.files?.item(0) ?: return@addEventListener
             val reader = FileReader()
             reader.onload = { onLoaded(reader.result as String) }
             reader.readAsText(file)
