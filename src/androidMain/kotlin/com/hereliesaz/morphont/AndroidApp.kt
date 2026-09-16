@@ -2,6 +2,7 @@ package com.hereliesaz.morphont
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -25,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -34,8 +37,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import compose.conveyance.ConveySystem
 import compose.conveyance.tokens.ConveyShape
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val ANDROID_AUTOSAVE_DEBOUNCE_MS = 400L
 
@@ -58,11 +64,13 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
     MorphontTheme {
         ConveySystem {
             val app = remember { AppState() }
+            val scope = rememberCoroutineScope()
             var pane by remember { mutableStateOf(MobilePane.REGULAR) }
             var glyphMenuOpen by remember { mutableStateOf(false) }
             var actionMenuOpen by remember { mutableStateOf(false) }
             var showNewGlyph by remember { mutableStateOf(false) }
             var newName by remember { mutableStateOf("") }
+            var importingFont by remember { mutableStateOf(false) }
 
             LaunchedEffect(Unit) {
                 snapshotFlow { app.currentGlyphName to app.toGlyph() }
@@ -107,6 +115,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                     val glyph = Glyph()
                                     storage.saveGlyph(name, glyph)
                                     app.loadGlyph(name, glyph)
+                                    app.setStatus("Created \"$name\" — start with New contour.")
                                     newName = ""
                                     showNewGlyph = false
                                     pane = MobilePane.REGULAR
@@ -152,7 +161,11 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
             ) { insets ->
                 Column(Modifier.fillMaxSize().padding(insets).background(Mono.ground)) {
                     Row(
-                        Modifier.fillMaxWidth().background(Mono.panel).padding(horizontal = 8.dp, vertical = 6.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .background(Mono.panel)
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Box {
@@ -178,13 +191,14 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                         MonoButton(onClick = { showNewGlyph = true }) { Text("New") }
 
                         Box {
+                            val activeLabel = ANCHOR_LABELS[app.activeAnchor] ?: app.activeAnchor
                             MonoButton(onClick = { actionMenuOpen = true }) { Text("Actions") }
                             DropdownMenu(expanded = actionMenuOpen, onDismissRequest = { actionMenuOpen = false }) {
-                                DropdownMenuItem(text = { Text("Copy active outline to all anchors") }, onClick = {
+                                DropdownMenuItem(text = { Text("Copy $activeLabel outline to all anchors") }, onClick = {
                                     actionMenuOpen = false
                                     app.copyActiveToOthers()
                                 })
-                                DropdownMenuItem(text = { Text("Undo active anchor") }, onClick = {
+                                DropdownMenuItem(text = { Text("Undo $activeLabel") }, onClick = {
                                     actionMenuOpen = false
                                     app.anchors.getValue(app.activeAnchor).undo()
                                 })
@@ -247,22 +261,40 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                         { app.setStatus(it, true) },
                                     )
                                 })
-                                DropdownMenuItem(text = { Text("Import variable font (.ttf)") }, onClick = {
-                                    actionMenuOpen = false
-                                    files.openTtf(
-                                        { bytes ->
-                                            try {
-                                                val result = buildFamilyFromVariableFont(bytes)
-                                                storage.saveGlyphs(result.glyphs)
-                                                app.glyphNames = storage.listGlyphNames()
-                                                app.setStatus("Imported ${result.glyphs.size} character(s) from variable font.")
-                                            } catch (e: Exception) {
-                                                app.setStatus("Import failed: ${e.message}", true)
-                                            }
-                                        },
-                                        { app.setStatus(it, true) },
-                                    )
-                                })
+                                DropdownMenuItem(
+                                    enabled = !importingFont,
+                                    text = { Text(if (importingFont) "Importing variable font…" else "Import variable font (.ttf)") },
+                                    onClick = {
+                                        actionMenuOpen = false
+                                        files.openTtf(
+                                            { bytes ->
+                                                importingFont = true
+                                                app.setStatus("Importing variable font…")
+                                                scope.launch {
+                                                    try {
+                                                        val result = withContext(Dispatchers.Default) {
+                                                            buildFamilyFromVariableFont(bytes)
+                                                        }
+                                                        storage.saveGlyphs(result.glyphs)
+                                                        app.glyphNames = storage.listGlyphNames()
+                                                        val skippedNote = if (result.skippedCharacters.isEmpty()) "" else
+                                                            " Skipped: " + result.skippedCharacters.joinToString { (cp, reason) ->
+                                                                "U+${cp.toString(16)} ($reason)"
+                                                            }
+                                                        app.setStatus(
+                                                            "Imported ${result.glyphs.size} character(s) from the variable font.$skippedNote",
+                                                        )
+                                                    } catch (e: Exception) {
+                                                        app.setStatus("Import failed: ${e.message}", true)
+                                                    } finally {
+                                                        importingFont = false
+                                                    }
+                                                }
+                                            },
+                                            { app.setStatus(it, true) },
+                                        )
+                                    },
+                                )
                             }
                         }
                     }
