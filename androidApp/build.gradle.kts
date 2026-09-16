@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "com.hereliesaz.morphont"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.hereliesaz.morphont"
