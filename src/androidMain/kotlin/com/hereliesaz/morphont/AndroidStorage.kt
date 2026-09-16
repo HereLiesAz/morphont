@@ -4,6 +4,7 @@ import android.content.Context
 
 private const val PREFS_NAME = "morphont"
 private const val PROJECT_KEY = "project"
+private const val LAST_GLYPH_KEY = "last_glyph"
 
 /** Android persistence for the same JSON project contract the PWA uses. */
 class AndroidStorage(context: Context) {
@@ -28,6 +29,14 @@ class AndroidStorage(context: Context) {
 
     fun glyphExists(name: String): Boolean = readProject().containsKey(name)
 
+    fun lastGlyphName(): String? = prefs.getString(LAST_GLYPH_KEY, null)
+
+    fun setLastGlyphName(name: String?) {
+        val edit = prefs.edit()
+        if (name == null) edit.remove(LAST_GLYPH_KEY) else edit.putString(LAST_GLYPH_KEY, name)
+        edit.apply()
+    }
+
     fun saveGlyph(name: String, glyph: Glyph) {
         val project = readProject()
         project[name] = glyph
@@ -45,6 +54,7 @@ class AndroidStorage(context: Context) {
     fun importProjectText(text: String): List<String> {
         val project = ProjectCodec.decodeProject(text)
         writeProject(project)
+        setLastGlyphName(null)
         return project.keys.sorted()
     }
 
