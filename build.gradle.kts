@@ -34,6 +34,7 @@ kotlin {
         androidResources {
             enable = true
         }
+        withHostTest {}
     }
 
     @OptIn(ExperimentalWasmDsl::class)
@@ -78,6 +79,11 @@ kotlin {
 
 tasks.register("parityCheck") {
     group = "verification"
-    description = "Builds both wasm and Android application surfaces from the shared editor core."
-    dependsOn("wasmJsBrowserDistribution", ":androidApp:assembleDebug")
+    description = "Builds Android and wasm and runs the shared test suite on both targets."
+    dependsOn(
+        "wasmJsBrowserDistribution",
+        ":androidApp:assembleDebug",
+        "testAndroidHostTest",
+        "wasmJsBrowserTest",
+    )
 }
