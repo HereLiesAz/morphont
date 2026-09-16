@@ -24,7 +24,7 @@ repositories {
 }
 
 kotlin {
-    androidLibrary {
+    android {
         namespace = "com.hereliesaz.morphont.shared"
         compileSdk = 36
         minSdk = 24
