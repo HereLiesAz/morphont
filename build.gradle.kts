@@ -67,6 +67,7 @@ kotlin {
         val wasmJsMain by getting {
             dependencies {
                 implementation("org.jetbrains.kotlinx:kotlinx-browser:0.3")
+                implementation("com.juul.indexeddb:core:0.12.0")
             }
         }
         val androidMain by getting {
