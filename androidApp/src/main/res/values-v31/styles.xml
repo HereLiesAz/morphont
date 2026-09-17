@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.Morphont" parent="Theme.Morphont.Base">
+        <item name="android:windowBackground">@color/morphont_ground</item>
+        <item name="android:windowSplashScreenBackground">@color/morphont_ground</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_morphont_mark</item>
+        <item name="android:windowSplashScreenAnimationDuration">250</item>
+    </style>
+</resources>
