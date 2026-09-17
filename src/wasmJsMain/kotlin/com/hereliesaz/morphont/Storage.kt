@@ -35,8 +35,10 @@ private external interface StoredGlyph : JsAny {
     var json: String
 }
 
+private fun emptyStoredGlyph(): StoredGlyph = js("({})")
+
 private fun storedGlyph(name: String, glyph: Glyph): StoredGlyph {
-    val record = js("({})") as StoredGlyph
+    val record = emptyStoredGlyph()
     record.name = name
     record.json = ProjectCodec.encodeGlyph(glyph)
     return record
@@ -261,11 +263,9 @@ object Storage {
                 initialize()
                 block()
             } catch (e: Throwable) {
-                val message = storageMessage(label, e)
-                window.console.error(message)
                 // Persistence failures are exceptional and risk data loss. Make them visible instead
                 // of allowing an uncaught DOMException to freeze or silently break the editor.
-                window.alert(message)
+                window.alert(storageMessage(label, e))
             }
         }
     }
@@ -298,7 +298,6 @@ object Storage {
             val file = input.files?.item(0) ?: return@addEventListener
             val reader = FileReader()
             reader.onload = { onLoaded(reader.result as String) }
-            reader.onerror = { window.console.error("Morphont could not read the selected file.") }
             reader.readAsText(file)
         })
         input.click()
