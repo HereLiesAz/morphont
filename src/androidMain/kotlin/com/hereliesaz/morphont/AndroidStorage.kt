@@ -5,6 +5,9 @@ import android.content.Context
 private const val PREFS_NAME = "morphont"
 private const val PROJECT_KEY = "project"
 private const val LAST_GLYPH_KEY = "last_glyph"
+private const val SELECTED_AXIS_KEY = "selected_axis"
+private const val MOBILE_PANE_KEY = "mobile_pane"
+private const val PREVIEW_VALUE_PREFIX = "preview_"
 
 /** Android persistence for the same JSON project contract the PWA uses. */
 class AndroidStorage(context: Context) {
@@ -34,6 +37,31 @@ class AndroidStorage(context: Context) {
     fun setLastGlyphName(name: String?) {
         val edit = prefs.edit()
         if (name == null) edit.remove(LAST_GLYPH_KEY) else edit.putString(LAST_GLYPH_KEY, name)
+        edit.apply()
+    }
+
+    fun selectedAxisTag(): String? = prefs.getString(SELECTED_AXIS_KEY, null)
+
+    fun setSelectedAxisTag(tag: String) {
+        prefs.edit().putString(SELECTED_AXIS_KEY, tag).apply()
+    }
+
+    fun mobilePaneName(): String? = prefs.getString(MOBILE_PANE_KEY, null)
+
+    fun setMobilePaneName(name: String) {
+        prefs.edit().putString(MOBILE_PANE_KEY, name).apply()
+    }
+
+    fun previewValue(tag: String): Float? {
+        val key = PREVIEW_VALUE_PREFIX + tag
+        return if (prefs.contains(key)) prefs.getFloat(key, 0.5f) else null
+    }
+
+    fun setPreviewValues(values: Map<String, Float>) {
+        val edit = prefs.edit()
+        values.forEach { (tag, value) ->
+            edit.putFloat(PREVIEW_VALUE_PREFIX + tag, value.coerceIn(0f, 1f))
+        }
         edit.apply()
     }
 
