@@ -27,7 +27,7 @@ jobs:
       - name: Publish installable Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: morphont-android-debug-${{ github.sha }}
+          name: morphont-android-debug-${{ github.event.pull_request.head.sha || github.sha }}
           path: androidApp/build/outputs/apk/debug/androidApp-debug.apk
           if-no-files-found: error
           retention-days: 14
