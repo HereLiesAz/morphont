@@ -49,13 +49,40 @@ class AnchorState(initial: GlyphCorner) {
         history.add(new.deepCopy())
     }
 
+    /**
+     * Starts a contour when idle. If the editor is already drawing, the same
+     * action finishes that contour instead. The toggle behavior keeps older
+     * callers functional while surfaces with room can label the action
+     * explicitly as "Finish contour".
+     */
     fun startNewContour() {
+        if (drawingContourIndex != null) {
+            finishContour()
+            return
+        }
         pushHistory()
         val updated = glyph.deepCopy()
         updated.contours.add(ContourData())
         drawingContourIndex = updated.contours.size - 1
         selection = emptySet()
         glyph = updated
+    }
+
+    /** Leaves point-placement mode. Empty accidental contours are discarded. */
+    fun finishContour() {
+        val ci = drawingContourIndex ?: return
+        val updated = glyph.deepCopy()
+        val contour = updated.contours.getOrNull(ci)
+        if (contour != null && contour.points.isEmpty()) {
+            updated.contours.removeAt(ci)
+            glyph = updated
+        } else {
+            // Capture the completed geometry so the next undo removes only
+            // the most recent edit instead of jumping back past the contour.
+            pushHistory()
+        }
+        drawingContourIndex = null
+        selection = emptySet()
     }
 
     fun addDrawPoint(x: Float, y: Float) {
@@ -96,7 +123,9 @@ class AnchorState(initial: GlyphCorner) {
 class AppState {
     val anchors: Map<String, AnchorState> = ANCHORS.associateWith { AnchorState(GlyphCorner()) }
 
-    var activeAnchor by mutableStateOf(Axis.WEIGHT.lo)
+    // Regular is the natural starting point: draw one usable outline there,
+    // copy its topology outward, then reshape the extremes.
+    var activeAnchor by mutableStateOf("regular")
 
     /** 0..1 position per axis tag, for the read-only Preview panel. Starts at Regular (0.5) everywhere. */
     val previewValues = mutableStateMapOf<String, Float>().apply {
@@ -132,12 +161,14 @@ class AppState {
         for (anchor in ANCHORS) {
             anchors.getValue(anchor).loadFresh(glyph.corners[anchor]?.deepCopy() ?: GlyphCorner())
         }
+        activeAnchor = "regular"
         setStatus("Loaded \"$name\".")
     }
 
     /** Clears the open glyph (used after loading a whole project, since the previously open glyph may no longer exist under that name). */
     fun clearEditor() {
         currentGlyphName = null
+        activeAnchor = "regular"
         for (anchor in ANCHORS) {
             anchors.getValue(anchor).loadFresh(GlyphCorner())
         }
