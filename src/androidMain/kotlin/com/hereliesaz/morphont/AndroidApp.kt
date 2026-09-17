@@ -1,5 +1,6 @@
 package com.hereliesaz.morphont
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -44,6 +45,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val ANDROID_AUTOSAVE_DEBOUNCE_MS = 400L
+private const val ANDROID_SESSION_SAVE_DEBOUNCE_MS = 200L
 
 class AndroidFileActions(
     val openJson: (onLoaded: (String) -> Unit, onError: (String) -> Unit) -> Unit,
@@ -78,8 +80,31 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 storage.setLastGlyphName(name)
             }
 
+            BackHandler(enabled = showNewGlyph || actionMenuOpen || glyphMenuOpen) {
+                when {
+                    showNewGlyph -> showNewGlyph = false
+                    actionMenuOpen -> actionMenuOpen = false
+                    glyphMenuOpen -> glyphMenuOpen = false
+                }
+            }
+
             LaunchedEffect(Unit) {
                 app.glyphNames = storage.listGlyphNames()
+
+                Axis.ALL.firstOrNull { it.tag == storage.selectedAxisTag() }?.let {
+                    app.selectedAxis = it
+                }
+                storage.mobilePaneName()?.let { storedPane ->
+                    MobilePane.entries.firstOrNull { it.name == storedPane }?.let {
+                        pane = it
+                    }
+                }
+                Axis.ALL.forEach { axis ->
+                    storage.previewValue(axis.tag)?.let { storedValue ->
+                        app.previewValues[axis.tag] = storedValue.coerceIn(0f, 1f)
+                    }
+                }
+
                 val lastName = storage.lastGlyphName()
                 if (lastName != null) {
                     val glyph = storage.loadGlyph(lastName)
@@ -99,6 +124,25 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                         delay(ANDROID_AUTOSAVE_DEBOUNCE_MS)
                         storage.saveGlyph(name, glyph)
                     }
+            }
+
+            LaunchedEffect(initialized, pane, app.selectedAxis) {
+                if (!initialized) return@LaunchedEffect
+                storage.setSelectedAxisTag(app.selectedAxis.tag)
+                storage.setMobilePaneName(pane.name)
+            }
+
+            LaunchedEffect(Unit) {
+                snapshotFlow {
+                    val values = Axis.ALL.associate { axis ->
+                        axis.tag to (app.previewValues[axis.tag] ?: 0.5f)
+                    }
+                    initialized to values
+                }.collectLatest { (ready, values) ->
+                    if (!ready) return@collectLatest
+                    delay(ANDROID_SESSION_SAVE_DEBOUNCE_MS)
+                    storage.setPreviewValues(values)
+                }
             }
 
             LaunchedEffect(pane, app.selectedAxis) {
