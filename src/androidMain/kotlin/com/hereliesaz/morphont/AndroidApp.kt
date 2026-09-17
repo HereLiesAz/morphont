@@ -71,11 +71,31 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
             var showNewGlyph by remember { mutableStateOf(false) }
             var newName by remember { mutableStateOf("") }
             var importingFont by remember { mutableStateOf(false) }
+            var initialized by remember { mutableStateOf(false) }
+
+            val loadPersistentGlyph: (String, Glyph) -> Unit = { name, glyph ->
+                app.loadGlyph(name, glyph)
+                storage.setLastGlyphName(name)
+            }
 
             LaunchedEffect(Unit) {
-                snapshotFlow { app.currentGlyphName to app.toGlyph() }
-                    .collectLatest { (name, glyph) ->
-                        if (name == null) return@collectLatest
+                app.glyphNames = storage.listGlyphNames()
+                val lastName = storage.lastGlyphName()
+                if (lastName != null) {
+                    val glyph = storage.loadGlyph(lastName)
+                    if (glyph != null) {
+                        app.loadGlyph(lastName, glyph)
+                    } else {
+                        storage.setLastGlyphName(null)
+                    }
+                }
+                initialized = true
+            }
+
+            LaunchedEffect(Unit) {
+                snapshotFlow { Triple(initialized, app.currentGlyphName, app.toGlyph()) }
+                    .collectLatest { (ready, name, glyph) ->
+                        if (!ready || name == null) return@collectLatest
                         delay(ANDROID_AUTOSAVE_DEBOUNCE_MS)
                         storage.saveGlyph(name, glyph)
                     }
@@ -114,7 +134,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                 else -> {
                                     val glyph = Glyph()
                                     storage.saveGlyph(name, glyph)
-                                    app.loadGlyph(name, glyph)
+                                    loadPersistentGlyph(name, glyph)
                                     app.setStatus("Created \"$name\" — start with New contour.")
                                     newName = ""
                                     showNewGlyph = false
@@ -180,7 +200,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                     DropdownMenuItem(
                                         text = { Text(name) },
                                         onClick = {
-                                            storage.loadGlyph(name)?.let { app.loadGlyph(name, it) }
+                                            storage.loadGlyph(name)?.let { loadPersistentGlyph(name, it) }
                                             glyphMenuOpen = false
                                         },
                                     )
@@ -228,7 +248,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                     files.openJson(
                                         { text ->
                                             try {
-                                                app.loadGlyph(targetName, storage.importGlyphText(targetName, text))
+                                                loadPersistentGlyph(targetName, storage.importGlyphText(targetName, text))
                                             } catch (e: Exception) {
                                                 app.setStatus("Import failed: ${e.message}", true)
                                             }
