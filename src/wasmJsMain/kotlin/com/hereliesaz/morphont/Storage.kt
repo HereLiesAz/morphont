@@ -7,6 +7,8 @@ import com.juul.indexeddb.KeyPath
 import com.juul.indexeddb.openDatabase
 import kotlinx.browser.document
 import kotlinx.browser.window
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.khronos.webgl.ArrayBuffer
@@ -58,12 +60,13 @@ private fun clearLegacyProject() {
     try {
         window.localStorage.removeItem(LEGACY_STORAGE_KEY)
     } catch (_: Throwable) {
-        // IndexedDB is now authoritative. A browser that blocks localStorage cleanup
-        // should not prevent the editor from using its durable IndexedDB copy.
+        // IndexedDB is authoritative. Browsers that block localStorage cleanup should
+        // not prevent the editor from using the durable IndexedDB copy.
     }
 }
 
 object Storage {
+    private val scope = MainScope()
     private val initializationMutex = Mutex()
     private val writeMutex = Mutex()
     private val project = mutableMapOf<String, Glyph>()
@@ -125,39 +128,31 @@ object Storage {
 
     fun loadGlyph(name: String): Glyph? = project[name]
 
-    suspend fun saveGlyph(name: String, glyph: Glyph) {
-        initialize()
-        writeMutex.withLock {
-            project[name] = glyph
-            requireDatabase().writeTransaction(GLYPH_STORE) {
-                objectStore(GLYPH_STORE).put(storedGlyph(name, glyph))
-            }
-        }
-    }
-
-    suspend fun saveGlyphs(glyphs: Map<String, Glyph>) {
-        initialize()
-        writeMutex.withLock {
-            project.putAll(glyphs)
-            requireDatabase().writeTransaction(GLYPH_STORE) {
-                val store = objectStore(GLYPH_STORE)
-                for ((name, glyph) in glyphs) {
-                    store.put(storedGlyph(name, glyph))
+    /**
+     * Updates the in-memory project immediately so the editor stays synchronous, then writes
+     * just this glyph to IndexedDB. Any storage error is contained instead of escaping through
+     * Compose/Wasm as an uncaught browser exception.
+     */
+    fun saveGlyph(name: String, glyph: Glyph) {
+        project[name] = glyph
+        persistAsync("Autosave failed") {
+            writeMutex.withLock {
+                requireDatabase().writeTransaction(GLYPH_STORE) {
+                    objectStore(GLYPH_STORE).put(storedGlyph(name, glyph))
                 }
             }
         }
     }
 
-    suspend fun replaceProject(glyphs: Map<String, Glyph>) {
-        initialize()
-        writeMutex.withLock {
-            project.clear()
-            project.putAll(glyphs)
-            requireDatabase().writeTransaction(GLYPH_STORE) {
-                val store = objectStore(GLYPH_STORE)
-                store.clear()
-                for ((name, glyph) in glyphs) {
-                    store.put(storedGlyph(name, glyph))
+    fun saveGlyphs(glyphs: Map<String, Glyph>) {
+        project.putAll(glyphs)
+        persistAsync("Imported font could not be saved") {
+            writeMutex.withLock {
+                requireDatabase().writeTransaction(GLYPH_STORE) {
+                    val store = objectStore(GLYPH_STORE)
+                    for ((name, glyph) in glyphs) {
+                        store.put(storedGlyph(name, glyph))
+                    }
                 }
             }
         }
@@ -169,12 +164,34 @@ object Storage {
         downloadText("morphont-project.json", ProjectCodec.encodeProject(project))
     }
 
-    fun importProject(onLoaded: (Map<String, Glyph>) -> Unit, onError: (String) -> Unit) {
+    fun importProject(onLoaded: (List<String>) -> Unit, onError: (String) -> Unit) {
         pickTextFile(".json,application/json") { text ->
-            try {
-                onLoaded(ProjectCodec.decodeProject(text))
+            val glyphs = try {
+                ProjectCodec.decodeProject(text)
             } catch (e: Throwable) {
                 onError("Import failed: ${e.message ?: e::class.simpleName}")
+                return@pickTextFile
+            }
+
+            scope.launch {
+                try {
+                    initialize()
+                    writeMutex.withLock {
+                        val db = requireDatabase()
+                        db.writeTransaction(GLYPH_STORE) {
+                            val store = objectStore(GLYPH_STORE)
+                            store.clear()
+                            for ((name, glyph) in glyphs) {
+                                store.put(storedGlyph(name, glyph))
+                            }
+                        }
+                        project.clear()
+                        project.putAll(glyphs)
+                    }
+                    onLoaded(listGlyphNames())
+                } catch (e: Throwable) {
+                    onError(storageMessage("Import failed", e))
+                }
             }
         }
     }
@@ -183,12 +200,28 @@ object Storage {
         downloadText("$name.morphont.json", ProjectCodec.encodeGlyph(glyph))
     }
 
-    fun importGlyph(onLoaded: (Glyph) -> Unit, onError: (String) -> Unit) {
+    fun importGlyph(name: String, onLoaded: (Glyph) -> Unit, onError: (String) -> Unit) {
         pickTextFile(".json,application/json") { text ->
-            try {
-                onLoaded(ProjectCodec.decodeGlyph(text))
+            val glyph = try {
+                ProjectCodec.decodeGlyph(text)
             } catch (e: Throwable) {
                 onError("Import failed: ${e.message ?: e::class.simpleName}")
+                return@pickTextFile
+            }
+
+            project[name] = glyph
+            scope.launch {
+                try {
+                    initialize()
+                    writeMutex.withLock {
+                        requireDatabase().writeTransaction(GLYPH_STORE) {
+                            objectStore(GLYPH_STORE).put(storedGlyph(name, glyph))
+                        }
+                    }
+                    onLoaded(glyph)
+                } catch (e: Throwable) {
+                    onError(storageMessage("Import failed", e))
+                }
             }
         }
     }
@@ -222,8 +255,30 @@ object Storage {
         input.click()
     }
 
+    private fun persistAsync(label: String, block: suspend () -> Unit) {
+        scope.launch {
+            try {
+                initialize()
+                block()
+            } catch (e: Throwable) {
+                val message = storageMessage(label, e)
+                window.console.error(message)
+                // Persistence failures are exceptional and risk data loss. Make them visible instead
+                // of allowing an uncaught DOMException to freeze or silently break the editor.
+                window.alert(message)
+            }
+        }
+    }
+
     private fun requireDatabase(): Database =
         checkNotNull(database) { "Browser project storage is not initialized." }
+
+    private fun storageMessage(prefix: String, error: Throwable): String {
+        val detail = error.message?.takeIf { it.isNotBlank() }
+            ?: error::class.simpleName
+            ?: "browser storage error"
+        return "$prefix: $detail. Use Save project for a portable backup."
+    }
 
     private fun downloadText(filename: String, text: String) {
         val href = "data:application/json;charset=utf-8," + encodeURIComponent(text)
@@ -243,6 +298,7 @@ object Storage {
             val file = input.files?.item(0) ?: return@addEventListener
             val reader = FileReader()
             reader.onload = { onLoaded(reader.result as String) }
+            reader.onerror = { window.console.error("Morphont could not read the selected file.") }
             reader.readAsText(file)
         })
         input.click()
