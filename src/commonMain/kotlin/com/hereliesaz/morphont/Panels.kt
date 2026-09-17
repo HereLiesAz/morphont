@@ -62,9 +62,23 @@ fun computeTravelPathOverlay(app: AppState): TravelPathOverlay? {
 @Composable
 fun AnchorToolbar(state: AnchorState, modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        MonoButton(onClick = { state.startNewContour() }) { Text("New contour", fontSize = 11.sp) }
-        MonoButton(onClick = { state.toggleTypeSelected() }) { Text("Toggle on/off", fontSize = 11.sp) }
-        MonoButton(onClick = { state.deleteSelected() }) { Text("Delete sel.", fontSize = 11.sp) }
+        if (state.drawingContourIndex != null) {
+            MonoButton(onClick = { state.finishContour() }, selected = true) {
+                Text("Finish contour", fontSize = 11.sp)
+            }
+        } else {
+            MonoButton(onClick = { state.startNewContour() }) {
+                Text("New contour", fontSize = 11.sp)
+            }
+        }
+        MonoButton(
+            onClick = { state.toggleTypeSelected() },
+            enabled = state.selection.isNotEmpty(),
+        ) { Text("Toggle on/off", fontSize = 11.sp) }
+        MonoButton(
+            onClick = { state.deleteSelected() },
+            enabled = state.selection.isNotEmpty(),
+        ) { Text("Delete sel.", fontSize = 11.sp) }
         MonoButton(onClick = { state.undo() }) { Text("Undo", fontSize = 11.sp) }
     }
 }
@@ -90,6 +104,7 @@ fun AnchorPanel(
     val state = app.anchors.getValue(anchorName)
     val isActive = app.activeAnchor == anchorName
     val headerActive = isActive && anchorName != "regular"
+    val pointCount = state.glyph.contours.sumOf { it.points.size }
     Column(
         modifier
             .background(Mono.panel)
@@ -119,6 +134,22 @@ fun AnchorPanel(
                 travelPathOverlay = if (anchorName == "regular") computeTravelPathOverlay(app) else null,
                 modifier = Modifier.fillMaxSize(),
             )
+            val hint = when {
+                app.currentGlyphName == null -> "Create or open a glyph to begin."
+                state.drawingContourIndex != null && pointCount == 0 -> "Click the canvas to place the first point. Finish contour when you're done."
+                state.drawingContourIndex != null -> "Drawing contour: click to add points, then Finish contour."
+                pointCount == 0 && anchorName == "regular" -> "Start here: New contour → click points → Finish contour."
+                pointCount == 0 -> "Draw Regular first, then copy its outline here and reshape it."
+                else -> null
+            }
+            if (hint != null) {
+                Text(
+                    hint,
+                    color = Mono.inkDim,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(12.dp),
+                )
+            }
         }
         AnchorToolbar(state)
     }
@@ -151,25 +182,45 @@ fun PreviewPanel(app: AppState, modifier: Modifier = Modifier) {
         }
 
         val corners = app.cornersSnapshot()
+        val totalPoints = corners.values.sumOf { corner -> corner.contours.sumOf { it.points.size } }
         val issue = app.compatibility()
         Box(Modifier.weight(1f, fill = true).fillMaxWidth()) {
-            if (issue != null) {
-                Text(
-                    "! Anchors aren't interpolation-compatible yet:\n$issue\n\nUse \"Copy active anchor's outline to other anchors\" to seed matching topology, then reshape each without adding/removing points.",
-                    color = Mono.error,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(8.dp),
-                )
-            } else {
-                val inst = interpolateGlyph(corners, app.previewValues)
-                Canvas(Modifier.fillMaxSize().background(Mono.ground)) {
-                    if (size.width <= 0f || size.height <= 0f) return@Canvas
-                    val vb = computeViewBox(inst)
-                    val mapper = SpaceMapper(vb, size)
-                    val path = buildOutlinePath(inst.contours) { x, y -> mapper.toCanvas(x, y) }
-                    drawPath(path, color = Mono.ink.copy(alpha = 0.55f))
-                    drawPath(path, color = Mono.inkDim, style = Stroke(width = 1f))
+            when {
+                app.currentGlyphName == null -> {
+                    Text(
+                        "Create or open a glyph. Start in Regular, draw one contour, then copy that outline to the other anchors.",
+                        color = Mono.inkDim,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+                totalPoints == 0 -> {
+                    Text(
+                        "Start in Regular: New contour → click points → Finish contour. Then copy Regular to all anchors before reshaping the extremes.",
+                        color = Mono.inkDim,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+                issue != null -> {
+                    Text(
+                        "Preview unlocks when every anchor has matching point topology. Copy the active outline to the other anchors, then reshape without adding/removing points.\n\nDetails: $issue",
+                        color = Mono.error,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+                else -> {
+                    val inst = interpolateGlyph(corners, app.previewValues)
+                    Canvas(Modifier.fillMaxSize().background(Mono.ground)) {
+                        if (size.width <= 0f || size.height <= 0f) return@Canvas
+                        val vb = computeViewBox(inst)
+                        val mapper = SpaceMapper(vb, size)
+                        val path = buildOutlinePath(inst.contours) { x, y -> mapper.toCanvas(x, y) }
+                        drawPath(path, color = Mono.ink.copy(alpha = 0.55f))
+                        drawPath(path, color = Mono.inkDim, style = Stroke(width = 1f))
+                    }
                 }
             }
         }
