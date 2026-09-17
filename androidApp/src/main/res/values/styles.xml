@@ -1,0 +1,15 @@
+<resources>
+    <style name="Theme.Morphont.Base" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/morphont_ground</item>
+        <item name="android:navigationBarColor">@color/morphont_ground</item>
+        <item name="android:windowBackground">@color/morphont_ground</item>
+        <item name="android:colorAccent">@color/morphont_primary</item>
+    </style>
+
+    <style name="Theme.Morphont" parent="Theme.Morphont.Base">
+        <item name="android:windowBackground">@drawable/splash_screen</item>
+    </style>
+</resources>
