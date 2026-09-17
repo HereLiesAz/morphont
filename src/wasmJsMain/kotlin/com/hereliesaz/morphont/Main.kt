@@ -14,7 +14,6 @@ fun main() {
             Storage.initialize()
         } catch (e: Throwable) {
             val detail = e.message?.takeIf { it.isNotBlank() } ?: e::class.simpleName ?: "storage error"
-            window.console.error("Morphont browser storage failed to initialize: $detail")
             window.alert(
                 "Morphont could not open browser storage: $detail. " +
                     "The editor will still open, but use Save project for a portable backup.",
