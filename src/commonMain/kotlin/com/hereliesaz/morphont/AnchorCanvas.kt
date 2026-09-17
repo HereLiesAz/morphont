@@ -32,10 +32,10 @@ private val rubberStroke = Mono.primary
 private val pathCurveColor = Mono.secondary.copy(alpha = 0.8f)
 
 /**
- * Shared editable canvas. [interactionScale] is 1 for the web/mouse
- * surface and larger on Android; all handles and hit targets are also
- * density-aware, so a 3x phone screen does not turn a five-pixel point
- * into a two-millimetre practical joke.
+ * Shared editable canvas. [interactionScale] is 1 for the web/mouse surface
+ * and larger on Android; all handles and hit targets are also density-aware.
+ * Touch surfaces additionally get real gesture slop so sub-finger jitter does
+ * not become a drag or rubber-band selection.
  */
 @Composable
 fun AnchorCanvas(
@@ -45,6 +45,7 @@ fun AnchorCanvas(
     onActivate: () -> Unit,
     travelPathOverlay: TravelPathOverlay? = null,
     interactionScale: Float = 1f,
+    onPointHit: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var canvasSize by remember { mutableStateOf(Size.Zero) }
@@ -52,6 +53,9 @@ fun AnchorCanvas(
     val density = LocalDensity.current.density
     val uiScale = density * interactionScale
     val hitRadiusPx = 12f * uiScale
+    val isTouchSurface = interactionScale > 1f
+    val dragStartSlopPx = if (isTouchSurface) 6f * density else 0.5f
+    val rubberBandSlopPx = if (isTouchSurface) 8f * density else 0.5f
 
     val vb = remember(state.glyph) { computeViewBox(state.glyph) }
 
@@ -59,14 +63,17 @@ fun AnchorCanvas(
         modifier = modifier
             .fillMaxSize()
             .onSizeChanged { canvasSize = Size(it.width.toFloat(), it.height.toFloat()) }
-            .pointerInput(state, vb, canvasSize, hitRadiusPx) {
+            .pointerInput(state, vb, canvasSize, hitRadiusPx, dragStartSlopPx, rubberBandSlopPx) {
                 if (canvasSize.width <= 0f || canvasSize.height <= 0f) return@pointerInput
                 handleAnchorGestures(
                     state = state,
                     vb = vb,
                     canvasSize = canvasSize,
                     hitRadiusPx = hitRadiusPx,
+                    dragStartSlopPx = dragStartSlopPx,
+                    rubberBandSlopPx = rubberBandSlopPx,
                     onActivate = onActivate,
+                    onPointHit = onPointHit,
                     onRubberUpdate = { rubberRect = it },
                 )
             },

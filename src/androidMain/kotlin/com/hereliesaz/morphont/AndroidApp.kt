@@ -6,8 +6,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -15,11 +17,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -32,8 +38,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import compose.conveyance.ConveySystem
@@ -56,10 +68,9 @@ class AndroidFileActions(
 private enum class MobilePane { LOW, REGULAR, HIGH, PREVIEW }
 
 /**
- * Android is not the web layout squeezed until it squeaks. The same editor
- * state and drawing engine are reflowed into one thumb-sized workspace:
- * one canvas at a time, persistent axis strip, bottom pane navigation, and
- * file/project operations behind a compact action menu.
+ * Android is not the web layout squeezed until it squeaks. Phones keep the
+ * one-canvas thumb workflow; larger screens switch to a rail and use the
+ * extra width for the active editor plus live preview.
  */
 @Composable
 fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
@@ -67,6 +78,8 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
         ConveySystem {
             val app = remember { AppState() }
             val scope = rememberCoroutineScope()
+            val focusManager = LocalFocusManager.current
+            val newNameFocusRequester = remember { FocusRequester() }
             var pane by remember { mutableStateOf(MobilePane.REGULAR) }
             var glyphMenuOpen by remember { mutableStateOf(false) }
             var actionMenuOpen by remember { mutableStateOf(false) }
@@ -80,11 +93,40 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 storage.setLastGlyphName(name)
             }
 
+            fun closeNewGlyph() {
+                showNewGlyph = false
+                focusManager.clearFocus()
+            }
+
+            fun createNewGlyph() {
+                val name = newName.trim()
+                when {
+                    name.isEmpty() -> app.setStatus("Type a name first.", true)
+                    storage.glyphExists(name) -> app.setStatus("A glyph named \"$name\" already exists.", true)
+                    else -> {
+                        val glyph = Glyph()
+                        storage.saveGlyph(name, glyph)
+                        loadPersistentGlyph(name, glyph)
+                        app.setStatus("Created \"$name\" — start with New contour.")
+                        newName = ""
+                        pane = MobilePane.REGULAR
+                        closeNewGlyph()
+                    }
+                }
+            }
+
             BackHandler(enabled = showNewGlyph || actionMenuOpen || glyphMenuOpen) {
                 when {
-                    showNewGlyph -> showNewGlyph = false
+                    showNewGlyph -> closeNewGlyph()
                     actionMenuOpen -> actionMenuOpen = false
                     glyphMenuOpen -> glyphMenuOpen = false
+                }
+            }
+
+            LaunchedEffect(showNewGlyph) {
+                if (showNewGlyph) {
+                    delay(80)
+                    newNameFocusRequester.requestFocus()
                 }
             }
 
@@ -156,39 +198,27 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
 
             if (showNewGlyph) {
                 AlertDialog(
-                    onDismissRequest = { showNewGlyph = false },
+                    onDismissRequest = { closeNewGlyph() },
                     title = { Text("New glyph") },
                     text = {
                         OutlinedTextField(
                             value = newName,
                             onValueChange = { newName = it },
+                            modifier = Modifier.focusRequester(newNameFocusRequester),
                             singleLine = true,
                             placeholder = { Text("glyph name") },
                             textStyle = TextStyle(color = Mono.ink),
                             colors = monoTextFieldColors(),
                             shape = ConveyShape.CutSmall,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { createNewGlyph() }),
                         )
                     },
                     confirmButton = {
-                        MonoButton(onClick = {
-                            val name = newName.trim()
-                            when {
-                                name.isEmpty() -> app.setStatus("Type a name first.", true)
-                                storage.glyphExists(name) -> app.setStatus("A glyph named \"$name\" already exists.", true)
-                                else -> {
-                                    val glyph = Glyph()
-                                    storage.saveGlyph(name, glyph)
-                                    loadPersistentGlyph(name, glyph)
-                                    app.setStatus("Created \"$name\" — start with New contour.")
-                                    newName = ""
-                                    showNewGlyph = false
-                                    pane = MobilePane.REGULAR
-                                }
-                            }
-                        }) { Text("Create") }
+                        MonoButton(onClick = { createNewGlyph() }) { Text("Create") }
                     },
                     dismissButton = {
-                        MonoButton(onClick = { showNewGlyph = false }) { Text("Cancel") }
+                        MonoButton(onClick = { closeNewGlyph() }) { Text("Cancel") }
                     },
                     containerColor = Mono.panel,
                     titleContentColor = Mono.ink,
@@ -196,201 +226,192 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 )
             }
 
-            Scaffold(
-                containerColor = Mono.ground,
-                bottomBar = {
-                    NavigationBar(containerColor = Mono.panel) {
-                        MobilePane.entries.forEach { item ->
-                            val label = when (item) {
-                                MobilePane.LOW -> app.selectedAxis.loLabel
-                                MobilePane.REGULAR -> "Regular"
-                                MobilePane.HIGH -> app.selectedAxis.hiLabel
-                                MobilePane.PREVIEW -> "Preview"
-                            }
-                            val mark = when (item) {
-                                MobilePane.LOW -> "−"
-                                MobilePane.REGULAR -> "R"
-                                MobilePane.HIGH -> "+"
-                                MobilePane.PREVIEW -> "◇"
-                            }
-                            NavigationBarItem(
-                                selected = pane == item,
-                                onClick = { pane = item },
-                                icon = { Text(mark) },
-                                label = { Text(label, maxLines = 1, fontSize = 10.sp) },
-                            )
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val wideLayout = maxWidth >= 720.dp
+                Scaffold(
+                    containerColor = Mono.ground,
+                    bottomBar = {
+                        if (!wideLayout) {
+                            MobilePaneBar(pane = pane, app = app, onSelect = { pane = it })
                         }
-                    }
-                },
-            ) { insets ->
-                Column(Modifier.fillMaxSize().padding(insets).background(Mono.ground)) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(Mono.panel)
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Box {
-                            MonoButton(onClick = {
-                                app.glyphNames = storage.listGlyphNames()
-                                glyphMenuOpen = true
-                            }) {
-                                Text(app.currentGlyphName ?: "Open glyph", maxLines = 1)
-                            }
-                            DropdownMenu(expanded = glyphMenuOpen, onDismissRequest = { glyphMenuOpen = false }) {
-                                storage.listGlyphNames().forEach { name ->
-                                    DropdownMenuItem(
-                                        text = { Text(name) },
-                                        onClick = {
-                                            storage.loadGlyph(name)?.let { loadPersistentGlyph(name, it) }
-                                            glyphMenuOpen = false
-                                        },
-                                    )
-                                }
-                            }
+                    },
+                ) { insets ->
+                    Row(Modifier.fillMaxSize().padding(insets).background(Mono.ground)) {
+                        if (wideLayout) {
+                            MobilePaneRail(pane = pane, app = app, onSelect = { pane = it })
                         }
 
-                        MonoButton(onClick = { showNewGlyph = true }) { Text("New") }
-
-                        Box {
-                            val activeLabel = ANCHOR_LABELS[app.activeAnchor] ?: app.activeAnchor
-                            MonoButton(onClick = { actionMenuOpen = true }) { Text("Actions") }
-                            DropdownMenu(expanded = actionMenuOpen, onDismissRequest = { actionMenuOpen = false }) {
-                                DropdownMenuItem(text = { Text("Copy $activeLabel outline to all anchors") }, onClick = {
-                                    actionMenuOpen = false
-                                    app.copyActiveToOthers()
-                                })
-                                DropdownMenuItem(text = { Text("Undo $activeLabel") }, onClick = {
-                                    actionMenuOpen = false
-                                    app.anchors.getValue(app.activeAnchor).undo()
-                                })
-                                DropdownMenuItem(text = { Text("Save glyph now") }, onClick = {
-                                    actionMenuOpen = false
-                                    val name = app.currentGlyphName
-                                    if (name == null) app.setStatus("No glyph loaded.", true)
-                                    else {
-                                        storage.saveGlyph(name, app.toGlyph())
-                                        app.setStatus("Saved \"$name\".")
+                        Column(Modifier.weight(1f).fillMaxHeight()) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(Mono.panel)
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Box {
+                                    MonoButton(onClick = {
+                                        app.glyphNames = storage.listGlyphNames()
+                                        glyphMenuOpen = true
+                                    }) {
+                                        Text(app.currentGlyphName ?: "Open glyph", maxLines = 1)
                                     }
-                                })
-                                DropdownMenuItem(text = { Text("Export glyph JSON") }, onClick = {
-                                    actionMenuOpen = false
-                                    val name = app.currentGlyphName
-                                    if (name == null) app.setStatus("No glyph loaded to export.", true)
-                                    else files.saveJson(
-                                        "$name.morphont.json",
-                                        storage.exportGlyphText(app.toGlyph()),
-                                        { app.setStatus("Exported \"$name\".") },
-                                        { app.setStatus(it, true) },
-                                    )
-                                })
-                                DropdownMenuItem(text = { Text("Import glyph JSON") }, onClick = {
-                                    actionMenuOpen = false
-                                    val targetName = app.currentGlyphName ?: "imported"
-                                    files.openJson(
-                                        { text ->
-                                            try {
-                                                loadPersistentGlyph(targetName, storage.importGlyphText(targetName, text))
-                                            } catch (e: Exception) {
-                                                app.setStatus("Import failed: ${e.message}", true)
+                                    DropdownMenu(expanded = glyphMenuOpen, onDismissRequest = { glyphMenuOpen = false }) {
+                                        storage.listGlyphNames().forEach { name ->
+                                            DropdownMenuItem(
+                                                text = { Text(name) },
+                                                onClick = {
+                                                    storage.loadGlyph(name)?.let { loadPersistentGlyph(name, it) }
+                                                    glyphMenuOpen = false
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
+
+                                MonoButton(onClick = {
+                                    newName = ""
+                                    showNewGlyph = true
+                                }) { Text("New") }
+
+                                Box {
+                                    val activeLabel = ANCHOR_LABELS[app.activeAnchor] ?: app.activeAnchor
+                                    MonoButton(onClick = { actionMenuOpen = true }) { Text("Actions") }
+                                    DropdownMenu(expanded = actionMenuOpen, onDismissRequest = { actionMenuOpen = false }) {
+                                        DropdownMenuItem(text = { Text("Copy $activeLabel outline to all anchors") }, onClick = {
+                                            actionMenuOpen = false
+                                            app.copyActiveToOthers()
+                                        })
+                                        DropdownMenuItem(text = { Text("Undo $activeLabel") }, onClick = {
+                                            actionMenuOpen = false
+                                            app.anchors.getValue(app.activeAnchor).undo()
+                                        })
+                                        DropdownMenuItem(text = { Text("Save glyph now") }, onClick = {
+                                            actionMenuOpen = false
+                                            val name = app.currentGlyphName
+                                            if (name == null) app.setStatus("No glyph loaded.", true)
+                                            else {
+                                                storage.saveGlyph(name, app.toGlyph())
+                                                app.setStatus("Saved \"$name\".")
                                             }
-                                        },
-                                        { app.setStatus(it, true) },
-                                    )
-                                })
-                                DropdownMenuItem(text = { Text("Export whole project") }, onClick = {
-                                    actionMenuOpen = false
-                                    files.saveJson(
-                                        "morphont-project.json",
-                                        storage.exportProjectText(),
-                                        { app.setStatus("Project exported.") },
-                                        { app.setStatus(it, true) },
-                                    )
-                                })
-                                DropdownMenuItem(text = { Text("Import whole project") }, onClick = {
-                                    actionMenuOpen = false
-                                    files.openJson(
-                                        { text ->
-                                            try {
-                                                val names = storage.importProjectText(text)
-                                                app.clearEditor()
-                                                app.glyphNames = names
-                                                app.setStatus("Loaded project (${names.size} glyph(s)).")
-                                            } catch (e: Exception) {
-                                                app.setStatus("Import failed: ${e.message}", true)
-                                            }
-                                        },
-                                        { app.setStatus(it, true) },
-                                    )
-                                })
-                                DropdownMenuItem(
-                                    enabled = !importingFont,
-                                    text = { Text(if (importingFont) "Importing variable font…" else "Import variable font (.ttf)") },
-                                    onClick = {
-                                        actionMenuOpen = false
-                                        files.openTtf(
-                                            { bytes ->
-                                                importingFont = true
-                                                app.setStatus("Importing variable font…")
-                                                scope.launch {
+                                        })
+                                        DropdownMenuItem(text = { Text("Export glyph JSON") }, onClick = {
+                                            actionMenuOpen = false
+                                            val name = app.currentGlyphName
+                                            if (name == null) app.setStatus("No glyph loaded to export.", true)
+                                            else files.saveJson(
+                                                "$name.morphont.json",
+                                                storage.exportGlyphText(app.toGlyph()),
+                                                { app.setStatus("Exported \"$name\".") },
+                                                { app.setStatus(it, true) },
+                                            )
+                                        })
+                                        DropdownMenuItem(text = { Text("Import glyph JSON") }, onClick = {
+                                            actionMenuOpen = false
+                                            val targetName = app.currentGlyphName ?: "imported"
+                                            files.openJson(
+                                                { text ->
                                                     try {
-                                                        val result = withContext(Dispatchers.Default) {
-                                                            buildFamilyFromVariableFont(bytes)
-                                                        }
-                                                        storage.saveGlyphs(result.glyphs)
-                                                        app.glyphNames = storage.listGlyphNames()
-                                                        val skippedNote = if (result.skippedCharacters.isEmpty()) "" else
-                                                            " Skipped: " + result.skippedCharacters.joinToString { (cp, reason) ->
-                                                                "U+${cp.toString(16)} ($reason)"
-                                                            }
-                                                        app.setStatus(
-                                                            "Imported ${result.glyphs.size} character(s) from the variable font.$skippedNote",
-                                                        )
+                                                        loadPersistentGlyph(targetName, storage.importGlyphText(targetName, text))
                                                     } catch (e: Exception) {
                                                         app.setStatus("Import failed: ${e.message}", true)
-                                                    } finally {
-                                                        importingFont = false
                                                     }
-                                                }
+                                                },
+                                                { app.setStatus(it, true) },
+                                            )
+                                        })
+                                        DropdownMenuItem(text = { Text("Export whole project") }, onClick = {
+                                            actionMenuOpen = false
+                                            files.saveJson(
+                                                "morphont-project.json",
+                                                storage.exportProjectText(),
+                                                { app.setStatus("Project exported.") },
+                                                { app.setStatus(it, true) },
+                                            )
+                                        })
+                                        DropdownMenuItem(text = { Text("Import whole project") }, onClick = {
+                                            actionMenuOpen = false
+                                            files.openJson(
+                                                { text ->
+                                                    try {
+                                                        val names = storage.importProjectText(text)
+                                                        app.clearEditor()
+                                                        app.glyphNames = names
+                                                        app.setStatus("Loaded project (${names.size} glyph(s)).")
+                                                    } catch (e: Exception) {
+                                                        app.setStatus("Import failed: ${e.message}", true)
+                                                    }
+                                                },
+                                                { app.setStatus(it, true) },
+                                            )
+                                        })
+                                        DropdownMenuItem(
+                                            enabled = !importingFont,
+                                            text = { Text(if (importingFont) "Importing variable font…" else "Import variable font (.ttf)") },
+                                            onClick = {
+                                                actionMenuOpen = false
+                                                files.openTtf(
+                                                    { bytes ->
+                                                        importingFont = true
+                                                        app.setStatus("Importing variable font…")
+                                                        scope.launch {
+                                                            try {
+                                                                val result = withContext(Dispatchers.Default) {
+                                                                    buildFamilyFromVariableFont(bytes)
+                                                                }
+                                                                storage.saveGlyphs(result.glyphs)
+                                                                app.glyphNames = storage.listGlyphNames()
+                                                                val skippedNote = if (result.skippedCharacters.isEmpty()) "" else
+                                                                    " Skipped: " + result.skippedCharacters.joinToString { (cp, reason) ->
+                                                                        "U+${cp.toString(16)} ($reason)"
+                                                                    }
+                                                                app.setStatus(
+                                                                    "Imported ${result.glyphs.size} character(s) from the variable font.$skippedNote",
+                                                                )
+                                                            } catch (e: Exception) {
+                                                                app.setStatus("Import failed: ${e.message}", true)
+                                                            } finally {
+                                                                importingFont = false
+                                                            }
+                                                        }
+                                                    },
+                                                    { app.setStatus(it, true) },
+                                                )
                                             },
-                                            { app.setStatus(it, true) },
                                         )
-                                    },
+                                    }
+                                }
+                            }
+
+                            LazyRow(
+                                Modifier.fillMaxWidth().background(Mono.panelHeader).padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                items(Axis.ALL) { axis ->
+                                    MonoButton(
+                                        onClick = { app.selectedAxis = axis },
+                                        selected = axis == app.selectedAxis,
+                                    ) { Text(axis.label, fontSize = 11.sp) }
+                                }
+                            }
+
+                            if (app.status.isNotEmpty()) {
+                                Text(
+                                    (if (app.statusIsError) "! " else "") + app.status,
+                                    color = if (app.statusIsError) Mono.error else Mono.inkDim,
+                                    fontWeight = if (app.statusIsError) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
                                 )
                             }
-                        }
-                    }
 
-                    LazyRow(
-                        Modifier.fillMaxWidth().background(Mono.panelHeader).padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        items(Axis.ALL) { axis ->
-                            MonoButton(
-                                onClick = { app.selectedAxis = axis },
-                                selected = axis == app.selectedAxis,
-                            ) { Text(axis.label, fontSize = 11.sp) }
-                        }
-                    }
-
-                    if (app.status.isNotEmpty()) {
-                        Text(
-                            (if (app.statusIsError) "! " else "") + app.status,
-                            color = if (app.statusIsError) Mono.error else Mono.inkDim,
-                            fontWeight = if (app.statusIsError) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 11.sp,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
-                        )
-                    }
-
-                    Box(Modifier.weight(1f).fillMaxWidth().padding(6.dp)) {
-                        when (pane) {
-                            MobilePane.LOW -> TouchAnchorEditor(app.selectedAxis.lo, app)
-                            MobilePane.REGULAR -> TouchAnchorEditor("regular", app)
-                            MobilePane.HIGH -> TouchAnchorEditor(app.selectedAxis.hi, app)
-                            MobilePane.PREVIEW -> PreviewPanel(app, Modifier.fillMaxSize())
+                            AndroidWorkspace(
+                                pane = pane,
+                                app = app,
+                                wideLayout = wideLayout,
+                                modifier = Modifier.weight(1f).fillMaxWidth().padding(6.dp),
+                            )
                         }
                     }
                 }
@@ -400,9 +421,89 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
 }
 
 @Composable
+private fun MobilePaneBar(pane: MobilePane, app: AppState, onSelect: (MobilePane) -> Unit) {
+    NavigationBar(containerColor = Mono.panel) {
+        MobilePane.entries.forEach { item ->
+            NavigationBarItem(
+                selected = pane == item,
+                onClick = { onSelect(item) },
+                icon = { Text(paneMark(item)) },
+                label = { Text(paneLabel(item, app), maxLines = 1, fontSize = 10.sp) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MobilePaneRail(pane: MobilePane, app: AppState, onSelect: (MobilePane) -> Unit) {
+    NavigationRail(containerColor = Mono.panel) {
+        MobilePane.entries.forEach { item ->
+            NavigationRailItem(
+                selected = pane == item,
+                onClick = { onSelect(item) },
+                icon = { Text(paneMark(item)) },
+                label = { Text(paneLabel(item, app), maxLines = 1, fontSize = 9.sp) },
+            )
+        }
+    }
+}
+
+private fun paneLabel(item: MobilePane, app: AppState): String = when (item) {
+    MobilePane.LOW -> app.selectedAxis.loLabel
+    MobilePane.REGULAR -> "Regular"
+    MobilePane.HIGH -> app.selectedAxis.hiLabel
+    MobilePane.PREVIEW -> "Preview"
+}
+
+private fun paneMark(item: MobilePane): String = when (item) {
+    MobilePane.LOW -> "−"
+    MobilePane.REGULAR -> "R"
+    MobilePane.HIGH -> "+"
+    MobilePane.PREVIEW -> "◇"
+}
+
+@Composable
+private fun AndroidWorkspace(
+    pane: MobilePane,
+    app: AppState,
+    wideLayout: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (wideLayout && pane != MobilePane.PREVIEW) {
+        Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.weight(1.6f).fillMaxHeight()) {
+                EditablePane(pane = pane, app = app)
+            }
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                PreviewPanel(app, Modifier.fillMaxSize())
+            }
+        }
+    } else {
+        Box(modifier) {
+            if (pane == MobilePane.PREVIEW) {
+                PreviewPanel(app, Modifier.fillMaxSize())
+            } else {
+                EditablePane(pane = pane, app = app)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditablePane(pane: MobilePane, app: AppState) {
+    when (pane) {
+        MobilePane.LOW -> TouchAnchorEditor(app.selectedAxis.lo, app)
+        MobilePane.REGULAR -> TouchAnchorEditor("regular", app)
+        MobilePane.HIGH -> TouchAnchorEditor(app.selectedAxis.hi, app)
+        MobilePane.PREVIEW -> PreviewPanel(app, Modifier.fillMaxSize())
+    }
+}
+
+@Composable
 private fun TouchAnchorEditor(anchorName: String, app: AppState) {
     val state = app.anchors.getValue(anchorName)
     val active = app.activeAnchor == anchorName
+    val haptics = LocalHapticFeedback.current
     Column(
         Modifier.fillMaxSize()
             .background(Mono.panel)
@@ -430,6 +531,7 @@ private fun TouchAnchorEditor(anchorName: String, app: AppState) {
                 onActivate = { app.activeAnchor = anchorName },
                 travelPathOverlay = if (anchorName == "regular") computeTravelPathOverlay(app) else null,
                 interactionScale = 1.35f,
+                onPointHit = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
                 modifier = Modifier.fillMaxSize(),
             )
         }

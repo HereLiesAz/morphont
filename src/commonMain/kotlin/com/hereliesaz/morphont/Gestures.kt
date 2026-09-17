@@ -9,17 +9,23 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
+private fun Offset.exceedsSlop(slopPx: Float): Boolean =
+    abs(x) >= slopPx || abs(y) >= slopPx
+
 /**
- * Pointer handling shared by wasm and Android. [hitRadiusPx] is supplied by
- * the rendering surface so a mouse can stay precise while a finger gets a
- * humane target instead of being asked to impersonate a dental instrument.
+ * Pointer handling shared by wasm and Android. [hitRadiusPx] and gesture slop
+ * are supplied by the rendering surface so a mouse can stay precise while a
+ * finger gets humane hit targets without turning tiny hand tremors into edits.
  */
 suspend fun PointerInputScope.handleAnchorGestures(
     state: AnchorState,
     vb: ViewBox,
     canvasSize: Size,
     hitRadiusPx: Float = 12f,
+    dragStartSlopPx: Float = 0.5f,
+    rubberBandSlopPx: Float = 0.5f,
     onActivate: () -> Unit,
+    onPointHit: () -> Unit = {},
     onRubberUpdate: (Pair<Offset, Offset>?) -> Unit,
 ) {
     val mapper = SpaceMapper(vb, canvasSize)
@@ -35,6 +41,8 @@ suspend fun PointerInputScope.handleAnchorGestures(
             if (hit == null) {
                 val font = mapper.toFont(startPos)
                 state.addDrawPoint(font.x, font.y)
+            } else {
+                onPointHit()
             }
             down.consume()
             drag(down.id) { change -> change.consume() }
@@ -43,33 +51,50 @@ suspend fun PointerInputScope.handleAnchorGestures(
 
         val hitKey = hitTestPoint(state.glyph, mapper, startPos, radiusPx = hitRadiusPx)
         if (hitKey != null) {
+            onPointHit()
             if (hitKey !in state.selection) state.selection = setOf(hitKey)
             val origGlyph = state.glyph.deepCopy()
             val keys = state.selection.toList()
-            var moved = false
+            var dragging = false
             down.consume()
             drag(down.id) { change ->
                 change.consume()
                 val deltaCanvas = change.position - startPos
-                if (abs(deltaCanvas.x) > 0.5f || abs(deltaCanvas.y) > 0.5f) moved = true
+                if (!dragging && deltaCanvas.exceedsSlop(dragStartSlopPx)) {
+                    dragging = true
+                }
+                if (!dragging) return@drag
+
                 val deltaFontX = deltaCanvas.x / mapper.scale
                 val deltaFontY = -deltaCanvas.y / mapper.scale
                 val updated = origGlyph.deepCopy()
                 for ((ci, pi) in keys) {
                     val op = origGlyph.contours[ci].points[pi]
-                    updated.contours[ci].points[pi] = Pt(op.x + deltaFontX, op.y + deltaFontY, op.onCurve, op.smooth)
+                    updated.contours[ci].points[pi] = Pt(
+                        op.x + deltaFontX,
+                        op.y + deltaFontY,
+                        op.onCurve,
+                        op.smooth,
+                    )
                 }
                 state.replaceGlyph(updated)
             }
-            if (moved) state.pushHistory()
+            if (dragging) state.pushHistory()
         } else {
             state.selection = emptySet()
             var current = startPos
+            var rubberBanding = false
             down.consume()
-            onRubberUpdate(startPos to current)
             drag(down.id) { change ->
                 change.consume()
                 current = change.position
+                val deltaCanvas = current - startPos
+                if (!rubberBanding && deltaCanvas.exceedsSlop(rubberBandSlopPx)) {
+                    rubberBanding = true
+                    onRubberUpdate(startPos to current)
+                }
+                if (!rubberBanding) return@drag
+
                 onRubberUpdate(startPos to current)
                 val x0 = min(startPos.x, current.x)
                 val x1 = max(startPos.x, current.x)
@@ -84,7 +109,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 }
                 state.selection = newSel
             }
-            onRubberUpdate(null)
+            if (rubberBanding) onRubberUpdate(null)
         }
     }
 }
