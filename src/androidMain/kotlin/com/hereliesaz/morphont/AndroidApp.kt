@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -37,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -107,12 +109,79 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                         val glyph = Glyph()
                         storage.saveGlyph(name, glyph)
                         loadPersistentGlyph(name, glyph)
-                        app.setStatus("Created \"$name\" — start with New contour.")
+                        app.setStatus("Created \"$name\" — start with New contour in Regular.")
                         newName = ""
                         pane = MobilePane.REGULAR
                         closeNewGlyph()
                     }
                 }
+            }
+
+            fun openFirstAvailableGlyph(names: List<String>): Boolean {
+                val firstName = names.firstOrNull() ?: return false
+                val glyph = storage.loadGlyph(firstName) ?: return false
+                loadPersistentGlyph(firstName, glyph)
+                pane = MobilePane.REGULAR
+                return true
+            }
+
+            fun importProjectIntoApp() {
+                files.openJson(
+                    { text ->
+                        try {
+                            val names = storage.importProjectText(text)
+                            app.glyphNames = names
+                            if (openFirstAvailableGlyph(names)) {
+                                app.setStatus("Loaded project (${names.size} glyph(s)); opened ${names.first()}.")
+                            } else {
+                                app.clearEditor()
+                                app.setStatus("Loaded an empty project.")
+                            }
+                        } catch (e: Exception) {
+                            app.setStatus("Import failed: ${e.message}", true)
+                        }
+                    },
+                    { app.setStatus(it, true) },
+                )
+            }
+
+            fun importVariableFontIntoApp() {
+                if (importingFont) return
+                files.openTtf(
+                    { bytes ->
+                        importingFont = true
+                        app.setStatus("Importing variable font…")
+                        scope.launch {
+                            try {
+                                val result = withContext(Dispatchers.Default) {
+                                    buildFamilyFromVariableFont(bytes)
+                                }
+                                storage.saveGlyphs(result.glyphs)
+                                app.glyphNames = storage.listGlyphNames()
+                                val firstImportedName = result.glyphs.keys.sorted().firstOrNull()
+                                if (firstImportedName != null) {
+                                    result.glyphs[firstImportedName]?.let {
+                                        loadPersistentGlyph(firstImportedName, it)
+                                        pane = MobilePane.REGULAR
+                                    }
+                                }
+                                val skippedNote = if (result.skippedCharacters.isEmpty()) "" else
+                                    " Skipped: " + result.skippedCharacters.joinToString { (cp, reason) ->
+                                        "U+${cp.toString(16)} ($reason)"
+                                    }
+                                val openedNote = if (firstImportedName == null) "" else " Opened $firstImportedName."
+                                app.setStatus(
+                                    "Imported ${result.glyphs.size} character(s) from the variable font.$openedNote$skippedNote",
+                                )
+                            } catch (e: Exception) {
+                                app.setStatus("Import failed: ${e.message}", true)
+                            } finally {
+                                importingFont = false
+                            }
+                        }
+                    },
+                    { app.setStatus(it, true) },
+                )
             }
 
             BackHandler(enabled = showNewGlyph || actionMenuOpen || glyphMenuOpen) {
@@ -148,13 +217,18 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 }
 
                 val lastName = storage.lastGlyphName()
+                var restored = false
                 if (lastName != null) {
                     val glyph = storage.loadGlyph(lastName)
                     if (glyph != null) {
-                        app.loadGlyph(lastName, glyph)
+                        loadPersistentGlyph(lastName, glyph)
+                        restored = true
                     } else {
                         storage.setLastGlyphName(null)
                     }
+                }
+                if (!restored) {
+                    openFirstAvailableGlyph(app.glyphNames)
                 }
                 initialized = true
             }
@@ -231,13 +305,13 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 Scaffold(
                     containerColor = Mono.ground,
                     bottomBar = {
-                        if (!wideLayout) {
+                        if (!wideLayout && app.currentGlyphName != null) {
                             MobilePaneBar(pane = pane, app = app, onSelect = { pane = it })
                         }
                     },
                 ) { insets ->
                     Row(Modifier.fillMaxSize().padding(insets).background(Mono.ground)) {
-                        if (wideLayout) {
+                        if (wideLayout && app.currentGlyphName != null) {
                             MobilePaneRail(pane = pane, app = app, onSelect = { pane = it })
                         }
 
@@ -332,52 +406,14 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                         })
                                         DropdownMenuItem(text = { Text("Import whole project") }, onClick = {
                                             actionMenuOpen = false
-                                            files.openJson(
-                                                { text ->
-                                                    try {
-                                                        val names = storage.importProjectText(text)
-                                                        app.clearEditor()
-                                                        app.glyphNames = names
-                                                        app.setStatus("Loaded project (${names.size} glyph(s)).")
-                                                    } catch (e: Exception) {
-                                                        app.setStatus("Import failed: ${e.message}", true)
-                                                    }
-                                                },
-                                                { app.setStatus(it, true) },
-                                            )
+                                            importProjectIntoApp()
                                         })
                                         DropdownMenuItem(
                                             enabled = !importingFont,
                                             text = { Text(if (importingFont) "Importing variable font…" else "Import variable font (.ttf)") },
                                             onClick = {
                                                 actionMenuOpen = false
-                                                files.openTtf(
-                                                    { bytes ->
-                                                        importingFont = true
-                                                        app.setStatus("Importing variable font…")
-                                                        scope.launch {
-                                                            try {
-                                                                val result = withContext(Dispatchers.Default) {
-                                                                    buildFamilyFromVariableFont(bytes)
-                                                                }
-                                                                storage.saveGlyphs(result.glyphs)
-                                                                app.glyphNames = storage.listGlyphNames()
-                                                                val skippedNote = if (result.skippedCharacters.isEmpty()) "" else
-                                                                    " Skipped: " + result.skippedCharacters.joinToString { (cp, reason) ->
-                                                                        "U+${cp.toString(16)} ($reason)"
-                                                                    }
-                                                                app.setStatus(
-                                                                    "Imported ${result.glyphs.size} character(s) from the variable font.$skippedNote",
-                                                                )
-                                                            } catch (e: Exception) {
-                                                                app.setStatus("Import failed: ${e.message}", true)
-                                                            } finally {
-                                                                importingFont = false
-                                                            }
-                                                        }
-                                                    },
-                                                    { app.setStatus(it, true) },
-                                                )
+                                                importVariableFontIntoApp()
                                             },
                                         )
                                     }
@@ -406,15 +442,113 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                 )
                             }
 
-                            AndroidWorkspace(
-                                pane = pane,
-                                app = app,
-                                wideLayout = wideLayout,
-                                modifier = Modifier.weight(1f).fillMaxWidth().padding(6.dp),
+                            if (app.currentGlyphName == null) {
+                                AndroidWelcomePanel(
+                                    app = app,
+                                    storage = storage,
+                                    importingFont = importingFont,
+                                    onCreateGlyph = {
+                                        newName = ""
+                                        showNewGlyph = true
+                                    },
+                                    onImportProject = { importProjectIntoApp() },
+                                    onImportVariableFont = { importVariableFontIntoApp() },
+                                    onOpenGlyph = { name ->
+                                        storage.loadGlyph(name)?.let {
+                                            loadPersistentGlyph(name, it)
+                                            pane = MobilePane.REGULAR
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                )
+                            } else {
+                                AndroidWorkspace(
+                                    pane = pane,
+                                    app = app,
+                                    wideLayout = wideLayout,
+                                    modifier = Modifier.weight(1f).fillMaxWidth().padding(6.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AndroidWelcomePanel(
+    app: AppState,
+    storage: AndroidStorage,
+    importingFont: Boolean,
+    onCreateGlyph: () -> Unit,
+    onImportProject: () -> Unit,
+    onImportVariableFont: () -> Unit,
+    onOpenGlyph: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var savedGlyphMenuOpen by remember { mutableStateOf(false) }
+
+    Box(modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.fillMaxWidth().widthIn(max = 560.dp).background(Mono.panel).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Morphont", color = Mono.ink, fontWeight = FontWeight.Bold, fontSize = 26.sp)
+            Text(
+                "Start with a variable font, a Morphont project, or a new glyph. " +
+                    "The editor opens only after there is something real to edit.",
+                color = Mono.inkDim,
+                fontSize = 13.sp,
+            )
+
+            MonoButton(
+                onClick = onImportVariableFont,
+                enabled = !importingFont,
+            ) {
+                Text(if (importingFont) "Importing variable font…" else "Import variable font (.ttf)")
+            }
+            MonoButton(onClick = onImportProject) {
+                Text("Load Morphont project (.json)")
+            }
+
+            if (app.glyphNames.isNotEmpty()) {
+                Box {
+                    MonoButton(onClick = {
+                        app.glyphNames = storage.listGlyphNames()
+                        savedGlyphMenuOpen = true
+                    }) {
+                        Text("Open saved glyph")
+                    }
+                    DropdownMenu(
+                        expanded = savedGlyphMenuOpen,
+                        onDismissRequest = { savedGlyphMenuOpen = false },
+                    ) {
+                        app.glyphNames.forEach { name ->
+                            DropdownMenuItem(
+                                text = { Text(name) },
+                                onClick = {
+                                    onOpenGlyph(name)
+                                    savedGlyphMenuOpen = false
+                                },
                             )
                         }
                     }
                 }
+            }
+
+            MonoButton(onClick = onCreateGlyph) {
+                Text("Create blank glyph")
+            }
+
+            if (app.status.isNotEmpty()) {
+                Text(
+                    (if (app.statusIsError) "! " else "") + app.status,
+                    color = if (app.statusIsError) Mono.error else Mono.inkDim,
+                    fontWeight = if (app.statusIsError) FontWeight.Bold else FontWeight.Normal,
+                    fontSize = 11.sp,
+                )
             }
         }
     }
@@ -540,7 +674,17 @@ private fun TouchAnchorEditor(anchorName: String, app: AppState) {
             Modifier.fillMaxWidth().heightIn(min = 56.dp).background(Mono.panelHeader).padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            item { MonoButton(onClick = { state.startNewContour() }) { Text("New contour") } }
+            item {
+                if (state.drawingContourIndex != null) {
+                    MonoButton(onClick = { state.finishContour() }, selected = true) {
+                        Text("Finish contour")
+                    }
+                } else {
+                    MonoButton(onClick = { state.startNewContour() }) {
+                        Text("New contour")
+                    }
+                }
+            }
             item {
                 MonoButton(onClick = { state.toggleTypeSelected() }, enabled = state.selection.isNotEmpty()) {
                     Text("On / off")
