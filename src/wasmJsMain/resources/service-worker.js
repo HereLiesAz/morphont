@@ -1,5 +1,7 @@
-// Minimal offline cache: shell files first, network for everything else,
-// falling back to cache when offline. Bump CACHE_NAME to force an update.
+// Minimal offline cache: SHELL_FILES are precached on install; everything else
+// (including the compiled morphont.js/.wasm app bundle) is cached opportunistically
+// the first time it's fetched over the network, then served from cache when offline.
+// Bump CACHE_NAME to force an update.
 const CACHE_NAME = "morphont-v1";
 const SHELL_FILES = ["./", "index.html", "manifest.webmanifest"];
 

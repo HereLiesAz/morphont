@@ -62,6 +62,9 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 val deltaCanvas = change.position - startPos
                 if (!dragging && deltaCanvas.exceedsSlop(dragStartSlopPx)) {
                     dragging = true
+                    // Record the pre-drag state once, before the first mutation, so undo's
+                    // pop-and-restore convention (see EditorState.undo) lands back here.
+                    state.pushHistory()
                 }
                 if (!dragging) return@drag
 
@@ -79,7 +82,6 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 }
                 state.replaceGlyph(updated)
             }
-            if (dragging) state.pushHistory()
         } else {
             state.selection = emptySet()
             var current = startPos

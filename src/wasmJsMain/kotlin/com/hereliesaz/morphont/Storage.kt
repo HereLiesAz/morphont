@@ -75,6 +75,8 @@ object Storage {
 
     private var database: Database? = null
     private var initialized = false
+    private var initializationError: Throwable? = null
+    private var storageUnavailableWarned = false
 
     /**
      * Opens durable browser storage and loads the project into memory.
@@ -86,42 +88,51 @@ object Storage {
      */
     suspend fun initialize(): List<String> = initializationMutex.withLock {
         if (initialized) return@withLock listGlyphNames()
-
-        val opened = openDatabase(DATABASE_NAME, DATABASE_VERSION) { db, oldVersion, _ ->
-            if (oldVersion < 1) {
-                db.createObjectStore(GLYPH_STORE, KeyPath("name"))
-            }
-        }
+        // Once IndexedDB has failed to open, every future initialize() call is another
+        // no-hope open attempt (and every autosave calls initialize()) -- fail fast
+        // with the original error instead of retrying and stalling on each edit.
+        initializationError?.let { throw it }
 
         try {
-            val loaded = opened.transaction(GLYPH_STORE) {
-                objectStore(GLYPH_STORE).getAll()
-            }.toList().associate { raw ->
-                val record = raw as StoredGlyph
-                record.name to ProjectCodec.decodeGlyph(record.json)
-            }.toMutableMap()
-
-            if (loaded.isEmpty()) {
-                val legacy = readLegacyProject()
-                if (legacy.isNotEmpty()) {
-                    opened.writeTransaction(GLYPH_STORE) {
-                        val store = objectStore(GLYPH_STORE)
-                        for ((name, glyph) in legacy) {
-                            store.put(storedGlyph(name, glyph))
-                        }
-                    }
-                    loaded.putAll(legacy)
+            val opened = openDatabase(DATABASE_NAME, DATABASE_VERSION) { db, oldVersion, _ ->
+                if (oldVersion < 1) {
+                    db.createObjectStore(GLYPH_STORE, KeyPath("name"))
                 }
             }
 
-            project.clear()
-            project.putAll(loaded)
-            database = opened
-            initialized = true
-            clearLegacyProject()
-            listGlyphNames()
+            try {
+                val loaded = opened.transaction(GLYPH_STORE) {
+                    objectStore(GLYPH_STORE).getAll()
+                }.toList().associate { raw ->
+                    val record = raw as StoredGlyph
+                    record.name to ProjectCodec.decodeGlyph(record.json)
+                }.toMutableMap()
+
+                if (loaded.isEmpty()) {
+                    val legacy = readLegacyProject()
+                    if (legacy.isNotEmpty()) {
+                        opened.writeTransaction(GLYPH_STORE) {
+                            val store = objectStore(GLYPH_STORE)
+                            for ((name, glyph) in legacy) {
+                                store.put(storedGlyph(name, glyph))
+                            }
+                        }
+                        loaded.putAll(legacy)
+                    }
+                }
+
+                project.clear()
+                project.putAll(loaded)
+                database = opened
+                initialized = true
+                clearLegacyProject()
+                listGlyphNames()
+            } catch (t: Throwable) {
+                opened.close()
+                throw t
+            }
         } catch (t: Throwable) {
-            opened.close()
+            initializationError = t
             throw t
         }
     }
@@ -167,7 +178,7 @@ object Storage {
     }
 
     fun importProject(onLoaded: (List<String>) -> Unit, onError: (String) -> Unit) {
-        pickTextFile(".json,application/json") { text ->
+        pickTextFile(".json,application/json", onError) { text ->
             val glyphs = try {
                 ProjectCodec.decodeProject(text)
             } catch (e: Throwable) {
@@ -203,7 +214,7 @@ object Storage {
     }
 
     fun importGlyph(name: String, onLoaded: (Glyph) -> Unit, onError: (String) -> Unit) {
-        pickTextFile(".json,application/json") { text ->
+        pickTextFile(".json,application/json", onError) { text ->
             val glyph = try {
                 ProjectCodec.decodeGlyph(text)
             } catch (e: Throwable) {
@@ -264,8 +275,13 @@ object Storage {
                 block()
             } catch (e: Throwable) {
                 // Persistence failures are exceptional and risk data loss. Make them visible instead
-                // of allowing an uncaught DOMException to freeze or silently break the editor.
-                window.alert(storageMessage(label, e))
+                // of allowing an uncaught DOMException to freeze or silently break the editor -- but
+                // only once: once storage is known broken, every subsequent autosave would otherwise
+                // pop another blocking alert and freeze the single-threaded UI on every edit.
+                if (!storageUnavailableWarned) {
+                    storageUnavailableWarned = true
+                    window.alert(storageMessage(label, e))
+                }
             }
         }
     }
@@ -290,7 +306,7 @@ object Storage {
         document.body?.removeChild(anchor)
     }
 
-    private fun pickTextFile(accept: String, onLoaded: (String) -> Unit) {
+    private fun pickTextFile(accept: String, onError: (String) -> Unit, onLoaded: (String) -> Unit) {
         val input = document.createElement("input") as HTMLInputElement
         input.type = "file"
         input.accept = accept
@@ -298,6 +314,7 @@ object Storage {
             val file = input.files?.item(0) ?: return@addEventListener
             val reader = FileReader()
             reader.onload = { onLoaded(reader.result as String) }
+            reader.onerror = { onError("Couldn't read file.") }
             reader.readAsText(file)
         })
         input.click()
