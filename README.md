@@ -102,7 +102,7 @@ so anchors can then be reshaped without adding or removing points.
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)
 - `AnchorCanvas.kt` / `Panels.kt` -- the actual UI
 - `Theme.kt` -- the visual language, built on `HereLiesAz/convey` directly (see below)
-- `Storage.kt` -- `localStorage` persistence + JSON export/import
+- `Storage.kt` -- IndexedDB persistence (one record per glyph) + JSON export/import; migrates a legacy single-blob `localStorage` project automatically on first successful open
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point
 - `VariableFont.kt` / `FamilyImport.kt` -- the from-scratch OpenType variable-font parser used to import a whole character family from one variable TTF
 
@@ -111,7 +111,7 @@ so anchors can then be reshaped without adding or removing points.
 Built directly on [HereLiesAz/convey](https://github.com/HereLiesAz/convey)
 -- the Compose Multiplatform implementation of the Conveyance manifesto
 -- as a real Gradle dependency (`build.gradle.kts`, resolved through
-JitPack since `convey` isn't published to Maven Central), not a
+GitHub Packages since `convey` isn't published to Maven Central), not a
 reimplementation of its ideas:
 
 - **Color.** A semantic role vocabulary (surface/onSurface/outline/
@@ -144,10 +144,9 @@ reimplementation of its ideas:
   here too) -- the multiplex variable font this tool exists to help
   shape -- loaded via `convey`'s own `conveyTypeFontFamily()`
   (`tokens/ConveyType.kt`) directly: the actual composable and its
-  actual bundled font resource, not a copy of either. `convey`'s
-  pinned Compose Multiplatform version (1.8.2, which this project
-  matches -- see `build.gradle.kts`'s own comment on why the two must
-  agree) supports `Font(variationSettings = ...)`, so this is Azrienoch
+  actual bundled font resource, not a copy of either. This project
+  pins Compose Multiplatform 1.12.0 (`build.gradle.kts`), which
+  supports `Font(variationSettings = ...)`, so this is Azrienoch
   rendered with real, live `wght`/`wdth` control, not a single baked
   instance.
 
@@ -159,18 +158,16 @@ reimplementation of its ideas:
   rather than guess at an unconfirmed alternative this was dropped for
   now. Rubber-band selection (drag from empty space) still covers most
   multi-select needs.
-- **Depends on `com.github.HereLiesAz.convey:convey` resolving its
-  Compose Multiplatform resources artifact correctly through JitPack**,
-  which required a fix on `convey`'s own side (no `jitpack.yml` existed
-  there before, so JitPack's default build died on that project's
-  `androidTarget` -- no Android SDK on JitPack's runner -- before ever
-  publishing the wasmJs resources classifier a consumer's font loading
-  needs; see HereLiesAz/convey#26). `build.gradle.kts`'s pinned commit
-  must be that fix or later, or the app compiles clean and then throws
+- **Depends on `compose.conveyance:convey` resolving its Compose
+  Multiplatform resources artifact correctly through GitHub Packages**
+  (`build.gradle.kts` / `settings.gradle.kts`, authenticated with
+  `GITHUB_ACTOR`/`GITHUB_TOKEN`). `build.gradle.kts`'s pinned commit
+  must publish the wasmJs resources classifier a consumer's font
+  loading needs, or the app compiles clean and then throws
   `MissingResourceException` trying to load Azrienoch at runtime.
 - A project saved under the pre-N-axis anchor names (`extraThin`/
   `extraBlack`/`condensed`/`wide`) migrates automatically on load
-  (`Storage.kt`'s `migrateGlyph`) to today's tag-based names
+  (`ProjectCodec.kt`'s `migrateGlyph`) to today's tag-based names
   (`wght_lo`/`wght_hi`/`wdth_lo`/`wdth_hi`); `regular` is unchanged in
   both schemes.
 - Verified so far: the production build compiles and bundles cleanly, and

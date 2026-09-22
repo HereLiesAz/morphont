@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import compose.conveyance.ConveySystem
 import compose.conveyance.tokens.ConveyShape
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -68,6 +69,8 @@ class AndroidFileActions(
 )
 
 private enum class MobilePane { LOW, REGULAR, HIGH, PREVIEW }
+
+private enum class OpenGlyphOutcome { OPENED, EMPTY, UNREADABLE }
 
 /**
  * Android is not the web layout squeezed until it squeaks. Phones keep the
@@ -107,38 +110,50 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                     storage.glyphExists(name) -> app.setStatus("A glyph named \"$name\" already exists.", true)
                     else -> {
                         val glyph = Glyph()
-                        storage.saveGlyph(name, glyph)
-                        loadPersistentGlyph(name, glyph)
-                        app.setStatus("Created \"$name\" — start with New contour in Regular.")
-                        newName = ""
-                        pane = MobilePane.REGULAR
-                        closeNewGlyph()
+                        scope.launch {
+                            withContext(Dispatchers.IO) { storage.saveGlyph(name, glyph) }
+                            loadPersistentGlyph(name, glyph)
+                            app.setStatus("Created \"$name\" — start with New contour in Regular.")
+                            newName = ""
+                            pane = MobilePane.REGULAR
+                            closeNewGlyph()
+                        }
                     }
                 }
             }
 
-            fun openFirstAvailableGlyph(names: List<String>): Boolean {
-                val firstName = names.firstOrNull() ?: return false
-                val glyph = storage.loadGlyph(firstName) ?: return false
+            fun openFirstAvailableGlyph(names: List<String>): OpenGlyphOutcome {
+                val firstName = names.firstOrNull() ?: return OpenGlyphOutcome.EMPTY
+                val glyph = storage.loadGlyph(firstName) ?: return OpenGlyphOutcome.UNREADABLE
                 loadPersistentGlyph(firstName, glyph)
                 pane = MobilePane.REGULAR
-                return true
+                return OpenGlyphOutcome.OPENED
             }
 
             fun importProjectIntoApp() {
                 files.openJson(
                     { text ->
-                        try {
-                            val names = storage.importProjectText(text)
-                            app.glyphNames = names
-                            if (openFirstAvailableGlyph(names)) {
-                                app.setStatus("Loaded project (${names.size} glyph(s)); opened ${names.first()}.")
-                            } else {
-                                app.clearEditor()
-                                app.setStatus("Loaded an empty project.")
+                        scope.launch {
+                            try {
+                                val names = withContext(Dispatchers.IO) { storage.importProjectText(text) }
+                                app.glyphNames = names
+                                when (openFirstAvailableGlyph(names)) {
+                                    OpenGlyphOutcome.OPENED -> app.setStatus("Loaded project (${names.size} glyph(s)); opened ${names.first()}.")
+                                    OpenGlyphOutcome.EMPTY -> {
+                                        app.clearEditor()
+                                        app.setStatus("Loaded an empty project.")
+                                    }
+                                    OpenGlyphOutcome.UNREADABLE -> {
+                                        app.clearEditor()
+                                        app.setStatus(
+                                            "Loaded project (${names.size} glyph(s)), but \"${names.first()}\" could not be read.",
+                                            true,
+                                        )
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                app.setStatus("Import failed: ${e.message}", true)
                             }
-                        } catch (e: Exception) {
-                            app.setStatus("Import failed: ${e.message}", true)
                         }
                     },
                     { app.setStatus(it, true) },
@@ -156,8 +171,8 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                 val result = withContext(Dispatchers.Default) {
                                     buildFamilyFromVariableFont(bytes)
                                 }
-                                storage.saveGlyphs(result.glyphs)
-                                app.glyphNames = storage.listGlyphNames()
+                                withContext(Dispatchers.IO) { storage.saveGlyphs(result.glyphs) }
+                                app.glyphNames = withContext(Dispatchers.IO) { storage.listGlyphNames() }
                                 val firstImportedName = result.glyphs.keys.sorted().firstOrNull()
                                 if (firstImportedName != null) {
                                     result.glyphs[firstImportedName]?.let {
@@ -233,12 +248,32 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 initialized = true
             }
 
+            // Debounces edits within one glyph, but flushes immediately -- instead of
+            // losing it to the debounce's cancellation -- the moment the open glyph
+            // changes, so switching glyphs right after an edit can never drop it.
             LaunchedEffect(Unit) {
+                var saveJob: Job? = null
+                var pendingName: String? = null
+                var pendingGlyph: Glyph? = null
                 snapshotFlow { Triple(initialized, app.currentGlyphName, app.toGlyph()) }
-                    .collectLatest { (ready, name, glyph) ->
-                        if (!ready || name == null) return@collectLatest
-                        delay(ANDROID_AUTOSAVE_DEBOUNCE_MS)
-                        storage.saveGlyph(name, glyph)
+                    .collect { (ready, name, glyph) ->
+                        if (!ready) return@collect
+                        if (name != pendingName) {
+                            val outgoingName = pendingName
+                            val outgoingGlyph = pendingGlyph
+                            if (outgoingName != null && outgoingGlyph != null) {
+                                saveJob?.cancel()
+                                withContext(Dispatchers.IO) { storage.saveGlyph(outgoingName, outgoingGlyph) }
+                            }
+                        }
+                        pendingName = name
+                        pendingGlyph = glyph
+                        if (name == null) return@collect
+                        saveJob?.cancel()
+                        saveJob = launch {
+                            delay(ANDROID_AUTOSAVE_DEBOUNCE_MS)
+                            withContext(Dispatchers.IO) { storage.saveGlyph(name, glyph) }
+                        }
                     }
             }
 
@@ -366,8 +401,11 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                             val name = app.currentGlyphName
                                             if (name == null) app.setStatus("No glyph loaded.", true)
                                             else {
-                                                storage.saveGlyph(name, app.toGlyph())
-                                                app.setStatus("Saved \"$name\".")
+                                                val glyph = app.toGlyph()
+                                                scope.launch {
+                                                    withContext(Dispatchers.IO) { storage.saveGlyph(name, glyph) }
+                                                    app.setStatus("Saved \"$name\".")
+                                                }
                                             }
                                         })
                                         DropdownMenuItem(text = { Text("Export glyph JSON") }, onClick = {
@@ -386,10 +424,13 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                             val targetName = app.currentGlyphName ?: "imported"
                                             files.openJson(
                                                 { text ->
-                                                    try {
-                                                        loadPersistentGlyph(targetName, storage.importGlyphText(targetName, text))
-                                                    } catch (e: Exception) {
-                                                        app.setStatus("Import failed: ${e.message}", true)
+                                                    scope.launch {
+                                                        try {
+                                                            val glyph = withContext(Dispatchers.IO) { storage.importGlyphText(targetName, text) }
+                                                            loadPersistentGlyph(targetName, glyph)
+                                                        } catch (e: Exception) {
+                                                            app.setStatus("Import failed: ${e.message}", true)
+                                                        }
                                                     }
                                                 },
                                                 { app.setStatus(it, true) },
@@ -397,12 +438,15 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                         })
                                         DropdownMenuItem(text = { Text("Export whole project") }, onClick = {
                                             actionMenuOpen = false
-                                            files.saveJson(
-                                                "morphont-project.json",
-                                                storage.exportProjectText(),
-                                                { app.setStatus("Project exported.") },
-                                                { app.setStatus(it, true) },
-                                            )
+                                            scope.launch {
+                                                val text = withContext(Dispatchers.IO) { storage.exportProjectText() }
+                                                files.saveJson(
+                                                    "morphont-project.json",
+                                                    text,
+                                                    { app.setStatus("Project exported.") },
+                                                    { app.setStatus(it, true) },
+                                                )
+                                            }
                                         })
                                         DropdownMenuItem(text = { Text("Import whole project") }, onClick = {
                                             actionMenuOpen = false

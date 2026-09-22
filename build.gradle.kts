@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "com.hereliesaz.morphont"
-version = "0.2.0"
+version = "0.4.3"
 
 repositories {
     google()
@@ -80,6 +80,9 @@ kotlin {
 
 tasks.register("parityCheck") {
     group = "verification"
+    // Not currently invoked by any CI workflow (its former caller,
+    // platform-parity.yml, was removed pending re-sync from HereLiesAz/workflows) --
+    // run it manually until a workflow calls it again.
     description = "Builds Android and wasm and runs the shared test suite on both targets."
     dependsOn(
         "wasmJsBrowserDistribution",

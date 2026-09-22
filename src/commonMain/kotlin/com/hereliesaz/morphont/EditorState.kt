@@ -29,16 +29,25 @@ class AnchorState(initial: GlyphCorner) {
         glyph = new
     }
 
+    /** Records the state to return to on the next [undo]. Call before mutating [glyph]. */
     fun pushHistory() {
         history.add(glyph.deepCopy())
         if (history.size > 80) history.removeAt(0)
     }
 
+    /** Pops the most recently pushed pre-edit state and makes it current. */
     fun undo() {
         if (history.size <= 1) return
-        history.removeAt(history.lastIndex)
-        glyph = history.last().deepCopy()
+        glyph = history.removeAt(history.lastIndex).deepCopy()
         selection = emptySet()
+    }
+
+    /** Replaces [glyph] as one undoable edit: pushes the current state first, same as any other edit. */
+    fun replaceWithHistory(new: GlyphCorner) {
+        pushHistory()
+        glyph = new
+        selection = emptySet()
+        drawingContourIndex = null
     }
 
     fun loadFresh(new: GlyphCorner) {
@@ -185,8 +194,7 @@ class AppState {
         for (name in ANCHORS) {
             if (name == activeAnchor) continue
             val dst = anchors.getValue(name)
-            dst.pushHistory()
-            dst.loadFresh(src.glyph.deepCopy())
+            dst.replaceWithHistory(src.glyph.deepCopy())
             count++
         }
         setStatus("Copied ${ANCHOR_LABELS[activeAnchor]}'s outline to the other $count anchor(s) -- reshape each toward its extreme without adding or removing points.")

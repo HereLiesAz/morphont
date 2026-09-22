@@ -2,13 +2,15 @@
 
 Android publishing is executed by the centralized `HereLiesAz/workflows` controller. Morphont contains only a secretless OIDC proxy; signing keys, the GitHub write token, and the optional Google Play service account remain in the centralized workflows repository.
 
+> **Currently stale:** as of the "Centralize workflow bindings and version state" commit, `.github/workflows/morphont-publish.yml` and `.github/workflows/platform-parity.yml` were removed from this repo (along with `ci.yml` and `jules-glee.yml`) pending re-sync from the shared `HereLiesAz/workflows` catalog -- the same mechanism that populated the earlier "Refresh ... from shared catalog" commits. Until a proxy workflow lands back in `.github/workflows/`, the steps below describe the intended pipeline, not one that currently runs: pushing a release tag will not trigger anything.
+
 ## GitHub release
 
 1. Update `versionName` and `versionCode` in `androidApp/build.gradle.kts`.
 2. Merge the version change to `main`.
 3. Create and push a tag matching `v<versionName>` exactly, for example `v0.4.0`.
 
-The `.github/workflows/morphont-publish.yml` proxy dispatches the exact tagged commit to the central publisher. The central workflow builds a signed release APK and AAB, writes SHA-256 checksums, and creates or updates the GitHub Release in `HereLiesAz/morphont`.
+Once the `.github/workflows/morphont-publish.yml` proxy is back in place, it dispatches the exact tagged commit to the central publisher, which builds a signed release APK and AAB, writes SHA-256 checksums, and creates or updates the GitHub Release in `HereLiesAz/morphont`.
 
 A mismatched tag and `versionName` fails before publication.
 

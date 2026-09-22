@@ -27,7 +27,23 @@ class AndroidStorage(context: Context) {
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     init {
+        recoverStrandedDirectorySwapIfNeeded()
         migrateLegacyProjectIfNeeded()
+    }
+
+    /**
+     * [replaceProjectDirectory] swaps directories with two renames that are not atomic
+     * together. If the process died between them, the live directory can be missing while
+     * the real glyphs sit under [BACKUP_DIRECTORY] -- restore it before anything else runs,
+     * since [liveDirectory] would otherwise just create a fresh, empty one.
+     */
+    private fun recoverStrandedDirectorySwapIfNeeded() {
+        val live = File(appContext.filesDir, GLYPH_DIRECTORY)
+        val backup = File(appContext.filesDir, BACKUP_DIRECTORY)
+        if (!live.exists() && backup.exists()) {
+            backup.renameTo(live)
+        }
+        File(appContext.filesDir, STAGE_DIRECTORY).deleteRecursively()
     }
 
     private fun liveDirectory(): File =

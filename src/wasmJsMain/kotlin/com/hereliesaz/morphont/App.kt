@@ -34,8 +34,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import compose.conveyance.ConveySystem
 import compose.conveyance.tokens.ConveyShape
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 /** How long an edit has to sit still before autosave writes it -- coalesces a whole drag gesture's frame-by-frame updates into one write. */
 private const val AUTOSAVE_DEBOUNCE_MS = 400L
@@ -65,22 +66,32 @@ private fun createGlyph(app: AppState, rawName: String): Boolean {
     return true
 }
 
-private fun openFirstAvailableGlyph(app: AppState, names: List<String>): Boolean {
-    val firstName = names.firstOrNull() ?: return false
-    val glyph = Storage.loadGlyph(firstName) ?: return false
+private enum class OpenGlyphOutcome { OPENED, EMPTY, UNREADABLE }
+
+private fun openFirstAvailableGlyph(app: AppState, names: List<String>): OpenGlyphOutcome {
+    val firstName = names.firstOrNull() ?: return OpenGlyphOutcome.EMPTY
+    val glyph = Storage.loadGlyph(firstName) ?: return OpenGlyphOutcome.UNREADABLE
     app.loadGlyph(firstName, glyph)
-    return true
+    return OpenGlyphOutcome.OPENED
 }
 
 private fun importProjectIntoApp(app: AppState) {
     Storage.importProject(
         onLoaded = { names ->
             app.glyphNames = names
-            if (openFirstAvailableGlyph(app, names)) {
-                app.setStatus("Loaded project (${names.size} glyph(s)); opened ${names.first()}.")
-            } else {
-                app.clearEditor()
-                app.setStatus("Loaded an empty project.")
+            when (openFirstAvailableGlyph(app, names)) {
+                OpenGlyphOutcome.OPENED -> app.setStatus("Loaded project (${names.size} glyph(s)); opened ${names.first()}.")
+                OpenGlyphOutcome.EMPTY -> {
+                    app.clearEditor()
+                    app.setStatus("Loaded an empty project.")
+                }
+                OpenGlyphOutcome.UNREADABLE -> {
+                    app.clearEditor()
+                    app.setStatus(
+                        "Loaded project (${names.size} glyph(s)), but \"${names.first()}\" could not be read.",
+                        isError = true,
+                    )
+                }
             }
         },
         onError = { msg -> app.setStatus(msg, isError = true) },
@@ -130,13 +141,32 @@ fun App() {
                 openFirstAvailableGlyph(app, names)
             }
 
-            // Autosave, always on.
+            // Autosave, always on. Debounces edits within one glyph, but flushes
+            // immediately -- instead of losing it to the debounce's cancellation --
+            // the moment the open glyph changes, so switching glyphs right after an
+            // edit can never drop that edit.
             LaunchedEffect(Unit) {
+                var saveJob: Job? = null
+                var pendingName: String? = null
+                var pendingGlyph: Glyph? = null
                 snapshotFlow { app.currentGlyphName to app.toGlyph() }
-                    .collectLatest { (name, glyph) ->
-                        if (name == null) return@collectLatest
-                        delay(AUTOSAVE_DEBOUNCE_MS)
-                        Storage.saveGlyph(name, glyph)
+                    .collect { (name, glyph) ->
+                        if (name != pendingName) {
+                            val outgoingName = pendingName
+                            val outgoingGlyph = pendingGlyph
+                            if (outgoingName != null && outgoingGlyph != null) {
+                                saveJob?.cancel()
+                                Storage.saveGlyph(outgoingName, outgoingGlyph)
+                            }
+                        }
+                        pendingName = name
+                        pendingGlyph = glyph
+                        if (name == null) return@collect
+                        saveJob?.cancel()
+                        saveJob = launch {
+                            delay(AUTOSAVE_DEBOUNCE_MS)
+                            Storage.saveGlyph(name, glyph)
+                        }
                     }
             }
 
