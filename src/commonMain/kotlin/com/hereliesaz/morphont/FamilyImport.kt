@@ -58,7 +58,7 @@ fun buildFamilyFromVariableFont(bytes: ByteArray): FamilyImportResult {
             skipped.add(codepoint to "composite glyph nested too deeply or uses an unsupported component transform")
             continue
         }
-        glyphs[codepoint.toChar().toString()] = Glyph(corners)
+        glyphs[codepoint.toChar().toString()] = Glyph(corners, metrics = font.metrics)
     }
     return FamilyImportResult(glyphs, skipped)
 }

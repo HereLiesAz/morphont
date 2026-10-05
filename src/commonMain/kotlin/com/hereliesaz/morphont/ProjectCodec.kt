@@ -25,7 +25,7 @@ object ProjectCodec {
     fun migrateGlyph(glyph: Glyph): Glyph {
         if (legacyAnchorNames.keys.none { it in glyph.corners }) return glyph
         val migrated = glyph.corners.mapKeys { (name, _) -> legacyAnchorNames[name] ?: name }
-        return Glyph(migrated.toMutableMap())
+        return glyph.copy(corners = migrated.toMutableMap())
     }
 
     fun encodeGlyph(glyph: Glyph): String = json.encodeToString(glyph)

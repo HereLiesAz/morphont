@@ -1,5 +1,16 @@
 package com.hereliesaz.morphont
 
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -41,11 +52,10 @@ import kotlinx.coroutines.launch
 /** How long an edit has to sit still before autosave writes it -- coalesces a whole drag gesture's frame-by-frame updates into one write. */
 private const val AUTOSAVE_DEBOUNCE_MS = 400L
 
-/** Below this width, the 4-panel grid stacks into one scrollable column instead of a 2x2 grid. */
-private val MOBILE_BREAKPOINT = 700.dp
+/** Below this width the 2x2 grid becomes one full-size pane with a tab bar -- never a scrolling stack, which fought every drag. */
+private val COMPACT_BREAKPOINT = 900.dp
 
-/** Each stacked panel's height on a narrow screen. */
-private val MOBILE_PANEL_HEIGHT = 420.dp
+private enum class Pane { LOW, REGULAR, HIGH, PREVIEW }
 
 private fun createGlyph(app: AppState, rawName: String): Boolean {
     val name = rawName.trim()
@@ -131,7 +141,8 @@ private fun importVariableFontIntoApp(app: AppState) {
 fun App() {
     MorphontTheme {
         ConveySystem {
-            val app = remember { AppState() }
+            val app = remember { AppState().apply { glyphLookup = { Storage.loadGlyph(it) } } }
+            val focus = remember { FocusRequester() }
 
             // A returning user should never land in the empty editor. If local storage already
             // contains glyphs, open one immediately; otherwise the first-run screen is shown.
@@ -139,6 +150,7 @@ fun App() {
                 val names = Storage.listGlyphNames()
                 app.glyphNames = names
                 openFirstAvailableGlyph(app, names)
+                runCatching { focus.requestFocus() }
             }
 
             // Autosave, always on. Debounces edits within one glyph, but flushes
@@ -170,13 +182,26 @@ fun App() {
                     }
             }
 
-            Column(Modifier.fillMaxSize().background(Mono.ground)) {
+            Column(
+                Modifier.fillMaxSize().background(Mono.ground)
+                    // Any press returns keyboard focus to the editor (text fields still take it after).
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            runCatching { focus.requestFocus() }
+                        }
+                    }
+                    .focusRequester(focus)
+                    .focusable()
+                    .editorKeys(app),
+            ) {
                 if (app.currentGlyphName == null) {
                     WelcomePanel(app)
                 } else {
                     Toolbar(app)
-                    StatusLine(app)
-                    EditorGrid(app, Modifier.weight(1f).fillMaxWidth())
+                    ContextBar(app)
+                    StatusStrip(app)
+                    EditorWorkspace(app, Modifier.weight(1f).fillMaxWidth())
                 }
             }
         }
@@ -271,25 +296,48 @@ private fun WelcomePanel(app: AppState) {
 }
 
 @Composable
-private fun EditorGrid(app: AppState, modifier: Modifier = Modifier) {
+private fun EditorWorkspace(app: AppState, modifier: Modifier = Modifier) {
+    var pane by remember { mutableStateOf(Pane.REGULAR) }
     BoxWithConstraints(modifier) {
-        if (maxWidth < MOBILE_BREAKPOINT) {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                AnchorPanel(app.selectedAxis.lo, app, modifier = Modifier.fillMaxWidth().height(MOBILE_PANEL_HEIGHT))
-                AnchorPanel(app.selectedAxis.hi, app, modifier = Modifier.fillMaxWidth().height(MOBILE_PANEL_HEIGHT))
-                AnchorPanel("regular", app, modifier = Modifier.fillMaxWidth().height(MOBILE_PANEL_HEIGHT))
-                PreviewPanel(app, modifier = Modifier.fillMaxWidth().height(MOBILE_PANEL_HEIGHT))
+        if (maxWidth < COMPACT_BREAKPOINT) {
+            LaunchedEffect(pane, app.selectedAxis) {
+                when (pane) {
+                    Pane.LOW -> app.activeAnchor = app.selectedAxis.lo
+                    Pane.REGULAR -> app.activeAnchor = "regular"
+                    Pane.HIGH -> app.activeAnchor = app.selectedAxis.hi
+                    Pane.PREVIEW -> Unit
+                }
+            }
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1f).fillMaxWidth().padding(4.dp)) {
+                    when (pane) {
+                        Pane.LOW -> AnchorPanel(app.selectedAxis.lo, app, Modifier.fillMaxSize(), interactionScale = 1.3f)
+                        Pane.REGULAR -> AnchorPanel("regular", app, Modifier.fillMaxSize(), interactionScale = 1.3f)
+                        Pane.HIGH -> AnchorPanel(app.selectedAxis.hi, app, Modifier.fillMaxSize(), interactionScale = 1.3f)
+                        Pane.PREVIEW -> PreviewPanel(app, Modifier.fillMaxSize())
+                    }
+                }
+                Row(Modifier.fillMaxWidth().background(Mono.panel).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for (p in Pane.entries) {
+                        val label = when (p) {
+                            Pane.LOW -> app.selectedAxis.loLabel
+                            Pane.REGULAR -> "Regular"
+                            Pane.HIGH -> app.selectedAxis.hiLabel
+                            Pane.PREVIEW -> "Preview"
+                        }
+                        MonoButton(onClick = { pane = p }, selected = p == pane, modifier = Modifier.weight(1f)) {
+                            Text(label, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
             }
         } else {
-            Row(Modifier.fillMaxSize().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxSize().padding(6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     AnchorPanel(app.selectedAxis.lo, app, modifier = Modifier.weight(1f).fillMaxWidth())
                     AnchorPanel(app.selectedAxis.hi, app, modifier = Modifier.weight(1f).fillMaxWidth())
                 }
-                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     AnchorPanel("regular", app, modifier = Modifier.weight(1f).fillMaxWidth())
                     PreviewPanel(app, modifier = Modifier.weight(1f).fillMaxWidth())
                 }
@@ -298,26 +346,35 @@ private fun EditorGrid(app: AppState, modifier: Modifier = Modifier) {
     }
 }
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+/**
+ * One compact row: glyph, axis, Edit, View, Ghosts, File. Everything else
+ * lives in those menus, so the bar never wraps into a second line on a phone.
+ */
 @Composable
 private fun Toolbar(app: AppState) {
     var newName by remember { mutableStateOf("") }
+    var newGlyphOpen by remember { mutableStateOf(false) }
     var glyphMenuOpen by remember { mutableStateOf(false) }
     var moreMenuOpen by remember { mutableStateOf(false) }
 
-    FlowRow(
-        Modifier.fillMaxWidth().background(Mono.panel).padding(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    Row(
+        Modifier.fillMaxWidth().background(Mono.panel).horizontalScroll(rememberScrollState()).padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box {
             MonoButton(onClick = {
                 app.glyphNames = Storage.listGlyphNames()
                 glyphMenuOpen = true
             }) {
-                Text(app.currentGlyphName ?: "Open glyph...", fontSize = 12.sp)
+                Text((app.currentGlyphName ?: "Open glyph") + "", fontSize = 12.sp, maxLines = 1)
             }
             DropdownMenu(expanded = glyphMenuOpen, onDismissRequest = { glyphMenuOpen = false }) {
+                DropdownMenuItem(text = { Text("+ New glyph…") }, onClick = {
+                    glyphMenuOpen = false
+                    newName = ""
+                    newGlyphOpen = true
+                })
+                HorizontalDivider()
                 for (name in app.glyphNames) {
                     DropdownMenuItem(text = { Text(name) }, onClick = {
                         Storage.loadGlyph(name)?.let { app.loadGlyph(name, it) }
@@ -326,39 +383,23 @@ private fun Toolbar(app: AppState) {
                 }
             }
         }
-
-        OutlinedTextField(
-            value = newName,
-            onValueChange = { newName = it },
-            placeholder = { Text("new glyph", fontSize = 12.sp) },
-            textStyle = TextStyle(fontSize = 12.sp, color = Mono.ink),
-            colors = monoTextFieldColors(),
-            shape = ConveyShape.CutSmall,
-            modifier = Modifier.height(48.dp).widthIn(min = 150.dp, max = 220.dp),
-        )
-        MonoButton(onClick = {
-            if (createGlyph(app, newName)) newName = ""
-        }) { Text("New", fontSize = 12.sp) }
-
-        MonoButton(onClick = { app.anchors.getValue(app.activeAnchor).undo() }) {
-            Text("Undo", fontSize = 12.sp)
-        }
-        MonoButton(onClick = { app.copyActiveToOthers() }) {
-            Text("Copy active to anchors", fontSize = 12.sp)
-        }
-        MonoButton(onClick = {
-            val name = app.currentGlyphName
-            if (name == null) {
-                app.setStatus("No glyph loaded.", isError = true)
-            } else {
-                Storage.saveGlyph(name, app.toGlyph())
-                app.setStatus("Saved \"$name\".")
-            }
-        }) { Text("Save", fontSize = 12.sp) }
+        AxisPicker(app)
+        GlyphMenu(app)
+        ViewMenu(app)
+        GhostMenu(app) { onLoaded, onError -> Storage.pickTtfBytes(onLoaded, onError) }
 
         Box {
-            MonoButton(onClick = { moreMenuOpen = true }) { Text("More...", fontSize = 12.sp) }
+            MonoButton(onClick = { moreMenuOpen = true }) { Text("File", fontSize = 12.sp) }
             DropdownMenu(expanded = moreMenuOpen, onDismissRequest = { moreMenuOpen = false }) {
+                DropdownMenuItem(text = { Text("Save glyph now") }, onClick = {
+                    moreMenuOpen = false
+                    val name = app.currentGlyphName
+                    if (name == null) app.setStatus("No glyph loaded.", isError = true)
+                    else {
+                        Storage.saveGlyph(name, app.toGlyph())
+                        app.setStatus("Saved \"$name\".")
+                    }
+                })
                 DropdownMenuItem(text = { Text("Import variable font (.ttf)") }, onClick = {
                     moreMenuOpen = false
                     importVariableFontIntoApp(app)
@@ -391,5 +432,30 @@ private fun Toolbar(app: AppState) {
                 })
             }
         }
+    }
+
+    if (newGlyphOpen) {
+        AlertDialog(
+            onDismissRequest = { newGlyphOpen = false },
+            title = { Text("New glyph") },
+            text = {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    singleLine = true,
+                    placeholder = { Text("glyph name") },
+                    textStyle = TextStyle(color = Mono.ink),
+                    colors = monoTextFieldColors(),
+                    shape = ConveyShape.CutSmall,
+                )
+            },
+            confirmButton = {
+                MonoButton(onClick = { if (createGlyph(app, newName)) newGlyphOpen = false }) { Text("Create") }
+            },
+            dismissButton = { MonoButton(onClick = { newGlyphOpen = false }) { Text("Cancel") } },
+            containerColor = Mono.panel,
+            titleContentColor = Mono.ink,
+            textContentColor = Mono.ink,
+        )
     }
 }

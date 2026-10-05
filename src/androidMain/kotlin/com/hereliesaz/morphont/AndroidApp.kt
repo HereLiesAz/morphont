@@ -2,7 +2,6 @@ package com.hereliesaz.morphont
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,11 +11,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -81,7 +77,7 @@ private enum class OpenGlyphOutcome { OPENED, EMPTY, UNREADABLE }
 fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
     MorphontTheme {
         ConveySystem {
-            val app = remember { AppState() }
+            val app = remember { AppState().apply { glyphLookup = { storage.loadGlyph(it) } } }
             val scope = rememberCoroutineScope()
             val focusManager = LocalFocusManager.current
             val newNameFocusRequester = remember { FocusRequester() }
@@ -364,7 +360,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                         app.glyphNames = storage.listGlyphNames()
                                         glyphMenuOpen = true
                                     }) {
-                                        Text(app.currentGlyphName ?: "Open glyph", maxLines = 1)
+                                        Text((app.currentGlyphName ?: "Open glyph") + "", maxLines = 1, fontSize = 12.sp)
                                     }
                                     DropdownMenu(expanded = glyphMenuOpen, onDismissRequest = { glyphMenuOpen = false }) {
                                         storage.listGlyphNames().forEach { name ->
@@ -382,20 +378,15 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                 MonoButton(onClick = {
                                     newName = ""
                                     showNewGlyph = true
-                                }) { Text("New") }
+                                }) { Text("New", fontSize = 12.sp) }
+                                AxisPicker(app)
+                                GlyphMenu(app)
+                                ViewMenu(app)
+                                GhostMenu(app) { onLoaded, onError -> files.openTtf(onLoaded, onError) }
 
                                 Box {
-                                    val activeLabel = ANCHOR_LABELS[app.activeAnchor] ?: app.activeAnchor
-                                    MonoButton(onClick = { actionMenuOpen = true }) { Text("Actions") }
+                                    MonoButton(onClick = { actionMenuOpen = true }) { Text("File", fontSize = 12.sp) }
                                     DropdownMenu(expanded = actionMenuOpen, onDismissRequest = { actionMenuOpen = false }) {
-                                        DropdownMenuItem(text = { Text("Copy $activeLabel outline to all anchors") }, onClick = {
-                                            actionMenuOpen = false
-                                            app.copyActiveToOthers()
-                                        })
-                                        DropdownMenuItem(text = { Text("Undo $activeLabel") }, onClick = {
-                                            actionMenuOpen = false
-                                            app.anchors.getValue(app.activeAnchor).undo()
-                                        })
                                         DropdownMenuItem(text = { Text("Save glyph now") }, onClick = {
                                             actionMenuOpen = false
                                             val name = app.currentGlyphName
@@ -464,27 +455,8 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                 }
                             }
 
-                            LazyRow(
-                                Modifier.fillMaxWidth().background(Mono.panelHeader).padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                items(Axis.ALL) { axis ->
-                                    MonoButton(
-                                        onClick = { app.selectedAxis = axis },
-                                        selected = axis == app.selectedAxis,
-                                    ) { Text(axis.label, fontSize = 11.sp) }
-                                }
-                            }
-
-                            if (app.status.isNotEmpty()) {
-                                Text(
-                                    (if (app.statusIsError) "! " else "") + app.status,
-                                    color = if (app.statusIsError) Mono.error else Mono.inkDim,
-                                    fontWeight = if (app.statusIsError) FontWeight.Bold else FontWeight.Normal,
-                                    fontSize = 11.sp,
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
-                                )
-                            }
+                            if (app.currentGlyphName != null) ContextBar(app)
+                            StatusStrip(app)
 
                             if (app.currentGlyphName == null) {
                                 AndroidWelcomePanel(
@@ -679,67 +651,12 @@ private fun EditablePane(pane: MobilePane, app: AppState) {
 
 @Composable
 private fun TouchAnchorEditor(anchorName: String, app: AppState) {
-    val state = app.anchors.getValue(anchorName)
-    val active = app.activeAnchor == anchorName
     val haptics = LocalHapticFeedback.current
-    Column(
-        Modifier.fillMaxSize()
-            .background(Mono.panel)
-            .border(1.dp, if (active) Mono.primary else Mono.border),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().background(Mono.panelHeader).padding(horizontal = 10.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                ANCHOR_LABELS[anchorName] ?: anchorName,
-                color = Mono.ink,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-            )
-            val count = state.selection.size
-            if (count > 0) Text("$count selected", color = Mono.inkDim, fontSize = 11.sp)
-        }
-
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            AnchorCanvas(
-                anchorName = anchorName,
-                state = state,
-                isActive = active,
-                onActivate = { app.activeAnchor = anchorName },
-                travelPathOverlay = if (anchorName == "regular") computeTravelPathOverlay(app) else null,
-                interactionScale = 1.35f,
-                onPointHit = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-
-        LazyRow(
-            Modifier.fillMaxWidth().heightIn(min = 56.dp).background(Mono.panelHeader).padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            item {
-                if (state.drawingContourIndex != null) {
-                    MonoButton(onClick = { state.finishContour() }, selected = true) {
-                        Text("Finish contour")
-                    }
-                } else {
-                    MonoButton(onClick = { state.startNewContour() }) {
-                        Text("New contour")
-                    }
-                }
-            }
-            item {
-                MonoButton(onClick = { state.toggleTypeSelected() }, enabled = state.selection.isNotEmpty()) {
-                    Text("On / off")
-                }
-            }
-            item {
-                MonoButton(onClick = { state.deleteSelected() }, enabled = state.selection.isNotEmpty()) {
-                    Text("Delete")
-                }
-            }
-            item { MonoButton(onClick = { state.undo() }) { Text("Undo") } }
-        }
-    }
+    AnchorPanel(
+        anchorName = anchorName,
+        app = app,
+        modifier = Modifier.fillMaxSize(),
+        interactionScale = 1.35f,
+        onPointHit = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+    )
 }
