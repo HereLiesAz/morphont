@@ -136,6 +136,8 @@ data class GhostData(
     val visible: Boolean = true,
     val sourceGlyph: String? = null,
     val matrix: List<Float> = IDENTITY_MATRIX,
+    /** Drawn beside the working glyph (shifted by its advance) instead of over it. Overlay is the default. */
+    val beside: Boolean = false,
 )
 
 val IDENTITY_MATRIX = listOf(1f, 0f, 0f, 1f, 0f, 0f)

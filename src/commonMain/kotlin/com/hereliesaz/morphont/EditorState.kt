@@ -188,8 +188,10 @@ class GhostLayer(
     visible: Boolean = true,
     sourceGlyph: String? = null,
     matrix: Affine = IDENTITY_MATRIX,
+    beside: Boolean = false,
 ) {
     var label by mutableStateOf(label)
+    var beside by mutableStateOf(beside)
     var visible by mutableStateOf(visible)
     var sourceGlyph by mutableStateOf(sourceGlyph)
     var matrix by mutableStateOf(matrix)
@@ -220,12 +222,13 @@ class GhostLayer(
     /** Turns a linked ghost into a static one holding [contours] (already placed), e.g. before node editing. */
     fun detach(contours: List<ContourData>) {
         sourceGlyph = null
+        beside = false
         matrix = IDENTITY_MATRIX
         matrixHistory.clear()
         state.loadFresh(GlyphCorner(0f, contours.map { it.deepCopy() }.toMutableList()))
     }
 
-    fun toData() = GhostData(label, if (isLinked) emptyList() else state.glyph.contours.map { it.deepCopy() }, visible, sourceGlyph, matrix)
+    fun toData() = GhostData(label, if (isLinked) emptyList() else state.glyph.contours.map { it.deepCopy() }, visible, sourceGlyph, matrix, beside)
 }
 
 /** View toggles shared by every editing canvas. */
@@ -336,18 +339,24 @@ class AppState {
      * working character's position on every axis.
      */
     fun ghostContours(g: GhostLayer, anchorName: String): List<ContourData> {
-        val src = g.sourceGlyph ?: return applyAffine(g.state.glyph.contours, g.matrix)
+        val placed = placement(g, anchors.getValue(anchorName).glyph.width)
+        val src = g.sourceGlyph ?: return applyAffine(g.state.glyph.contours, placed)
         val corners = sourceCorners(src) ?: return emptyList()
         val corner = corners[anchorName] ?: corners["regular"] ?: return emptyList()
-        return applyAffine(corner.contours, g.matrix)
+        return applyAffine(corner.contours, placed)
     }
 
+    /** The ghost's matrix, shifted past the working glyph's advance when it's set to sit beside rather than over it. */
+    private fun placement(g: GhostLayer, advance: Float): Affine =
+        if (g.beside) compose(translation(advance, 0f), g.matrix) else g.matrix
+
     /** The ghost as drawn in the Preview: a linked ghost interpolated at the same slider values as the working glyph. */
-    fun ghostPreviewContours(g: GhostLayer): List<ContourData> {
-        val src = g.sourceGlyph ?: return applyAffine(g.state.glyph.contours, g.matrix)
+    fun ghostPreviewContours(g: GhostLayer, advance: Float): List<ContourData> {
+        val placed = placement(g, advance)
+        val src = g.sourceGlyph ?: return applyAffine(g.state.glyph.contours, placed)
         val corners = sourceCorners(src) ?: return emptyList()
         val inst = if (compatibilityIssue(corners) == null) interpolateGlyph(corners, previewValues) else corners["regular"] ?: return emptyList()
-        return applyAffine(inst.contours, g.matrix)
+        return applyAffine(inst.contours, placed)
     }
 
     /** Every visible ghost's outline in [anchorName]'s panel, optionally skipping one (the one being edited). */
@@ -396,7 +405,7 @@ class AppState {
         ghosts.clear()
         linkedGlyphs.clear()
         glyph.ghosts.forEach {
-            ghosts.add(GhostLayer(nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph, it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX))
+            ghosts.add(GhostLayer(nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph, it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside))
             it.sourceGlyph?.let { src -> cacheLinked(src) }
         }
         glyph.metrics?.let { metrics = it }
@@ -497,11 +506,22 @@ class AppState {
     /** Bounds of the active ghost as drawn in the active anchor's panel. */
     fun activeGhostBounds(): FontRect? = activeGhost?.let { boundsOfContours(ghostContours(it, activeAnchor)) }
 
-    /** Composes [t] onto the active ghost's placement as one undoable step. */
+    /** Composes [t] (expressed in drawn, on-canvas coordinates) onto the active ghost's placement as one undoable step. */
     fun transformActiveGhost(t: Affine) {
         val g = activeGhost ?: return
         g.pushMatrixHistory()
-        g.matrix = compose(t, g.matrix)
+        g.matrix = compose(localGhostTransform(g, t, activeAnchor), g.matrix)
+    }
+
+    /**
+     * Converts a transform measured on the drawn ghost into one for its
+     * matrix: a ghost set beside the glyph is drawn shifted by the advance,
+     * so the shift is undone around [t] (conjugation).
+     */
+    fun localGhostTransform(g: GhostLayer, t: Affine, anchorName: String): Affine {
+        if (!g.beside) return t
+        val adv = anchors.getValue(anchorName).glyph.width
+        return compose(translation(-adv, 0f), compose(t, translation(adv, 0f)))
     }
 
     fun flipActiveGhost(horizontal: Boolean) {

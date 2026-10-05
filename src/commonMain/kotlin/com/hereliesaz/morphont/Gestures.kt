@@ -156,7 +156,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
                         }
                         else -> translation(cur.x - startFont.x, cur.y - startFont.y)
                     }
-                    ghost.matrix = compose(t, orig)
+                    ghost.matrix = compose(app.localGhostTransform(ghost, t, f.anchorName), orig)
                 }
                 return@awaitEachGesture
             }

@@ -83,9 +83,9 @@ many axes that list holds. Today, all 14: `wght` (Weight), `wdth`
 registered and parametric axes -- `GRAD` (Grade), `slnt` (Slant),
 `opsz` (Optical), `XTRA` (Counters), `XOPQ`/`YOPQ` (X/Y Thickness),
 `YTLC`/`YTUC` (x-height/Cap Height), `YTAS`/`YTDE` (Ascender/Descender),
-and `YTFI` (Figures) -- for `2*14 + 1 = 29` total anchors. The Regular
-panel's own axis toggle wraps to fit all 14 at once; the Preview panel's
-per-axis sliders scroll rather than crowd the canvas out.
+and `YTFI` (Figures) -- for `2*14 + 1 = 29` total anchors. The axis
+label (on the axis strip or filmstrip) opens a menu of all 14; the Preview
+shows four sliders and expands to the rest.
 
 Interpolation requires every anchor to be point-for-point compatible
 (same contour count, same points per contour, same on/off-curve types) --
@@ -145,55 +145,44 @@ so anchors can then be reshaped without adding or removing points.
 - `Hit.kt` / `Gestures.kt` -- point hit-testing and pointer-gesture handling (zoom/pinch, touch proxy, ghost placement, rulers/guides, draw, drag with snapping, rubber-band)
 - `Editing.kt` -- UI-free editing geometry: bounds, affine transforms, ghost shapes, clipboard extraction, snapping, node-reduction order
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)
-- `AnchorCanvas.kt` / `Panels.kt` / `Controls.kt` -- the canvas renderer, the panels, and the shared chrome (axis picker, Edit/View/Ghost menus, ghost/simplify context bar, keyboard shortcuts) both shells use
-- `Theme.kt` -- the visual language, built on `HereLiesAz/convey` directly (see below)
+- `Editor.kt` -- the shared editor screen (phone and wide layouts) and the welcome screen, used by both shells
+- `AnchorCanvas.kt` / `Panels.kt` / `Controls.kt` -- the canvas renderer, preview/thumbnail canvases, and the floating parts (selection pill, ghost bar, simplify card, axis strip, filmstrip, inspector sections, dialogs, keyboard shortcuts)
+- `Icons.kt` -- the monoline icon set
+- `Theme.kt` -- the palette and primitives (`MonoButton`, `IconAction`, `Caps`, `floating`, `HairSlider`), built on `HereLiesAz/convey` (see below)
 - `Storage.kt` -- IndexedDB persistence (one record per glyph) + JSON export/import; migrates a legacy single-blob `localStorage` project automatically on first successful open
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point
 - `VariableFont.kt` / `FamilyImport.kt` -- the from-scratch OpenType variable-font parser used to import a whole character family from one variable TTF
 
 ## Design
 
-Built directly on [HereLiesAz/convey](https://github.com/HereLiesAz/convey)
--- the Compose Multiplatform implementation of the Conveyance manifesto
--- as a real Gradle dependency (`build.gradle.kts`, resolved through
-GitHub Packages since `convey` isn't published to Maven Central), not a
-reimplementation of its ideas:
+The glyph is the room. One full-bleed canvas shows the anchor being edited;
+every control floats on it as a rounded, hairline-edged surface and stays out
+of the way until needed.
 
-- **Color.** A semantic role vocabulary (surface/onSurface/outline/
-  primary/secondary/tertiary/error) filled with Morphont's own values
-  rather than `ConveyColor`'s own reference palette -- its own doc
-  comment says as much ("match your brand colors to these roles, not
-  to arbitrary hex values"). Its actual rule for color itself --
-  "Dynamic Color: use contrasting primary, secondary, and tertiary
-  tones to prioritize actions implicitly" -- is spent deliberately
-  rather than everywhere: most of the interface stays a dark,
-  near-neutral ground, and color marks only the few things that carry
-  real hierarchy. `Mono.primary` (indigo) marks the active corner
-  panel and a selected point, `Mono.secondary` (verdigris) marks
-  off-curve handles, `Mono.tertiary` (brass) marks the Preview panel
-  alone -- and `Mono.error` (the palette's only red) stays visually
-  unambiguous from `Mono.primary` precisely because primary isn't a
-  shade of red too.
-- **Shape.** `MonoButton` uses `ConveyShape.CutSmall` -- the library's
-  own chamfered-corner token, not a locally redefined lookalike.
-- **Hierarchy enforcement.** Every `MonoButton` tags itself with
-  `Modifier.conveyWeight(ConveyWeight.Primary/.Secondary)`, and the
-  whole app is wrapped in `ConveySystem` (`App.kt`), which actually
-  enforces that hierarchy at runtime -- too many `Primary`-weighted
-  elements on screen at once throws in debug builds, the same as it
-  would in any other Conveyance-built surface. The visual weight
-  (`Mono.primary`'s color) and the structural weight are the same
-  claim, not two independent ones that could drift apart.
-- **Typeface.** The UI is set in [Azrienoch](https://github.com/HereLiesAz/Azrienoch)
-  (SIL OFL 1.1; `licenses/Azrienoch-OFL.txt` documents the license
-  here too) -- the multiplex variable font this tool exists to help
-  shape -- loaded via `convey`'s own `conveyTypeFontFamily()`
-  (`tokens/ConveyType.kt`) directly: the actual composable and its
-  actual bundled font resource, not a copy of either. This project
-  pins Compose Multiplatform 1.12.0 (`build.gradle.kts`), which
-  supports `Font(variationSettings = ...)`, so this is Azrienoch
-  rendered with real, live `wght`/`wdth` control, not a single baked
-  instance.
+- **Phone:** glyph name and node count up top, with Copy to anchors, Undo and
+  the glyph browser. An **axis strip** (the picked axis as a line with its
+  three anchors on it; tap one to edit it), a tool **dock** (Select, Pen,
+  Guides, Ghosts, Simplify), and a picture-in-picture Preview that opens a
+  sheet with the sliders.
+- **Wide screens (web ≥900dp, tablets):** glyph tabs, a tool rail, an
+  **anchor filmstrip** of live thumbnails under the canvas, and an inspector
+  column (Preview + sliders, Ghosts, Guides).
+- **Floating, contextual:** the selection pill (copy, cut, paste, on/off,
+  select all, delete, with a size readout) only while something is selected;
+  the ghost bar only while placing a ghost; the Simplify card only while
+  simplifying; status as a transient toast.
+- **Monochrome.** Hierarchy is carried by brightness: the selected node, the
+  active tool and the anchor being edited are the whitest things on screen.
+  On-curve nodes are rings, off-curve handles diamonds. The palette's one
+  colour, `Mono.error`, is kept for errors.
+- **Own parts:** a monoline icon set (`Icons.kt`, no icon library) and a
+  hairline slider (`HairSlider`) in place of Material's thick one.
+- **Typeface:** [Azrienoch](https://github.com/HereLiesAz/Azrienoch)
+  (SIL OFL 1.1; `licenses/Azrienoch-OFL.txt`) via
+  [HereLiesAz/convey](https://github.com/HereLiesAz/convey)'s
+  `conveyTypeFontFamily()`, with monospace small caps for readouts.
+  `MonoButton` still registers its weight with `ConveySystem`'s hierarchy
+  enforcement.
 
 ## Known gaps
 
@@ -222,13 +211,9 @@ reimplementation of its ideas:
   (`ProjectCodec.kt`'s `migrateGlyph`) to today's tag-based names
   (`wght_lo`/`wght_hi`/`wdth_lo`/`wdth_hi`); `regular` is unchanged in
   both schemes.
-- Verified so far: the production build compiles and bundles cleanly, and
-  a manual smoke pass in headless Chromium confirms the axis-selector
-  layout renders and switches correctly across all 14 axes, the axis
-  toggle wraps and the Preview panel's sliders scroll instead of
-  crowding out the canvas, glyph creation and naming work, contour
-  drawing places points on the correct anchor, and the live
-  compatibility-mismatch message updates correctly. Full interactive
+- Verified so far: shared and web code compile, the unit tests pass, and
+  headless-Chromium screenshots of the phone and wide layouts match the
+  approved mock-ups. Full interactive
   coverage (drag-to-reshape across every anchor, the travel-path overlay,
   save/export/import round-trips) has not yet had a dedicated automated
   test pass.
