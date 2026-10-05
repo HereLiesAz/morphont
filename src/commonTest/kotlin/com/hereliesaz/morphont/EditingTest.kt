@@ -93,4 +93,20 @@ class EditingTest {
         assertEquals(99f, boundsOfContours(app.ghostContours(g, Axis.WEIGHT.hi))!!.width)
         assertEquals(50f, boundsOfContours(app.ghostContours(g, "regular"))!!.width)
     }
+
+    @Test
+    fun transformingASelectionKeepsPointOrderAndLeavesOthers() {
+        val g = GlyphCorner(500f, mutableListOf(square(0f, 0f, 10f)))
+        val flipped = transformPoints(g, listOf(0 to 0, 0 to 1), scalingAbout(-1f, 1f, 5f, 5f))
+        assertEquals(listOf(10f, 10f, 10f, 10f), flipped.contours[0].points.map { it.x })
+        assertEquals(4, flipped.contours[0].points.size)
+    }
+
+    @Test
+    fun cornerDragScalesAboutTheOppositeCorner() {
+        val b = FontRect(0f, 0f, 10f, 10f)
+        // Corner 2 is (maxX, maxY); dragging it to (20, 20) doubles the box about (0, 0).
+        val t = boxDragTransform(b, rotate = false, corner = 2, start = androidx.compose.ui.geometry.Offset(10f, 10f), cur = androidx.compose.ui.geometry.Offset(20f, 20f))
+        assertEquals(listOf(2f, 0f, 0f, 2f, 0f, 0f), t)
+    }
 }

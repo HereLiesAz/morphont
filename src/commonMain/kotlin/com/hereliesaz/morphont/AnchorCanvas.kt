@@ -120,6 +120,21 @@ fun AnchorCanvas(
                 GhostHandles(corners, Offset(top.x, top.y - 30f * uiScale), b)
             }
         } else null
+        val selHandles = if (target.selection.size >= 2 && target.drawingContourIndex == null && app.reduction == null &&
+            !(ghost != null && app.ghostTransformMode)
+        ) {
+            boundsOfSelection(target.glyph, target.selection)?.let { b ->
+                // Handles sit just outside the box so they never land on a point.
+                val pad = 12f * uiScale
+                val tl = mapper.toCanvas(b.minX, b.maxY); val br = mapper.toCanvas(b.maxX, b.minY)
+                val l = tl.x - pad; val t = tl.y - pad; val r = br.x + pad; val btm = br.y + pad
+                GhostHandles(
+                    listOf(Offset(l, btm), Offset(l, t), Offset(r, t), Offset(r, btm)),
+                    Offset((l + r) / 2f, t - 26f * uiScale),
+                    b,
+                )
+            }
+        } else null
         return CanvasFrame(
             app = app,
             anchorName = anchorName,
@@ -134,6 +149,7 @@ fun AnchorCanvas(
             proxyCenter = proxy,
             proxyRadiusPx = proxyRadiusPx,
             ghostHandles = handles,
+            selectionHandles = selHandles,
         )
     }
 
@@ -278,6 +294,21 @@ fun AnchorCanvas(
                 drawRect(ghostActive, topLeft = c - Offset(5f * uiScale, 5f * uiScale), size = Size(10f * uiScale, 10f * uiScale))
             }
             drawCircle(ghostActive, radius = 6f * uiScale, center = h.rotate)
+        }
+
+        f.selectionHandles?.let { h ->
+            val (c0, c1, c2, c3) = h.corners
+            val box = androidx.compose.ui.graphics.Path().apply {
+                moveTo(c0.x, c0.y); lineTo(c1.x, c1.y); lineTo(c2.x, c2.y); lineTo(c3.x, c3.y); close()
+            }
+            drawPath(box, Color.White.copy(alpha = 0.5f), style = Stroke(width = hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f * uiScale, 4f * uiScale))))
+            drawLine(Color.White.copy(alpha = 0.5f), Offset((c1.x + c2.x) / 2f, c1.y), h.rotate, hair)
+            for (c in h.corners) {
+                drawRect(bgColor, topLeft = c - Offset(4.5f * uiScale, 4.5f * uiScale), size = Size(9f * uiScale, 9f * uiScale))
+                drawRect(Color.White, topLeft = c - Offset(4.5f * uiScale, 4.5f * uiScale), size = Size(9f * uiScale, 9f * uiScale), style = Stroke(width = 1.4f * uiScale))
+            }
+            drawCircle(bgColor, radius = 5.5f * uiScale, center = h.rotate)
+            drawCircle(Color.White, radius = 5.5f * uiScale, center = h.rotate, style = Stroke(width = 1.4f * uiScale))
         }
 
         feedback.rubberRect?.let { (start, current) ->

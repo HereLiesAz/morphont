@@ -145,7 +145,7 @@ fun SelectionPill(app: AppState, modifier: Modifier = Modifier) {
     if (app.reduction != null || (app.activeGhost != null && app.ghostTransformMode)) return
     val has = t.selection.isNotEmpty()
     if (!has && app.clipboard == null) return
-    Row(modifier.floating().height(44.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.floating().height(44.dp).padding(horizontal = 4.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
         if (has) {
             IconAction(MIcons.Copy, "Copy", { app.copySelection() }, size = 40)
             IconAction(MIcons.Cut, "Cut", { app.cutSelection() }, size = 40)
@@ -154,6 +154,18 @@ fun SelectionPill(app: AppState, modifier: Modifier = Modifier) {
         if (has) {
             IconAction(MIcons.Curve, "Toggle on-curve", { t.toggleTypeSelected() }, size = 40)
             IconAction(MIcons.SelectAll, "Select all", { t.selectAll() }, size = 40)
+            if (t.selection.size >= 2) {
+                IconAction(MIcons.FlipH, "Flip horizontally", { t.flipSelected(true) }, size = 40)
+                IconAction(MIcons.FlipV, "Flip vertically", { t.flipSelected(false) }, size = 40)
+                IconAction(MIcons.RotateLeft, "Rotate 15° left", { t.rotateSelected(15f) }, size = 40)
+                IconAction(MIcons.RotateRight, "Rotate 15° right", { t.rotateSelected(-15f) }, size = 40)
+            }
+            if (app.touchInput && t.selection.size >= 2) {
+                // What the touch pad does: move, scale or turn the selection.
+                Box(Modifier.padding(horizontal = 4.dp)) {
+                    Segmented(listOf("Move", "Scale", "Turn"), app.padMode.ordinal) { app.padMode = PadMode.entries[it] }
+                }
+            }
             Box(Modifier.width(1.dp).height(20.dp).background(Mono.border))
             IconAction(MIcons.Delete, "Delete", { t.deleteSelected() }, size = 40)
             val b = boundsOfSelection(t.glyph, t.selection)

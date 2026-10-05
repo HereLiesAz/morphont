@@ -106,6 +106,13 @@ so anchors can then be reshaped without adding or removing points.
 - **Touch proxy.** On touch input, a selection grows a pad ~76dp below it
   (above, near the bottom edge), joined by a dashed tether. Dragging the pad
   moves the selection 1:1 -- the finger never covers the nodes it moves.
+  The selection pill's Move / Scale / Turn switch changes what the pad does:
+  Scale grows the selection as you drag up, Turn rotates it as you drag
+  sideways.
+- **Transform box.** Two or more selected points get a dashed box whose
+  handles sit just outside the points: corner squares scale (about the
+  opposite corner), the knob above rotates. The selection pill adds flip
+  ↔/↕ and ±15°. Point order never changes, so anchors stay compatible.
 - **View.** A stable metric-based frame (it no longer refits while you drag),
   shared zoom/pan across panels: mouse wheel or pinch to zoom, two fingers to
   pan, View → Fit to reset.

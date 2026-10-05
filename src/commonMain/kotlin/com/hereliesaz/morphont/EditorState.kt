@@ -156,6 +156,23 @@ class AnchorState(initial: GlyphCorner) {
         glyph = updated
     }
 
+    /** Applies [t] to the selected points as one undoable edit (flip/rotate buttons). */
+    fun transformSelected(t: Affine) {
+        if (selection.isEmpty()) return
+        pushHistory()
+        glyph = transformPoints(glyph, selection, t)
+    }
+
+    fun flipSelected(horizontal: Boolean) {
+        val b = boundsOfSelection(glyph, selection) ?: return
+        transformSelected(if (horizontal) scalingAbout(-1f, 1f, b.cx, b.cy) else scalingAbout(1f, -1f, b.cx, b.cy))
+    }
+
+    fun rotateSelected(degrees: Float) {
+        val b = boundsOfSelection(glyph, selection) ?: return
+        transformSelected(rotationAbout(degrees, b.cx, b.cy))
+    }
+
     private fun finishContourIfDrawing() {
         if (drawingContourIndex != null) finishContour()
     }
@@ -231,6 +248,9 @@ class GhostLayer(
     fun toData() = GhostData(label, if (isLinked) emptyList() else state.glyph.contours.map { it.deepCopy() }, visible, sourceGlyph, matrix, beside)
 }
 
+/** What dragging the touch proxy pad does to the selection. */
+enum class PadMode { MOVE, SCALE, ROTATE }
+
 /** View toggles shared by every editing canvas. */
 class ViewSettings {
     var showGrid by mutableStateOf(false)
@@ -305,6 +325,8 @@ class AppState {
 
     /** True = the active ghost shows a move/scale/rotate box; false = its nodes are editable. */
     var ghostTransformMode by mutableStateOf(true)
+
+    var padMode by mutableStateOf(PadMode.MOVE)
 
     /** Whether the most recent pointer was a finger: drives the touch proxy handle. */
     var touchInput by mutableStateOf(false)
