@@ -156,6 +156,23 @@ class AnchorState(initial: GlyphCorner) {
         glyph = updated
     }
 
+    /** Applies [t] to the selected points as one undoable edit (flip/rotate buttons). */
+    fun transformSelected(t: Affine) {
+        if (selection.isEmpty()) return
+        pushHistory()
+        glyph = transformPoints(glyph, selection, t)
+    }
+
+    fun flipSelected(horizontal: Boolean) {
+        val b = boundsOfSelection(glyph, selection) ?: return
+        transformSelected(if (horizontal) scalingAbout(-1f, 1f, b.cx, b.cy) else scalingAbout(1f, -1f, b.cx, b.cy))
+    }
+
+    fun rotateSelected(degrees: Float) {
+        val b = boundsOfSelection(glyph, selection) ?: return
+        transformSelected(rotationAbout(degrees, b.cx, b.cy))
+    }
+
     private fun finishContourIfDrawing() {
         if (drawingContourIndex != null) finishContour()
     }
@@ -188,8 +205,10 @@ class GhostLayer(
     visible: Boolean = true,
     sourceGlyph: String? = null,
     matrix: Affine = IDENTITY_MATRIX,
+    beside: Boolean = false,
 ) {
     var label by mutableStateOf(label)
+    var beside by mutableStateOf(beside)
     var visible by mutableStateOf(visible)
     var sourceGlyph by mutableStateOf(sourceGlyph)
     var matrix by mutableStateOf(matrix)
@@ -220,13 +239,17 @@ class GhostLayer(
     /** Turns a linked ghost into a static one holding [contours] (already placed), e.g. before node editing. */
     fun detach(contours: List<ContourData>) {
         sourceGlyph = null
+        beside = false
         matrix = IDENTITY_MATRIX
         matrixHistory.clear()
         state.loadFresh(GlyphCorner(0f, contours.map { it.deepCopy() }.toMutableList()))
     }
 
-    fun toData() = GhostData(label, if (isLinked) emptyList() else state.glyph.contours.map { it.deepCopy() }, visible, sourceGlyph, matrix)
+    fun toData() = GhostData(label, if (isLinked) emptyList() else state.glyph.contours.map { it.deepCopy() }, visible, sourceGlyph, matrix, beside)
 }
+
+/** What dragging the touch proxy pad does to the selection. */
+enum class PadMode { MOVE, SCALE, ROTATE }
 
 /** View toggles shared by every editing canvas. */
 class ViewSettings {
@@ -303,6 +326,11 @@ class AppState {
     /** True = the active ghost shows a move/scale/rotate box; false = its nodes are editable. */
     var ghostTransformMode by mutableStateOf(true)
 
+    var padMode by mutableStateOf(PadMode.MOVE)
+
+    /** Whether the suggested-edits row is expanded (it's behind a button, not always on screen). */
+    var showSuggestions by mutableStateOf(false)
+
     /** Whether the most recent pointer was a finger: drives the touch proxy handle. */
     var touchInput by mutableStateOf(false)
 
@@ -336,18 +364,24 @@ class AppState {
      * working character's position on every axis.
      */
     fun ghostContours(g: GhostLayer, anchorName: String): List<ContourData> {
-        val src = g.sourceGlyph ?: return applyAffine(g.state.glyph.contours, g.matrix)
+        val placed = placement(g, anchors.getValue(anchorName).glyph.width)
+        val src = g.sourceGlyph ?: return applyAffine(g.state.glyph.contours, placed)
         val corners = sourceCorners(src) ?: return emptyList()
         val corner = corners[anchorName] ?: corners["regular"] ?: return emptyList()
-        return applyAffine(corner.contours, g.matrix)
+        return applyAffine(corner.contours, placed)
     }
 
+    /** The ghost's matrix, shifted past the working glyph's advance when it's set to sit beside rather than over it. */
+    private fun placement(g: GhostLayer, advance: Float): Affine =
+        if (g.beside) compose(translation(advance, 0f), g.matrix) else g.matrix
+
     /** The ghost as drawn in the Preview: a linked ghost interpolated at the same slider values as the working glyph. */
-    fun ghostPreviewContours(g: GhostLayer): List<ContourData> {
-        val src = g.sourceGlyph ?: return applyAffine(g.state.glyph.contours, g.matrix)
+    fun ghostPreviewContours(g: GhostLayer, advance: Float): List<ContourData> {
+        val placed = placement(g, advance)
+        val src = g.sourceGlyph ?: return applyAffine(g.state.glyph.contours, placed)
         val corners = sourceCorners(src) ?: return emptyList()
         val inst = if (compatibilityIssue(corners) == null) interpolateGlyph(corners, previewValues) else corners["regular"] ?: return emptyList()
-        return applyAffine(inst.contours, g.matrix)
+        return applyAffine(inst.contours, placed)
     }
 
     /** Every visible ghost's outline in [anchorName]'s panel, optionally skipping one (the one being edited). */
@@ -396,7 +430,7 @@ class AppState {
         ghosts.clear()
         linkedGlyphs.clear()
         glyph.ghosts.forEach {
-            ghosts.add(GhostLayer(nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph, it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX))
+            ghosts.add(GhostLayer(nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph, it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside))
             it.sourceGlyph?.let { src -> cacheLinked(src) }
         }
         glyph.metrics?.let { metrics = it }
@@ -428,6 +462,7 @@ class AppState {
 
     /** Copies the active anchor's outline into every other anchor, seeding matching topology. */
     fun copyActiveToOthers() {
+        if (activeGhost != null) return // never touch the glyph while a ghost is being edited
         val src = anchors.getValue(activeAnchor)
         var count = 0
         for (name in ANCHORS) {
@@ -471,22 +506,29 @@ class AppState {
 
     fun addGhost(label: String, contours: List<ContourData>) {
         if (contours.isEmpty()) { setStatus("That ghost has no outline.", true); return }
-        val g = GhostLayer(nextGhostId++, label, contours)
-        ghosts.add(g)
-        activeGhostId = g.id
-        ghostTransformMode = true
-        setStatus("Added ghost \"$label\". Drag to move, corners to scale, the top knob to rotate. Done returns to the glyph.")
+        ghosts.add(GhostLayer(nextGhostId++, label, contours))
+        setStatus("Added ghost \"$label\". Use its Edit button in Ghosts to move, scale, rotate or reshape it.")
     }
 
     /** Adds a live ghost of another glyph in this project (see [GhostData.sourceGlyph]). */
     fun addLinkedGhost(name: String) {
         cacheLinked(name)
         if (name != currentGlyphName && name !in linkedGlyphs) { setStatus("Couldn't read \"$name\".", true); return }
-        val g = GhostLayer(nextGhostId++, name, emptyList(), sourceGlyph = name)
-        ghosts.add(g)
-        activeGhostId = g.id
-        ghostTransformMode = true
+        ghosts.add(GhostLayer(nextGhostId++, name, emptyList(), sourceGlyph = name))
         setStatus("Ghosting \"$name\" live: it follows every axis, here and in the Preview.")
+    }
+
+    /**
+     * Enters ghost editing -- the only way in, from the Ghosts panel's Edit
+     * button. While it lasts the ghost draws solid, the glyph as an outline,
+     * and every gesture edits the ghost.
+     */
+    fun editGhost(id: Int) {
+        val g = ghosts.firstOrNull { it.id == id } ?: return
+        g.visible = true
+        activeGhostId = id
+        ghostTransformMode = true
+        reduction = null
     }
 
     fun removeGhost(id: Int) {
@@ -497,11 +539,22 @@ class AppState {
     /** Bounds of the active ghost as drawn in the active anchor's panel. */
     fun activeGhostBounds(): FontRect? = activeGhost?.let { boundsOfContours(ghostContours(it, activeAnchor)) }
 
-    /** Composes [t] onto the active ghost's placement as one undoable step. */
+    /** Composes [t] (expressed in drawn, on-canvas coordinates) onto the active ghost's placement as one undoable step. */
     fun transformActiveGhost(t: Affine) {
         val g = activeGhost ?: return
         g.pushMatrixHistory()
-        g.matrix = compose(t, g.matrix)
+        g.matrix = compose(localGhostTransform(g, t, activeAnchor), g.matrix)
+    }
+
+    /**
+     * Converts a transform measured on the drawn ghost into one for its
+     * matrix: a ghost set beside the glyph is drawn shifted by the advance,
+     * so the shift is undone around [t] (conjugation).
+     */
+    fun localGhostTransform(g: GhostLayer, t: Affine, anchorName: String): Affine {
+        if (!g.beside) return t
+        val adv = anchors.getValue(anchorName).glyph.width
+        return compose(translation(-adv, 0f), compose(t, translation(adv, 0f)))
     }
 
     fun flipActiveGhost(horizontal: Boolean) {
@@ -518,6 +571,7 @@ class AppState {
 
     /** Starts a reduction preview on the active anchor -- on every anchor at once when they're compatible. */
     fun startReduction() {
+        if (activeGhost != null) return // never touch the glyph while a ghost is being edited
         val names = if (compatibility() == null) listOf(activeAnchor) + ANCHORS.filter { it != activeAnchor } else listOf(activeAnchor)
         val glyphs = names.map { anchors.getValue(it).glyph }
         val total = glyphs.first().contours.sumOf { it.points.size }

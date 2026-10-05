@@ -52,6 +52,8 @@ class CanvasFrame(
     val proxyCenter: Offset?,
     val proxyRadiusPx: Float,
     val ghostHandles: GhostHandles?,
+    /** Transform box around a multi-point selection (handles sit just outside the points). */
+    val selectionHandles: GhostHandles? = null,
 )
 
 /** Canvas-space handles of the active ghost's transform box. */
@@ -60,6 +62,26 @@ data class GhostHandles(
     val rotate: Offset,
     val boundsFont: FontRect,
 )
+
+/**
+ * The transform a transform-box drag implies, in font units: rotate about the
+ * box centre, scale about the opposite corner, or translate.
+ */
+fun boxDragTransform(b: FontRect, rotate: Boolean, corner: Int, start: Offset, cur: Offset): Affine = when {
+    rotate -> {
+        val a0 = atan2(start.y - b.cy, start.x - b.cx)
+        val a1 = atan2(cur.y - b.cy, cur.x - b.cx)
+        rotationAbout((a1 - a0) * 180f / kotlin.math.PI.toFloat(), b.cx, b.cy)
+    }
+    corner >= 0 -> {
+        val ox = if (corner == 0 || corner == 1) b.maxX else b.minX
+        val oy = if (corner == 0 || corner == 3) b.maxY else b.minY
+        val sx = if (abs(start.x - ox) < 1e-3f) 1f else (cur.x - ox) / (start.x - ox)
+        val sy = if (abs(start.y - oy) < 1e-3f) 1f else (cur.y - oy) / (start.y - oy)
+        scalingAbout(sx, sy, ox, oy)
+    }
+    else -> translation(cur.x - start.x, cur.y - start.y)
+}
 
 /**
  * Where the touch proxy pad sits for a selection whose canvas bounds are
@@ -122,8 +144,46 @@ suspend fun PointerInputScope.handleAnchorGestures(
         val proxy = f.proxyCenter
         if (proxy != null && (startPos - proxy).getDistance() <= f.proxyRadiusPx * 1.3f) {
             onPointHit()
-            dragSelection(f, down.id, target, target.selection.toList(), startPos, slop = 0.5f, feedback)
+            val keys = target.selection.toList()
+            when (app.padMode) {
+                PadMode.MOVE -> dragSelection(f, down.id, target, keys, startPos, slop = 0.5f, feedback)
+                else -> {
+                    // Scale: drag up to grow, down to shrink. Turn: drag sideways, ~0.5° per dp.
+                    val b = boundsOfSelection(target.glyph, target.selection) ?: return@awaitEachGesture
+                    val orig = target.glyph.deepCopy()
+                    var pushed = false
+                    followOrPinch(f, down.id, 0.5f) { pos, _ ->
+                        if (!pushed) { target.pushHistory(); pushed = true }
+                        val d = pos - startPos
+                        val t = if (app.padMode == PadMode.SCALE) {
+                            val k = kotlin.math.exp(-d.y / (160f * f.density))
+                            scalingAbout(k, k, b.cx, b.cy)
+                        } else rotationAbout(-d.x / f.density * 0.5f, b.cx, b.cy)
+                        target.replaceGlyph(transformPoints(orig, keys, t))
+                    }
+                }
+            }
             return@awaitEachGesture
+        }
+
+        // Selection transform box: corner squares scale, the knob rotates.
+        val sh = f.selectionHandles
+        if (sh != null) {
+            val rotateHit = (startPos - sh.rotate).getDistance() <= f.hitRadiusPx * 1.3f
+            val cornerHit = if (rotateHit) -1 else sh.corners.indexOfFirst { (startPos - it).getDistance() <= f.hitRadiusPx * 1.3f }
+            if (rotateHit || cornerHit >= 0) {
+                onPointHit()
+                val keys = target.selection.toList()
+                val orig = target.glyph.deepCopy()
+                val startFont = f.mapper.toFont(startPos)
+                var pushed = false
+                followOrPinch(f, down.id, f.dragStartSlopPx) { pos, _ ->
+                    if (!pushed) { target.pushHistory(); pushed = true }
+                    val t = boxDragTransform(sh.boundsFont, rotateHit, cornerHit, startFont, f.mapper.toFont(pos))
+                    target.replaceGlyph(transformPoints(orig, keys, t))
+                }
+                return@awaitEachGesture
+            }
         }
 
         // Active ghost in placement mode: handles, then body.
@@ -139,24 +199,8 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 var pushed = false
                 followOrPinch(f, down.id, f.dragStartSlopPx) { pos, _ ->
                     if (!pushed) { ghost.pushMatrixHistory(); pushed = true }
-                    val cur = f.mapper.toFont(pos)
-                    val t: Affine = when {
-                        rotateHit -> {
-                            val a0 = atan2(startFont.y - b.cy, startFont.x - b.cx)
-                            val a1 = atan2(cur.y - b.cy, cur.x - b.cx)
-                            rotationAbout((a1 - a0) * 180f / kotlin.math.PI.toFloat(), b.cx, b.cy)
-                        }
-                        cornerHit >= 0 -> {
-                            // Scale about the opposite corner.
-                            val ox = if (cornerHit == 0 || cornerHit == 1) b.maxX else b.minX
-                            val oy = if (cornerHit == 0 || cornerHit == 3) b.maxY else b.minY
-                            val sx = if (abs(startFont.x - ox) < 1e-3f) 1f else (cur.x - ox) / (startFont.x - ox)
-                            val sy = if (abs(startFont.y - oy) < 1e-3f) 1f else (cur.y - oy) / (startFont.y - oy)
-                            scalingAbout(sx, sy, ox, oy)
-                        }
-                        else -> translation(cur.x - startFont.x, cur.y - startFont.y)
-                    }
-                    ghost.matrix = compose(t, orig)
+                    val t = boxDragTransform(b, rotateHit, cornerHit, startFont, f.mapper.toFont(pos))
+                    ghost.matrix = compose(app.localGhostTransform(ghost, t, f.anchorName), orig)
                 }
                 return@awaitEachGesture
             }

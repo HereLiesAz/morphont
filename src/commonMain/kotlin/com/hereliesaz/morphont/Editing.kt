@@ -53,6 +53,9 @@ fun mapContours(contours: List<ContourData>, f: (Float, Float) -> Pair<Float, Fl
 fun reverseWinding(contours: List<ContourData>): MutableList<ContourData> =
     contours.map { ContourData(it.points.reversed().map { p -> p.copy2() }.toMutableList()) }.toMutableList()
 
+fun translateContours(contours: List<ContourData>, dx: Float, dy: Float): MutableList<ContourData> =
+    mapContours(contours) { x, y -> (x + dx) to (y + dy) }
+
 /** Primitive reference shapes for ghosts. */
 enum class ShapeKind(val label: String) { RECTANGLE("Rectangle"), ELLIPSE("Ellipse"), TRIANGLE("Triangle"), LINE_BAR("Bar") }
 
@@ -122,6 +125,21 @@ fun applyAffine(contours: List<ContourData>, m: Affine): List<ContourData> {
     val mapped = mapContours(contours) { x, y -> (m[0] * x + m[2] * y + m[4]) to (m[1] * x + m[3] * y + m[5]) }
     // A mirroring matrix flips winding; reverse so fills stay consistent.
     return if (m[0] * m[3] - m[1] * m[2] < 0f) reverseWinding(mapped) else mapped
+}
+
+/**
+ * Applies [t] to just the [keys] points of [g]. Point order is never
+ * changed (even for a mirror), so anchors stay point-compatible.
+ */
+fun transformPoints(g: GlyphCorner, keys: Collection<PointKey>, t: Affine): GlyphCorner {
+    val out = g.deepCopy()
+    for ((ci, pi) in keys) {
+        val p = out.contours.getOrNull(ci)?.points?.getOrNull(pi) ?: continue
+        val x = t[0] * p.x + t[2] * p.y + t[4]
+        val y = t[1] * p.x + t[3] * p.y + t[5]
+        p.x = x; p.y = y
+    }
+    return out
 }
 
 // ---------------------------------------------------------------- snapping

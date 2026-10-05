@@ -1,7 +1,29 @@
 package com.hereliesaz.morphont
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -16,62 +38,52 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import compose.conveyance.ConveyWeight
 import compose.conveyance.conveyWeight
-import compose.conveyance.tokens.ConveyShape
 import compose.conveyance.tokens.ConveyTypePreset
 import compose.conveyance.tokens.conveyTypeFontFamily
 
 /**
- * Morphont's visual language, built directly on [HereLiesAz/convey](https://github.com/HereLiesAz/convey)
- * -- a real dependency (see `build.gradle.kts`), not just a copied philosophy. A semantic role
- * vocabulary (surface/onSurface/outline/primary/secondary/tertiary...) filled with Morphont's
- * own values rather than `ConveyColor`'s own reference palette -- its own doc comment says as
- * much ("match your brand colors to these roles, not to arbitrary hex values"). Most of the
- * interface stays a dark, near-neutral ground; color is spent deliberately, on the few things
- * that actually carry the app's hierarchy, per `ConveyColor`'s own rationale for the three-tier
- * system ("Dynamic Color: use contrasting primary, secondary, and tertiary tones to prioritize
- * actions implicitly") -- not spread across every surface as decoration.
+ * Morphont's visual language: the glyph is the room. A near-black ground with
+ * a faint pool of light behind the outline; every control floats on it as a
+ * rounded, hairline-edged surface ([floating]) and stays out of the way until
+ * needed. Strictly monochrome -- hierarchy is carried by brightness, so the
+ * selected node, the active tool and the anchor being edited are simply the
+ * whitest things on screen. The one colour left, [Mono.error], is reserved
+ * for genuine errors.
  *
- * - [Mono.primary] (crimson) -- the one thing on a panel demanding action: the active corner,
- *   a selected point.
- * - [Mono.secondary] (verdigris) -- available but not insistent: off-curve handles, the axis
- *   toggle's unselected state.
- * - [Mono.tertiary] (brass) -- rare, for the one genuinely emotional moment in this tool: the
- *   Preview panel, where five hand-drawn anchors resolve into a shape nobody drew directly.
- *
- * Shape and hierarchy come straight from the library's own tokens/enforcement, not a
- * reimplementation: [MonoButton] uses [ConveyShape.CutSmall] (the real chamfered-corner shape
- * token) and tags itself with [ConveyWeight] via [compose.conveyance.conveyWeight], which
- * [compose.conveyance.ConveySystem] (wrapping the whole app in `App.kt`) actually enforces --
- * too many [ConveyWeight.Primary] elements on screen at once throws in debug builds, the same
- * as it would in any other Conveyance-built surface.
+ * Built on [HereLiesAz/convey](https://github.com/HereLiesAz/convey): the UI
+ * is set in its Azrienoch (`conveyTypeFontFamily`), and every [MonoButton]
+ * still registers its weight with [compose.conveyance.ConveySystem]'s
+ * hierarchy enforcement via [compose.conveyance.conveyWeight]. Icons are
+ * drawn in-house ([MIcons]) rather than pulled from an icon library.
  */
 object Mono {
-    val ground = Color(0xFF060606)
-    val panel = Color(0xFF101010)
-    val panelHeader = Color(0xFF161616)
-    val border = Color(0xFF3A3A3A)
-    val borderBright = Color(0xFF6E6E6E)
+    // Grounds, darkest first. The canvas is the room; everything else floats on it.
+    val ground = Color(0xFF070707)
+    val panel = Color(0xFF121212)
+    val panelHeader = Color(0xFF1C1C1C)
+    val border = Color(0xFF262626)
+    val borderBright = Color(0xFF3A3A3A)
     val ink = Color(0xFFEDEDED)
-    val inkDim = Color(0xFF9A9A9A)
-    val inkFaint = Color(0xFF5A5A5A)
+    val inkDim = Color(0xFF8C8C8C)
+    val inkFaint = Color(0xFF4A4A4A)
 
     /**
-     * The active corner, a selected point, the single most important control on a panel.
-     * Indigo, not red -- a red primary reads as "something's wrong" the instant [error] also
-     * exists in the same palette, no matter how far apart the two hex values actually are.
+     * Monochrome by design: "primary" is the brightest ink, not a hue. Selection,
+     * the active tool and the anchor being edited are white on near-black; the
+     * hierarchy is carried by light, not colour.
      */
-    val primary = Color(0xFF5A4FB8)
-    val onPrimary = Color(0xFFF3F1FA)
+    val primary = Color(0xFFEDEDED)
+    val onPrimary = Color(0xFF070707)
 
-    /** Available but not insistent -- off-curve handles, an unselected axis. */
-    val secondary = Color(0xFF4E8C7C)
-    val onSecondary = Color(0xFF0A0F0E)
+    /** Off-curve handles and other secondary marks: a mid grey. */
+    val secondary = Color(0xFF7A7A7A)
+    val onSecondary = Color(0xFF070707)
 
-    /** Rare, for the Preview panel's own hero moment. */
-    val tertiary = Color(0xFFC99A3D)
-    val onTertiary = Color(0xFF0F0B02)
+    /** Ghosts and reference material: a quieter grey than the glyph itself. */
+    val tertiary = Color(0xFFBDBDBD)
+    val onTertiary = Color(0xFF070707)
 
-    /** The only red in the palette -- a compatibility error is a warning, not "the important action." */
+    /** The only colour in the palette, kept for genuine errors. */
     val error = Color(0xFFE4573D)
     val onError = Color(0xFF1A0704)
 }
@@ -95,14 +107,10 @@ val MorphontColorScheme = darkColorScheme(
 )
 
 /**
- * The one button used throughout Morphont: [ConveyShape.CutSmall] -- the real token from
- * `HereLiesAz/convey`, not a locally redefined lookalike -- for the cut corner, a thin border
- * instead of Material's default elevation/shadow, and a [selected] state that fills with
- * [Mono.primary] -- Conveyance's own "contrasting tone prioritizes implicitly" rule, spent on
- * the one state (selected/active) that's actually the important one. [Modifier.conveyWeight]
- * registers that same selected/unselected distinction with Conveyance's own hierarchy
- * enforcement ([ConveyWeight.Primary]/[ConveyWeight.Secondary]), so the visual weight and the
- * structural weight are the same claim, not two independent ones that could drift apart.
+ * Morphont's text button: a rounded pill, borderless when idle, filled with
+ * [Mono.primary] when [selected]. [Modifier.conveyWeight] still registers
+ * selected/unselected with Conveyance's hierarchy enforcement, so the visual
+ * weight and the structural weight stay the same claim.
  */
 @Composable
 fun MonoButton(
@@ -110,24 +118,79 @@ fun MonoButton(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     enabled: Boolean = true,
+    outlined: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.conveyWeight(if (selected) ConveyWeight.Primary else ConveyWeight.Secondary),
+        modifier = modifier.heightIn(min = 36.dp).conveyWeight(if (selected) ConveyWeight.Primary else ConveyWeight.Secondary),
         enabled = enabled,
-        shape = ConveyShape.CutSmall,
+        shape = RoundedCornerShape(50),
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (selected) Mono.primary else Mono.panel,
+            containerColor = if (selected) Mono.primary else Color.Transparent,
             contentColor = if (selected) Mono.onPrimary else Mono.ink,
-            disabledContainerColor = Mono.panel,
+            disabledContainerColor = Color.Transparent,
             disabledContentColor = Mono.inkFaint,
         ),
-        border = BorderStroke(1.dp, if (selected) Mono.primary else Mono.border),
+        border = if (outlined && !selected) BorderStroke(1.dp, Mono.border) else null,
         elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp, 0.dp, 0.dp),
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
         content = { content() },
     )
+}
+
+/** Small-caps monospace label: section heads, readouts, metric names. */
+@Composable
+fun Caps(text: String, modifier: Modifier = Modifier, color: Color = Mono.inkDim, size: Int = 11) {
+    Text(
+        text.uppercase(),
+        modifier = modifier,
+        color = color,
+        fontFamily = FontFamily.Monospace,
+        fontSize = size.sp,
+        letterSpacing = 1.6.sp,
+        maxLines = 1,
+    )
+}
+
+/** A floating rounded surface (dock, pills, sheets' cards): one step above the ground, hairline edge. */
+fun Modifier.floating(radius: Int = 22): Modifier = this
+    .shadow(16.dp, RoundedCornerShape(radius.dp), clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+    .clip(RoundedCornerShape(radius.dp))
+    .background(Mono.panel)
+    .border(1.dp, Mono.border, RoundedCornerShape(radius.dp))
+
+/** Circular icon button with a 44dp touch target; [selected] fills it with ink. */
+@Composable
+fun IconAction(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    enabled: Boolean = true,
+    size: Int = 44,
+) {
+    Box(
+        modifier
+            .size(size.dp)
+            .clip(CircleShape)
+            .background(if (selected) Mono.primary else Color.Transparent)
+            .clickable(enabled = enabled, onClickLabel = label, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = when {
+                !enabled -> Mono.inkFaint
+                selected -> Mono.onPrimary
+                else -> Mono.ink
+            },
+            modifier = Modifier.size((size * 0.45f).dp),
+        )
+    }
 }
 
 @Composable
@@ -139,15 +202,17 @@ fun monoTextFieldColors() = OutlinedTextFieldDefaults.colors(
     cursorColor = Mono.primary,
     focusedPlaceholderColor = Mono.inkFaint,
     unfocusedPlaceholderColor = Mono.inkFaint,
-    focusedContainerColor = Mono.panel,
-    unfocusedContainerColor = Mono.panel,
+    focusedContainerColor = Mono.ground,
+    unfocusedContainerColor = Mono.ground,
 )
 
 @Composable
 fun monoSliderColors() = SliderDefaults.colors(
-    thumbColor = Mono.primary,
-    activeTrackColor = Mono.primary,
-    inactiveTrackColor = Mono.border,
+    thumbColor = Mono.ink,
+    activeTrackColor = Mono.ink,
+    inactiveTrackColor = Mono.borderBright,
+    activeTickColor = Color.Transparent,
+    inactiveTickColor = Color.Transparent,
 )
 
 /**
@@ -184,4 +249,47 @@ fun MorphontTheme(content: @Composable () -> Unit) {
     // tool for shaping that exact font, to use it as its own UI typeface too.
     val typography = typographyIn(conveyTypeFontFamily(ConveyTypePreset.Regular))
     MaterialTheme(colorScheme = MorphontColorScheme, typography = typography, content = content)
+}
+
+/**
+ * A hairline slider: 1dp track, ink fill up to a small white thumb. Replaces
+ * Material's thick track, which reads as a stock form control. The whole
+ * 32dp-tall row is the touch target; tap or drag anywhere on it.
+ */
+@Composable
+fun HairSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+    enabled: Boolean = true,
+) {
+    val span = (valueRange.endInclusive - valueRange.start).takeIf { it > 0f } ?: 1f
+    val fraction = ((value - valueRange.start) / span).coerceIn(0f, 1f)
+    val latest = androidx.compose.runtime.rememberUpdatedState(onValueChange)
+    androidx.compose.foundation.Canvas(
+        modifier
+            .heightIn(min = 32.dp)
+            .pointerInput(valueRange, enabled) {
+                if (!enabled) return@pointerInput
+                val pad = 8.dp.toPx()
+                fun emit(x: Float) {
+                    val f = ((x - pad) / (size.width - 2 * pad)).coerceIn(0f, 1f)
+                    latest.value(valueRange.start + f * span)
+                }
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    emit(down.position.x)
+                    down.consume()
+                    drag(down.id) { change -> change.consume(); emit(change.position.x) }
+                }
+            },
+    ) {
+        val pad = 8.dp.toPx()
+        val y = size.height / 2f
+        val x = pad + fraction * (size.width - 2 * pad)
+        drawLine(Mono.borderBright, androidx.compose.ui.geometry.Offset(pad, y), androidx.compose.ui.geometry.Offset(size.width - pad, y), 1.dp.toPx())
+        drawLine(if (enabled) Mono.ink else Mono.inkFaint, androidx.compose.ui.geometry.Offset(pad, y), androidx.compose.ui.geometry.Offset(x, y), 1.5.dp.toPx())
+        drawCircle(if (enabled) Mono.ink else Mono.inkFaint, radius = 6.dp.toPx(), center = androidx.compose.ui.geometry.Offset(x, y))
+    }
 }

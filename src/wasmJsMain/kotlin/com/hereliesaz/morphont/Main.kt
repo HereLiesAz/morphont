@@ -23,5 +23,7 @@ fun main() {
         ComposeViewport(document.body!!) {
             App()
         }
+        // The static splash in index.html covers the page until Compose has mounted.
+        document.getElementById("splash")?.remove()
     }
 }

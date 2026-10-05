@@ -93,4 +93,70 @@ class EditingTest {
         assertEquals(99f, boundsOfContours(app.ghostContours(g, Axis.WEIGHT.hi))!!.width)
         assertEquals(50f, boundsOfContours(app.ghostContours(g, "regular"))!!.width)
     }
+
+    @Test
+    fun transformingASelectionKeepsPointOrderAndLeavesOthers() {
+        val g = GlyphCorner(500f, mutableListOf(square(0f, 0f, 10f)))
+        val flipped = transformPoints(g, listOf(0 to 0, 0 to 1), scalingAbout(-1f, 1f, 5f, 5f))
+        assertEquals(listOf(10f, 10f, 10f, 10f), flipped.contours[0].points.map { it.x })
+        assertEquals(4, flipped.contours[0].points.size)
+    }
+
+    @Test
+    fun cornerDragScalesAboutTheOppositeCorner() {
+        val b = FontRect(0f, 0f, 10f, 10f)
+        // Corner 2 is (maxX, maxY); dragging it to (20, 20) doubles the box about (0, 0).
+        val t = boxDragTransform(b, rotate = false, corner = 2, start = androidx.compose.ui.geometry.Offset(10f, 10f), cur = androidx.compose.ui.geometry.Offset(20f, 20f))
+        assertEquals(listOf(2f, 0f, 0f, 2f, 0f, 0f), t)
+    }
+
+    @Test
+    fun offsetEmboldensAStemByTwiceTheOffsetAndKeepsPoints() {
+        val stem = listOf(square(100f, 0f, 80f))
+        val bold = offsetOutline(stem, 10f, 10f)
+        assertEquals(4, bold[0].points.size)
+        assertEquals(100f, boundsOfContours(bold)!!.width)
+    }
+
+    @Test
+    fun suggestionsOfferEmboldenOnTheBoldAnchorAndItStaysCompatible() {
+        val app = AppState()
+        val g = Glyph()
+        ANCHORS.forEach { g.corners[it] = GlyphCorner(300f, mutableListOf(square(100f, 0f, 80f))) }
+        app.loadGlyph("i", g)
+        app.activeAnchor = Axis.WEIGHT.hi
+        val s = suggestionsFor(app).first { it.label.startsWith("Embolden") }
+        s.apply(app)
+        assertNull(app.compatibility())
+        assertTrue(boundsOfContours(app.anchors.getValue(Axis.WEIGHT.hi).glyph.contours)!!.width > 80f)
+    }
+
+    @Test
+    fun suggestsSnappingPointsJustOffTheBaseline() {
+        val app = AppState()
+        val g = Glyph()
+        g.corners["regular"] = GlyphCorner(300f, mutableListOf(square(100f, 3f, 200f)))
+        app.loadGlyph("x", g)
+        val s = suggestionsFor(app).first { it.label.contains("baseline") }
+        s.apply(app)
+        assertEquals(0f, boundsOfContours(app.anchors.getValue("regular").glyph.contours)!!.minY)
+    }
+
+    @Test
+    fun editingAGhostLocksTheGlyph() {
+        val app = AppState()
+        val g = Glyph()
+        g.corners["regular"] = GlyphCorner(300f, mutableListOf(square(100f, 0f, 80f)))
+        app.loadGlyph("i", g)
+        app.addGhost("box", listOf(square(0f, 0f, 10f)))
+        app.editGhost(app.ghosts.single().id)
+        val before = app.toGlyph().corners
+        app.commandTarget.selectAll()
+        app.commandTarget.deleteSelected()
+        app.copyActiveToOthers()
+        app.startReduction()
+        assertEquals(before, app.toGlyph().corners)
+        assertNull(app.reduction)
+        assertTrue(suggestionsFor(app).isEmpty())
+    }
 }
