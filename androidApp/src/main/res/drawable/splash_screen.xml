@@ -1,8 +1,8 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/morphont_ground" />
     <item
-        android:width="96dp"
-        android:height="96dp"
+        android:width="160dp"
+        android:height="160dp"
         android:gravity="center"
-        android:drawable="@drawable/ic_morphont_mark" />
+        android:drawable="@drawable/ic_morphont_logo" />
 </layer-list>

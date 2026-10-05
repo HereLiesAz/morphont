@@ -1,6 +1,9 @@
 package com.hereliesaz.morphont
 
 import androidx.compose.foundation.background
+import com.hereliesaz.morphont.resources.Res
+import com.hereliesaz.morphont.resources.morphont_logo
+import org.jetbrains.compose.resources.painterResource
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -140,6 +143,7 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
             IconAction(MIcons.Undo, "Undo", { app.undo() })
             IconAction(MIcons.More, "Glyphs and file", openBrowser)
         }
+        AnchorFilmstrip(app, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 6.dp), compact = true)
         Stage(app, host, host.touchScale, Modifier.weight(1f).fillMaxWidth()) {
             Box(Modifier.fillMaxWidth()) {
                 PreviewCanvas(
@@ -148,7 +152,6 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
                 )
             }
         }
-        AxisStrip(app, Modifier.fillMaxWidth().padding(horizontal = 20.dp))
         Row(
             Modifier.padding(horizontal = 12.dp, vertical = 10.dp).fillMaxWidth().floating(30).height(60.dp).padding(horizontal = 6.dp),
             horizontalArrangement = Arrangement.SpaceAround,
@@ -189,7 +192,14 @@ private fun WideEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit)
     val drawing = app.editTarget(app.activeAnchor).drawingContourIndex != null
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Text("Morphont", fontSize = 22.sp, fontStyle = FontStyle.Italic, color = Mono.ink)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.foundation.Image(
+                    painterResource(Res.drawable.morphont_logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                )
+                Text("Morphont", fontSize = 22.sp, fontStyle = FontStyle.Italic, color = Mono.ink)
+            }
             GlyphTabs(app, host, openBrowser, Modifier.weight(1f))
             Caps("${(app.view.zoom * 100).toInt()}%")
             IconAction(MIcons.Undo, "Undo", { app.undo() }, size = 40)
@@ -255,6 +265,11 @@ fun WelcomeScreen(app: AppState, host: EditorHost, actions: List<Pair<String, ()
             Modifier.widthIn(max = 520.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            androidx.compose.foundation.Image(
+                painterResource(Res.drawable.morphont_logo),
+                contentDescription = null,
+                modifier = Modifier.size(112.dp),
+            )
             Column {
                 Text("Morphont", fontSize = 64.sp, lineHeight = 66.sp, fontStyle = FontStyle.Italic, color = Mono.ink)
                 Caps("Three drawings per axis. The rest is arithmetic.")

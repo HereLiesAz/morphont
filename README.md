@@ -160,10 +160,12 @@ every control floats on it as a rounded, hairline-edged surface and stays out
 of the way until needed.
 
 - **Phone:** glyph name and node count up top, with Copy to anchors, Undo and
-  the glyph browser. An **axis strip** (the picked axis as a line with its
-  three anchors on it; tap one to edit it), a tool **dock** (Select, Pen,
-  Guides, Ghosts, Simplify), and a picture-in-picture Preview that opens a
-  sheet with the sliders.
+  the glyph browser; directly beneath, the **anchor filmstrip** (the picked
+  axis's three anchors as live thumbnails -- tap one to edit it). A tool
+  **dock** (Select, Pen, Guides, Ghosts, Simplify) at the bottom, and a
+  picture-in-picture Preview that opens a sheet with the sliders.
+- **Gestures:** two-finger pinch zooms, two-finger drag pans; one finger
+  edits. Mouse wheel zooms on desktop.
 - **Wide screens (web ≥900dp, tablets):** glyph tabs, a tool rail, an
   **anchor filmstrip** of live thumbnails under the canvas, and an inspector
   column (Preview + sliders, Ghosts, Guides).
@@ -177,6 +179,11 @@ of the way until needed.
   colour, `Mono.error`, is kept for errors.
 - **Own parts:** a monoline icon set (`Icons.kt`, no icon library) and a
   hairline slider (`HairSlider`) in place of Material's thick one.
+- **Logo:** `branding/logo-inverted.png` (light, for this dark UI) is the
+  app icon, the web splash and the welcome mark; `branding/logo-light.png`
+  is kept for a future light theme. Android's themed (monochrome) icon
+  still uses the older single-colour mark, since themed icons must be one
+  colour.
 - **Typeface:** [Azrienoch](https://github.com/HereLiesAz/Azrienoch)
   (SIL OFL 1.1; `licenses/Azrienoch-OFL.txt`) via
   [HereLiesAz/convey](https://github.com/HereLiesAz/convey)'s

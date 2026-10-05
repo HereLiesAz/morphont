@@ -246,63 +246,48 @@ fun AxisLabel(app: AppState) {
 }
 
 /**
- * The axis as a line with its three anchors on it: Extra Thin · Regular ·
- * Extra Black (or whatever the picked axis calls its ends). Tapping a stop
- * edits that anchor -- the model made visible instead of hidden in tabs.
+ * The axis's three anchors as live thumbnails -- picker and at-a-glance
+ * preview in one. Desktop floats it under the canvas; phones run it full
+ * width under the header ([compact]).
  */
 @Composable
-fun AxisStrip(app: AppState, modifier: Modifier = Modifier) {
+fun AnchorFilmstrip(app: AppState, modifier: Modifier = Modifier, compact: Boolean = false) {
     val axis = app.selectedAxis
     val stops = listOf(axis.lo to axis.loLabel, "regular" to "Regular", axis.hi to axis.hiLabel)
-    Column(modifier) {
-        AxisLabel(app)
-        Box(Modifier.fillMaxWidth().height(48.dp)) {
-            Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 11.dp).height(1.dp).background(Mono.borderBright))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                stops.forEachIndexed { i, (name, label) ->
-                    val active = app.activeAnchor == name
-                    Column(
-                        Modifier.clip(RoundedCornerShape(10.dp)).clickable { app.activeAnchor = name }.padding(horizontal = 2.dp),
-                        horizontalAlignment = when (i) { 0 -> Alignment.Start; 2 -> Alignment.End; else -> Alignment.CenterHorizontally },
-                    ) {
-                        Box(
-                            Modifier.padding(horizontal = 2.dp).size(if (active) 22.dp else 18.dp).clip(RoundedCornerShape(50))
-                                .background(if (active) Mono.ink else Mono.ground)
-                                .border(1.5.dp, if (active) Mono.ink else Mono.inkDim, RoundedCornerShape(50)),
-                        )
-                        Text(label, fontSize = 12.sp, color = if (active) Mono.ink else Mono.inkDim, modifier = Modifier.padding(top = 4.dp))
-                    }
-                }
-            }
+    @Composable
+    fun Thumb(name: String, label: String, m: Modifier) {
+        val active = app.activeAnchor == name
+        Column(
+            m.clip(RoundedCornerShape(12.dp)).clickable { app.activeAnchor = name },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            AnchorThumb(
+                app, name, bright = active,
+                modifier = (if (compact) Modifier.fillMaxWidth().height(52.dp) else Modifier.size(64.dp, 56.dp))
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (active) Mono.panelHeader else Color.Transparent)
+                    .border(if (active) 1.5.dp else 1.dp, if (active) Mono.ink else Mono.border, RoundedCornerShape(10.dp))
+                    .padding(4.dp),
+            )
+            Text(label, fontSize = 11.sp, color = if (active) Mono.ink else Mono.inkDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
-}
-
-/** Desktop: the axis's three anchors as live thumbnails. */
-@Composable
-fun AnchorFilmstrip(app: AppState, modifier: Modifier = Modifier) {
-    val axis = app.selectedAxis
-    Row(
-        modifier.floating(18).padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(Modifier.align(Alignment.CenterVertically)) { AxisLabel(app) }
-        for ((name, label) in listOf(axis.lo to axis.loLabel, "regular" to "Regular", axis.hi to axis.hiLabel)) {
-            val active = app.activeAnchor == name
-            Column(
-                Modifier.clip(RoundedCornerShape(12.dp)).clickable { app.activeAnchor = name },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                AnchorThumb(
-                    app, name, bright = active,
-                    modifier = Modifier.size(64.dp, 56.dp).clip(RoundedCornerShape(10.dp))
-                        .border(if (active) 1.5.dp else 1.dp, if (active) Mono.ink else Mono.border, RoundedCornerShape(10.dp))
-                        .padding(4.dp),
-                )
-                Text(label, fontSize = 11.sp, color = if (active) Mono.ink else Mono.inkDim, maxLines = 1)
+    if (compact) {
+        Column(modifier) {
+            AxisLabel(app)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((name, label) in stops) Thumb(name, label, Modifier.weight(1f))
             }
+        }
+    } else {
+        Row(
+            modifier.floating(18).padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(Modifier.align(Alignment.CenterVertically)) { AxisLabel(app) }
+            for ((name, label) in stops) Thumb(name, label, Modifier)
         }
     }
 }
