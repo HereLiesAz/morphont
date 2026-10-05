@@ -217,14 +217,10 @@ fun AnchorCanvas(
         if (view.showGhosts) for (g in app.ghosts) {
             if (!g.visible) continue
             val contours = app.ghostContours(g, anchorName)
-            val isActive = g.id == app.activeGhostId
+            if (g.id == app.activeGhostId) continue // drawn solid, over the glyph, below
             val path = buildOutlinePath(contours, map)
-            drawPath(path, color = if (isActive) ghostActive.copy(alpha = 0.12f) else ghostFill)
-            drawPath(
-                path,
-                color = if (isActive) ghostActive else ghostStroke,
-                style = Stroke(width = hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f * uiScale, 4f * uiScale))),
-            )
+            drawPath(path, color = ghostFill)
+            drawPath(path, color = ghostStroke, style = Stroke(width = hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f * uiScale, 4f * uiScale))))
         }
 
         travelPathOverlay?.let { overlay ->
@@ -247,7 +243,6 @@ fun AnchorCanvas(
         }
 
         val reduction = app.reduction?.takeIf { anchorName in it.anchorNames }
-        val editingGhostNodes = ghost != null && !app.ghostTransformMode
         if (reduction != null) {
             // Original as a hairline, reduced shape filled: the gap between them is the loss.
             val original = buildOutlinePath(anchor.glyph.contours, map)
@@ -256,9 +251,17 @@ fun AnchorCanvas(
             val path = buildOutlinePath(reduced.contours, map)
             drawPath(path, color = outlineFill)
             drawNodes(reduced, emptySet(), map, uiScale, dim = false)
+        } else if (ghost != null) {
+            // Editing a ghost swaps the roles: the ghost is solid, the working glyph a bare outline.
+            drawPath(buildOutlinePath(anchor.glyph.contours, map), color = outlineStroke, style = Stroke(width = 1.4f * hair))
+            if (ghost.visible) {
+                val gp = buildOutlinePath(app.ghostContours(ghost, anchorName), map)
+                drawPath(gp, color = outlineFill)
+                drawPath(gp, color = outlineStroke.copy(alpha = 0.5f), style = Stroke(width = hair))
+            }
         } else {
             val outlinePath = buildOutlinePath(anchor.glyph.contours, map)
-            drawPath(outlinePath, color = if (editingGhostNodes) outlineFill.copy(alpha = 0.3f) else outlineFill)
+            drawPath(outlinePath, color = outlineFill)
             drawPath(outlinePath, color = outlineStroke.copy(alpha = 0.5f), style = Stroke(width = hair))
         }
 
@@ -274,10 +277,6 @@ fun AnchorCanvas(
         if (reduction == null) {
             val showNodesOf = if (ghost != null && app.ghostTransformMode) null else target
             if (showNodesOf != null) {
-                if (editingGhostNodes) {
-                    // Draw the ghost's own outline crisply while its nodes are live.
-                    drawPath(buildOutlinePath(target.glyph.contours, map), color = ghostActive, style = Stroke(width = hair))
-                }
                 drawNodes(showNodesOf.glyph, showNodesOf.selection, map, uiScale, dim = false)
             }
         }

@@ -137,7 +137,11 @@ so anchors can then be reshaped without adding or removing points.
   axis. Place mode: drag to move, corner squares to scale (about the
   opposite corner), the top knob to rotate; Flip ↔/↕ and ±15° buttons.
   Nodes mode edits the ghost's points (a live ghost detaches into a static
-  copy first). Ghosts, guides and metrics save with the glyph.
+  copy first). Editing a ghost is entered only from its **Edit** button in
+  the Ghosts panel; while it lasts the ghost draws solid and the working
+  glyph as a bare outline, and the glyph is locked -- gestures, the
+  selection pill, keys, Undo, Copy to anchors, Simplify and suggestions all
+  apply to the ghost or are disabled. Never both at once. Ghosts, guides and metrics save with the glyph.
 - **Simplify.** Edit → Simplify shows a slider that removes points
   cheapest-first (distance from each point to the chord of its neighbours),
   with the original as a red hairline under the reduced fill and the worst

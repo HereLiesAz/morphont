@@ -137,7 +137,8 @@ private fun selectTool(app: AppState) {
 }
 
 private fun penTool(app: AppState) {
-    if (app.activeGhost != null && app.ghostTransformMode) app.activeGhostId = null
+    // While a ghost is being placed there's nothing to draw on; the glyph itself is off-limits.
+    if (app.activeGhost != null && app.ghostTransformMode) return
     val t = app.editTarget(app.activeAnchor)
     if (t.drawingContourIndex == null) t.startNewContour()
 }
@@ -149,6 +150,8 @@ private fun penTool(app: AppState) {
 private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit) {
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     val suggestions = rememberSuggestions(app)
+    // Starting a ghost edit closes the sheet so the canvas is in view.
+    androidx.compose.runtime.LaunchedEffect(app.activeGhostId) { if (app.activeGhostId != null) sheet = null }
     val drawing = app.editTarget(app.activeAnchor).drawingContourIndex != null
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -157,7 +160,7 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
                 Caps("${ANCHOR_LABELS[app.activeAnchor]} · ${nodeCount(app)} nodes")
             }
             SuggestionsButton(app, suggestions)
-            IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() })
+            IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, enabled = app.activeGhost == null)
             IconAction(MIcons.Undo, "Undo", { app.undo() })
             IconAction(MIcons.More, "Glyphs and file", openBrowser)
         }
@@ -176,10 +179,10 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconAction(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing, size = 48)
-            IconAction(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = 48)
+            IconAction(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = 48, enabled = !(app.activeGhost != null && app.ghostTransformMode))
             IconAction(MIcons.Guides, "Guides", { sheet = Sheet.GUIDES }, size = 48)
             IconAction(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = 48)
-            IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 48)
+            IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 48, enabled = app.activeGhost == null)
         }
     }
     val s = sheet
@@ -228,10 +231,10 @@ private fun WideEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit)
         Row(Modifier.weight(1f).fillMaxWidth()) {
             Column(Modifier.width(60.dp).fillMaxHeight().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 IconAction(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing, size = 42)
-                IconAction(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = 42)
+                IconAction(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
                 IconAction(MIcons.Measure, "Measure", { app.view.showMeasure = !app.view.showMeasure }, selected = app.view.showMeasure, size = 42)
-                IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 42)
-                IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 42)
+                IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 42, enabled = app.activeGhost == null)
+                IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 42, enabled = app.activeGhost == null)
                 SuggestionsButton(app, suggestions, size = 42)
                 IconAction(MIcons.Fit, "Fit (0)", { app.view.resetView() }, size = 42)
             }

@@ -141,4 +141,22 @@ class EditingTest {
         s.apply(app)
         assertEquals(0f, boundsOfContours(app.anchors.getValue("regular").glyph.contours)!!.minY)
     }
+
+    @Test
+    fun editingAGhostLocksTheGlyph() {
+        val app = AppState()
+        val g = Glyph()
+        g.corners["regular"] = GlyphCorner(300f, mutableListOf(square(100f, 0f, 80f)))
+        app.loadGlyph("i", g)
+        app.addGhost("box", listOf(square(0f, 0f, 10f)))
+        app.editGhost(app.ghosts.single().id)
+        val before = app.toGlyph().corners
+        app.commandTarget.selectAll()
+        app.commandTarget.deleteSelected()
+        app.copyActiveToOthers()
+        app.startReduction()
+        assertEquals(before, app.toGlyph().corners)
+        assertNull(app.reduction)
+        assertTrue(suggestionsFor(app).isEmpty())
+    }
 }

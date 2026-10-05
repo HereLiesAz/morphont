@@ -462,6 +462,7 @@ class AppState {
 
     /** Copies the active anchor's outline into every other anchor, seeding matching topology. */
     fun copyActiveToOthers() {
+        if (activeGhost != null) return // never touch the glyph while a ghost is being edited
         val src = anchors.getValue(activeAnchor)
         var count = 0
         for (name in ANCHORS) {
@@ -505,22 +506,29 @@ class AppState {
 
     fun addGhost(label: String, contours: List<ContourData>) {
         if (contours.isEmpty()) { setStatus("That ghost has no outline.", true); return }
-        val g = GhostLayer(nextGhostId++, label, contours)
-        ghosts.add(g)
-        activeGhostId = g.id
-        ghostTransformMode = true
-        setStatus("Added ghost \"$label\". Drag to move, corners to scale, the top knob to rotate. Done returns to the glyph.")
+        ghosts.add(GhostLayer(nextGhostId++, label, contours))
+        setStatus("Added ghost \"$label\". Use its Edit button in Ghosts to move, scale, rotate or reshape it.")
     }
 
     /** Adds a live ghost of another glyph in this project (see [GhostData.sourceGlyph]). */
     fun addLinkedGhost(name: String) {
         cacheLinked(name)
         if (name != currentGlyphName && name !in linkedGlyphs) { setStatus("Couldn't read \"$name\".", true); return }
-        val g = GhostLayer(nextGhostId++, name, emptyList(), sourceGlyph = name)
-        ghosts.add(g)
-        activeGhostId = g.id
-        ghostTransformMode = true
+        ghosts.add(GhostLayer(nextGhostId++, name, emptyList(), sourceGlyph = name))
         setStatus("Ghosting \"$name\" live: it follows every axis, here and in the Preview.")
+    }
+
+    /**
+     * Enters ghost editing -- the only way in, from the Ghosts panel's Edit
+     * button. While it lasts the ghost draws solid, the glyph as an outline,
+     * and every gesture edits the ghost.
+     */
+    fun editGhost(id: Int) {
+        val g = ghosts.firstOrNull { it.id == id } ?: return
+        g.visible = true
+        activeGhostId = id
+        ghostTransformMode = true
+        reduction = null
     }
 
     fun removeGhost(id: Int) {
@@ -563,6 +571,7 @@ class AppState {
 
     /** Starts a reduction preview on the active anchor -- on every anchor at once when they're compatible. */
     fun startReduction() {
+        if (activeGhost != null) return // never touch the glyph while a ghost is being edited
         val names = if (compatibility() == null) listOf(activeAnchor) + ANCHORS.filter { it != activeAnchor } else listOf(activeAnchor)
         val glyphs = names.map { anchors.getValue(it).glyph }
         val total = glyphs.first().contours.sumOf { it.points.size }

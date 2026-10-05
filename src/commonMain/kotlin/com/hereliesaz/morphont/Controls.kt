@@ -411,7 +411,6 @@ fun GhostsSection(app: AppState, host: EditorHost) {
             val active = g.id == app.activeGhostId
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (active) Mono.panelHeader else Color.Transparent)
-                    .clickable { app.activeGhostId = if (active) null else g.id; app.ghostTransformMode = true }
                     .padding(start = 10.dp, end = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -421,6 +420,7 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                     if (g.isLinked) Text("follows every axis", fontSize = 11.sp, color = Mono.inkDim)
                 }
                 Segmented(listOf("Over", "Beside"), if (g.beside) 1 else 0) { g.beside = it == 1 }
+                IconAction(MIcons.Pen, if (active) "Done editing ghost" else "Edit ghost", { if (active) app.activeGhostId = null else app.editGhost(g.id) }, selected = active, size = 36)
                 IconAction(if (g.visible) MIcons.Eye else MIcons.EyeOff, if (g.visible) "Hide" else "Show", { g.visible = !g.visible }, size = 36)
                 IconAction(MIcons.Delete, "Remove ghost", { app.removeGhost(g.id) }, size = 36)
             }
