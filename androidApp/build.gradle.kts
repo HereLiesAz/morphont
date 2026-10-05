@@ -4,21 +4,24 @@ plugins {
     id("com.android.application")
 }
 
-// Version: the central Android release (HereLiesAz/workflows android-release.yml) passes
-// -PversionCode and -PversionName. Local builds fall back to the pair it last recorded in
-// version.properties. Nothing here increments anything.
+// Version: the central Android releases (HereLiesAz/workflows android-play-release.yml and
+// android-github-release.yml) pass -PversionCodeOverride/-PversionNameOverride (also
+// -PversionCode/-PversionName). Local builds fall back to version.properties. Nothing here
+// increments anything.
 val versionProps = Properties().apply {
     rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
-val appVersionCode = (findProperty("versionCode") as String?)?.toIntOrNull()
+fun prop(vararg names: String): String? = names.firstNotNullOfOrNull { (findProperty(it) as String?)?.takeIf(String::isNotBlank) }
+val appVersionCode = prop("versionCodeOverride", "releaseVersionCode", "versionCode")?.toIntOrNull()
     ?: versionProps.getProperty("versionCode")?.trim()?.toIntOrNull()
     ?: 6
-val appVersionName = (findProperty("versionName") as String?)
+val appVersionName = prop("versionNameOverride", "releaseVersionName", "versionName")
     ?: versionProps.getProperty("versionName")?.trim()?.takeIf { it.isNotEmpty() }
     ?: listOf("versionMajor", "versionMinor", "versionPatch").joinToString(".") { versionProps.getProperty(it, "0").trim() }
 
-// Signing: the central release exposes the upload key as KEYSTORE_FILE / KEYSTORE_PASSWORD /
-// KEY_ALIAS / KEY_PASSWORD. The older MORPHONT_-prefixed names still work for local builds.
+// Signing: the central releases inject the upload key as android.injected.signing.* properties,
+// which override this config. KEYSTORE_* (or MORPHONT_KEYSTORE_*) in the environment sign
+// local release builds.
 fun env(name: String): String? =
     (providers.environmentVariable(name).orNull ?: providers.environmentVariable("MORPHONT_$name").orNull)
         ?.takeIf { it.isNotBlank() }

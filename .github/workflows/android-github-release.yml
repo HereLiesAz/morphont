@@ -1,0 +1,20 @@
+# Built, signed and published by HereLiesAz/workflows (.github/workflows/android-github-release.yml):
+# a GitHub Release with the signed APK.
+# This file is the trigger contract; the central sync replaces it with a tracker.
+name: Android GitHub Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/commonMain/**"
+      - "src/androidMain/**"
+      - "androidApp/**"
+      - "gradle/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
+  workflow_dispatch:
+jobs:
+  hand-off:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Android GitHub Release runs centrally in HereLiesAz/workflows."
