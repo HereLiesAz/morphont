@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -97,7 +98,7 @@ kotlin {
 }
 
 // Version for the desktop installers, from the same version.properties the Android release uses.
-val desktopVersion: String = java.util.Properties().apply {
+val desktopVersion: String = Properties().apply {
     rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }.let { p -> listOf("versionMajor", "versionMinor", "versionPatch").map { p.getProperty(it, "0").trim().toIntOrNull() ?: 0 } }
     .joinToString(".")
