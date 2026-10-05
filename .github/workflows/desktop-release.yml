@@ -1,0 +1,21 @@
+# Built and released by HereLiesAz/workflows (.github/workflows/multi-platform-app-release.yml):
+# native desktop installers (Windows .msi, macOS .dmg for Apple silicon and Intel, Linux .deb and .rpm)
+# attached to the patch-grouped GitHub Release.
+# This file is the trigger contract; the central sync replaces it with a tracker.
+name: Desktop Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/commonMain/**"
+      - "src/desktopMain/**"
+      - "branding/desktop/**"
+      - "gradle/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
+  workflow_dispatch:
+jobs:
+  hand-off:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Desktop Release runs centrally in HereLiesAz/workflows."

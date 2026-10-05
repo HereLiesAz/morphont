@@ -9,21 +9,25 @@ than being drawn separately.
 
 ## Running it
 
-```
-./gradlew wasmJsBrowserDevelopmentRun
-```
+~~~
+./gradlew wasmJsBrowserDevelopmentRun   # web, with hot reload at http://localhost:8080/
+./gradlew run                           # desktop (Windows, macOS, Linux)
+./gradlew :androidApp:installDebug      # Android
+~~~
 
-Opens a dev server (with hot reload) at `http://localhost:8080/`.
+`./gradlew wasmJsBrowserDistribution` builds the static PWA into
+`build/dist/wasmJs/productionExecutable/`; `./gradlew packageDistributionForCurrentOS` builds this
+machine's desktop installer.
 
-To build the production PWA bundle:
+## Where to get it
 
-```
-./gradlew wasmJsBrowserDistribution
-```
+- **Web:** <https://hereliesaz.github.io/morphont/> (installable as a PWA, works offline)
+- **Android:** Google Play, and the APK on [GitHub Releases](https://github.com/HereLiesAz/morphont/releases)
+- **Desktop:** `.msi`, `.dmg` (Apple silicon and Intel), `.deb` and `.rpm` on
+  [GitHub Releases](https://github.com/HereLiesAz/morphont/releases)
 
-Output lands in `build/dist/wasmJs/productionExecutable/` — a fully
-static site (HTML, JS, Wasm, manifest, service worker, icons) you can
-host anywhere. It's installable as a PWA from a supporting browser.
+Releases are built centrally -- see [`docs/RELEASING.md`](docs/RELEASING.md). Privacy policy:
+[`docs/PRIVACY.md`](docs/PRIVACY.md) (nothing is collected; everything stays on your device).
 
 ## The model
 
@@ -177,6 +181,7 @@ so anchors can then be reshaped without adding or removing points.
 - `Icons.kt` -- the monoline icon set
 - `Suggestions.kt` -- the suggested-edits engine (outline offset, stem measurement, and each suggestion)
 - `Theme.kt` -- the palette and primitives (`MonoButton`, `IconAction`, `Caps`, `floating`, `HairSlider`), built on `HereLiesAz/convey` (see below)
+- `desktopMain/` -- the desktop window, per-user app-data storage and native file dialogs
 - `Storage.kt` -- IndexedDB persistence (one record per glyph) + JSON export/import; migrates a legacy single-blob `localStorage` project automatically on first successful open
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point
 - `VariableFont.kt` / `FamilyImport.kt` -- the from-scratch OpenType variable-font parser used to import a whole character family from one variable TTF

@@ -1,11 +1,31 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
 }
 
-val morphontKeystoreFile = providers.environmentVariable("MORPHONT_KEYSTORE_FILE").orNull
-val morphontKeystorePassword = providers.environmentVariable("MORPHONT_KEYSTORE_PASSWORD").orNull
-val morphontKeyAlias = providers.environmentVariable("MORPHONT_KEY_ALIAS").orNull
-val morphontKeyPassword = providers.environmentVariable("MORPHONT_KEY_PASSWORD").orNull
+// Version: the central Android release (HereLiesAz/workflows android-release.yml) passes
+// -PversionCode and -PversionName. Local builds fall back to the pair it last recorded in
+// version.properties. Nothing here increments anything.
+val versionProps = Properties().apply {
+    rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+val appVersionCode = (findProperty("versionCode") as String?)?.toIntOrNull()
+    ?: versionProps.getProperty("versionCode")?.trim()?.toIntOrNull()
+    ?: 6
+val appVersionName = (findProperty("versionName") as String?)
+    ?: versionProps.getProperty("versionName")?.trim()?.takeIf { it.isNotEmpty() }
+    ?: listOf("versionMajor", "versionMinor", "versionPatch").joinToString(".") { versionProps.getProperty(it, "0").trim() }
+
+// Signing: the central release exposes the upload key as KEYSTORE_FILE / KEYSTORE_PASSWORD /
+// KEY_ALIAS / KEY_PASSWORD. The older MORPHONT_-prefixed names still work for local builds.
+fun env(name: String): String? =
+    (providers.environmentVariable(name).orNull ?: providers.environmentVariable("MORPHONT_$name").orNull)
+        ?.takeIf { it.isNotBlank() }
+val keystoreFile = env("KEYSTORE_FILE")
+val keystorePassword = env("KEYSTORE_PASSWORD")
+val keyAlias = env("KEY_ALIAS")
+val keyPassword = env("KEY_PASSWORD")
 
 android {
     namespace = "com.hereliesaz.morphont"
@@ -15,27 +35,27 @@ android {
         applicationId = "com.hereliesaz.morphont"
         minSdk = 24
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.4.3"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     signingConfigs {
-        if (
-            !morphontKeystoreFile.isNullOrBlank() &&
-            !morphontKeystorePassword.isNullOrBlank() &&
-            !morphontKeyAlias.isNullOrBlank()
-        ) {
+        if (keystoreFile != null && keystorePassword != null && keyAlias != null) {
             create("release") {
-                storeFile = file(morphontKeystoreFile)
-                storePassword = morphontKeystorePassword
-                keyAlias = morphontKeyAlias
-                keyPassword = morphontKeyPassword ?: morphontKeystorePassword
+                storeFile = file(keystoreFile)
+                storePassword = keystorePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword ?: keystorePassword
             }
         }
     }
 
     buildTypes {
         getByName("release") {
+            // R8 shrinks the release and emits the mapping.txt Google Play publication requires.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }

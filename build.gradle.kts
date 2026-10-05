@@ -1,3 +1,4 @@
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -17,8 +18,10 @@ repositories {
     mavenCentral()
     maven("https://maven.pkg.github.com/HereLiesAz/convey") {
         credentials {
-            username = System.getenv("GITHUB_ACTOR")
-            password = System.getenv("GITHUB_TOKEN")
+            // GitHub Packages needs a token even for a public package. Local CI exports
+            // GITHUB_ACTOR/GITHUB_TOKEN; the central HereLiesAz/workflows builders expose GH_TOKEN.
+            username = System.getenv("GITHUB_ACTOR") ?: "HereLiesAz"
+            password = System.getenv("GITHUB_TOKEN") ?: System.getenv("GH_TOKEN")
         }
     }
 }
@@ -35,6 +38,14 @@ kotlin {
             enable = true
         }
         withHostTest {}
+    }
+
+    // Desktop (Windows, macOS, Linux): Compose for Desktop on the JVM, packaged by
+    // compose.desktop below.
+    jvm("desktop") {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
     }
 
     @OptIn(ExperimentalWasmDsl::class)
@@ -71,10 +82,55 @@ kotlin {
                 implementation("com.juul.indexeddb:core:0.12.0")
             }
         }
+        val desktopMain by getting {
+            dependencies {
+                implementation(compose.desktop.currentOs)
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+            }
+        }
         val androidMain by getting {
             dependencies {
                 implementation("androidx.activity:activity-compose:1.13.0")
             }
+        }
+    }
+}
+
+// Version for the desktop installers, from the same version.properties the Android release uses.
+val desktopVersion: String = java.util.Properties().apply {
+    rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}.let { p -> listOf("versionMajor", "versionMinor", "versionPatch").map { p.getProperty(it, "0").trim().toIntOrNull() ?: 0 } }
+    .joinToString(".")
+
+compose.desktop {
+    application {
+        mainClass = "com.hereliesaz.morphont.MainKt"
+        nativeDistributions {
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
+            packageName = "Morphont"
+            packageVersion = desktopVersion
+            description = "Variable-font glyph editor: three drawings per axis, the rest is arithmetic."
+            vendor = "HereLiesAz"
+            macOS {
+                bundleID = "com.hereliesaz.morphont"
+                iconFile.set(rootProject.file("branding/desktop/morphont.icns"))
+                // macOS rejects a 0.x bundle version; the DMG carries 1.x of the same minor.patch.
+                packageVersion = desktopVersion.split(".").let { v -> listOf(maxOf(1, v[0].toInt()), v[1], v[2]).joinToString(".") }
+            }
+            windows {
+                iconFile.set(rootProject.file("branding/desktop/morphont.ico"))
+                menuGroup = "Morphont"
+                upgradeUuid = "7b0c3a8e-5f1d-4c62-9a4e-2d7e9c51b6f3"
+                perUserInstall = true
+            }
+            linux {
+                iconFile.set(rootProject.file("branding/desktop/morphont.png"))
+                packageName = "morphont"
+            }
+        }
+        buildTypes.release.proguard {
+            // ProGuard on desktop buys little here and risks the serialization model; ship unshrunk.
+            isEnabled.set(false)
         }
     }
 }
