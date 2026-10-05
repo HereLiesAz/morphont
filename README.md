@@ -181,9 +181,8 @@ of the way until needed.
   hairline slider (`HairSlider`) in place of Material's thick one.
 - **Logo:** `branding/logo-inverted.png` (light, for this dark UI) is the
   app icon, the web splash and the welcome mark; `branding/logo-light.png`
-  is kept for a future light theme. Android's themed (monochrome) icon
-  still uses the older single-colour mark, since themed icons must be one
-  colour.
+  is kept for a future light theme; `branding/logo-mono.png` is Android's
+  themed (monochrome) icon.
 - **Typeface:** [Azrienoch](https://github.com/HereLiesAz/Azrienoch)
   (SIL OFL 1.1; `licenses/Azrienoch-OFL.txt`) via
   [HereLiesAz/convey](https://github.com/HereLiesAz/convey)'s
