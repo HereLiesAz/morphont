@@ -109,4 +109,36 @@ class EditingTest {
         val t = boxDragTransform(b, rotate = false, corner = 2, start = androidx.compose.ui.geometry.Offset(10f, 10f), cur = androidx.compose.ui.geometry.Offset(20f, 20f))
         assertEquals(listOf(2f, 0f, 0f, 2f, 0f, 0f), t)
     }
+
+    @Test
+    fun offsetEmboldensAStemByTwiceTheOffsetAndKeepsPoints() {
+        val stem = listOf(square(100f, 0f, 80f))
+        val bold = offsetOutline(stem, 10f, 10f)
+        assertEquals(4, bold[0].points.size)
+        assertEquals(100f, boundsOfContours(bold)!!.width)
+    }
+
+    @Test
+    fun suggestionsOfferEmboldenOnTheBoldAnchorAndItStaysCompatible() {
+        val app = AppState()
+        val g = Glyph()
+        ANCHORS.forEach { g.corners[it] = GlyphCorner(300f, mutableListOf(square(100f, 0f, 80f))) }
+        app.loadGlyph("i", g)
+        app.activeAnchor = Axis.WEIGHT.hi
+        val s = suggestionsFor(app).first { it.label.startsWith("Embolden") }
+        s.apply(app)
+        assertNull(app.compatibility())
+        assertTrue(boundsOfContours(app.anchors.getValue(Axis.WEIGHT.hi).glyph.contours)!!.width > 80f)
+    }
+
+    @Test
+    fun suggestsSnappingPointsJustOffTheBaseline() {
+        val app = AppState()
+        val g = Glyph()
+        g.corners["regular"] = GlyphCorner(300f, mutableListOf(square(100f, 3f, 200f)))
+        app.loadGlyph("x", g)
+        val s = suggestionsFor(app).first { it.label.contains("baseline") }
+        s.apply(app)
+        assertEquals(0f, boundsOfContours(app.anchors.getValue("regular").glyph.contours)!!.minY)
+    }
 }

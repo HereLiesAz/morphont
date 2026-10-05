@@ -53,6 +53,9 @@ fun mapContours(contours: List<ContourData>, f: (Float, Float) -> Pair<Float, Fl
 fun reverseWinding(contours: List<ContourData>): MutableList<ContourData> =
     contours.map { ContourData(it.points.reversed().map { p -> p.copy2() }.toMutableList()) }.toMutableList()
 
+fun translateContours(contours: List<ContourData>, dx: Float, dy: Float): MutableList<ContourData> =
+    mapContours(contours) { x, y -> (x + dx) to (y + dy) }
+
 /** Primitive reference shapes for ghosts. */
 enum class ShapeKind(val label: String) { RECTANGLE("Rectangle"), ELLIPSE("Ellipse"), TRIANGLE("Triangle"), LINE_BAR("Bar") }
 

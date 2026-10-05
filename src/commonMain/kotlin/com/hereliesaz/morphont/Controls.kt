@@ -217,6 +217,45 @@ fun SimplifyCard(app: AppState, modifier: Modifier = Modifier) {
     }
 }
 
+/** The suggestion button: a spark with a count; tap to expand or collapse the row. */
+@Composable
+fun SuggestionsButton(app: AppState, suggestions: List<Suggestion>, size: Int = 44) {
+    Box {
+        IconAction(MIcons.Spark, "Suggested edits (${suggestions.size})", { app.showSuggestions = !app.showSuggestions }, selected = app.showSuggestions, size = size, enabled = suggestions.isNotEmpty() || app.showSuggestions)
+        if (suggestions.isNotEmpty() && !app.showSuggestions) {
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).size(16.dp).clip(RoundedCornerShape(8.dp)).background(Mono.ink),
+                contentAlignment = Alignment.Center,
+            ) { Text(suggestions.size.coerceAtMost(9).toString(), fontSize = 10.sp, color = Mono.onPrimary) }
+        }
+    }
+}
+
+/** Expanded suggested edits: one chip per applicable edit, each a single undoable tap. */
+@Composable
+fun SuggestionsRow(app: AppState, suggestions: List<Suggestion>, modifier: Modifier = Modifier) {
+    if (!app.showSuggestions) return
+    Row(
+        modifier.floating(20).height(48.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (suggestions.isEmpty()) Text("Nothing to suggest right now.", fontSize = 13.sp, color = Mono.inkDim, modifier = Modifier.padding(horizontal = 10.dp))
+        for (sg in suggestions) {
+            Row(
+                Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).border(1.dp, Mono.border, RoundedCornerShape(18.dp))
+                    .clickable { sg.apply(app) }.padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(sg.label, fontSize = 13.sp, color = Mono.ink, maxLines = 1)
+                sg.detail?.let { Caps(it, size = 9) }
+            }
+        }
+        IconAction(MIcons.Close, "Hide suggestions", { app.showSuggestions = false }, size = 36)
+    }
+}
+
 /** Transient status line; tap to dismiss. */
 @Composable
 fun Toast(app: AppState, modifier: Modifier = Modifier) {

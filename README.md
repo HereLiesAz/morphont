@@ -144,6 +144,22 @@ so anchors can then be reshaped without adding or removing points.
   drift in font units. When every anchor is compatible, the same points go
   from all of them, so interpolation survives. Apply or Cancel.
 
+- **Suggested edits.** The sparkle button (header on phones, tool rail on
+  wide screens) shows how many edits apply right now; tap it to expand a
+  row of one-tap, undoable chips. Recomputed a beat after the outline stops
+  changing:
+  - *Generate* -- on an extreme anchor, derive it from Regular: embolden /
+    lighten (point-preserving offset), condense / extend (stems kept),
+    italicize (12° slant), grade, X/Y thickness, x-height, cap, ascender,
+    descender. Same points, same order, so it stays interpolatable.
+  - *Cleanup* -- merge duplicate points, remove points that add no shape,
+    fix contour direction (applied to every anchor when they're compatible).
+  - *Alignment* -- snap points a few units off a metric line; straighten
+    nearly vertical/horizontal lines.
+  - *Consistency* -- match stems that almost agree; centre on the advance.
+  - *Interpolation* -- when anchors disagree: copy this anchor to all, or
+    jump to the first mismatch.
+
 ## Project layout
 
 - `Model.kt` -- the glyph data model (points, contours, corners)
@@ -155,6 +171,7 @@ so anchors can then be reshaped without adding or removing points.
 - `Editor.kt` -- the shared editor screen (phone and wide layouts) and the welcome screen, used by both shells
 - `AnchorCanvas.kt` / `Panels.kt` / `Controls.kt` -- the canvas renderer, preview/thumbnail canvases, and the floating parts (selection pill, ghost bar, simplify card, axis strip, filmstrip, inspector sections, dialogs, keyboard shortcuts)
 - `Icons.kt` -- the monoline icon set
+- `Suggestions.kt` -- the suggested-edits engine (outline offset, stem measurement, and each suggestion)
 - `Theme.kt` -- the palette and primitives (`MonoButton`, `IconAction`, `Caps`, `floating`, `HairSlider`), built on `HereLiesAz/convey` (see below)
 - `Storage.kt` -- IndexedDB persistence (one record per glyph) + JSON export/import; migrates a legacy single-blob `localStorage` project automatically on first successful open
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point

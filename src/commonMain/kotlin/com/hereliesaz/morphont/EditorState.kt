@@ -328,6 +328,9 @@ class AppState {
 
     var padMode by mutableStateOf(PadMode.MOVE)
 
+    /** Whether the suggested-edits row is expanded (it's behind a button, not always on screen). */
+    var showSuggestions by mutableStateOf(false)
+
     /** Whether the most recent pointer was a finger: drives the touch proxy handle. */
     var touchInput by mutableStateOf(false)
 

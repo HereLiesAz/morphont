@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,7 +75,7 @@ private fun nodeCount(app: AppState) = app.anchors.getValue(app.activeAnchor).gl
 
 /** Canvas plus everything that floats on it, identical in both layouts. */
 @Composable
-private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: Modifier, bottomInset: Int = 16, extraBottom: @Composable () -> Unit = {}) {
+private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: Modifier, suggestions: List<Suggestion>, bottomInset: Int = 16, extraBottom: @Composable () -> Unit = {}) {
     Box(modifier) {
         AnchorCanvas(
             anchorName = app.activeAnchor,
@@ -97,6 +98,7 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            SuggestionsRow(app, suggestions)
             GhostBar(app)
             SelectionPill(app)
             Toast(app)
@@ -113,6 +115,20 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
             extraBottom()
         }
     }
+}
+
+/**
+ * Suggestions, recomputed a beat after the outline stops changing -- never
+ * on every frame of a drag.
+ */
+@Composable
+private fun rememberSuggestions(app: AppState): List<Suggestion> {
+    val glyphs = app.anchors.values.map { it.glyph }
+    val state = androidx.compose.runtime.produceState(emptyList<Suggestion>(), glyphs, app.activeAnchor, app.metrics, app.activeGhostId, app.reduction) {
+        kotlinx.coroutines.delay(250)
+        value = suggestionsFor(app)
+    }
+    return state.value
 }
 
 private fun selectTool(app: AppState) {
@@ -132,6 +148,7 @@ private fun penTool(app: AppState) {
 @Composable
 private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit) {
     var sheet by remember { mutableStateOf<Sheet?>(null) }
+    val suggestions = rememberSuggestions(app)
     val drawing = app.editTarget(app.activeAnchor).drawingContourIndex != null
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -139,12 +156,13 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
                 Text(app.currentGlyphName ?: "", fontSize = 38.sp, lineHeight = 40.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Caps("${ANCHOR_LABELS[app.activeAnchor]} · ${nodeCount(app)} nodes")
             }
+            SuggestionsButton(app, suggestions)
             IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() })
             IconAction(MIcons.Undo, "Undo", { app.undo() })
             IconAction(MIcons.More, "Glyphs and file", openBrowser)
         }
         AnchorFilmstrip(app, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 6.dp), compact = true)
-        Stage(app, host, host.touchScale, Modifier.weight(1f).fillMaxWidth()) {
+        Stage(app, host, host.touchScale, Modifier.weight(1f).fillMaxWidth(), suggestions) {
             Box(Modifier.fillMaxWidth()) {
                 PreviewCanvas(
                     app,
@@ -189,6 +207,7 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
 
 @Composable
 private fun WideEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit) {
+    val suggestions = rememberSuggestions(app)
     val drawing = app.editTarget(app.activeAnchor).drawingContourIndex != null
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -213,10 +232,11 @@ private fun WideEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit)
                 IconAction(MIcons.Measure, "Measure", { app.view.showMeasure = !app.view.showMeasure }, selected = app.view.showMeasure, size = 42)
                 IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 42)
                 IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 42)
+                SuggestionsButton(app, suggestions, size = 42)
                 IconAction(MIcons.Fit, "Fit (0)", { app.view.resetView() }, size = 42)
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
-            Stage(app, host, 1f, Modifier.weight(1f).fillMaxHeight(), bottomInset = 18) {
+            Stage(app, host, 1f, Modifier.weight(1f).fillMaxHeight(), suggestions, bottomInset = 18) {
                 AnchorFilmstrip(app)
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
@@ -281,7 +301,7 @@ fun WelcomeScreen(app: AppState, host: EditorHost, actions: List<Pair<String, ()
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(label, fontSize = 18.sp, color = Mono.ink, modifier = Modifier.weight(1f))
-                        Icon(MIcons.Chevron, null, tint = Mono.inkDim, modifier = Modifier.size(16.dp).padding(0.dp))
+                        Icon(MIcons.Chevron, null, tint = Mono.inkDim, modifier = Modifier.size(16.dp).rotate(-90f))
                     }
                     Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
                 }

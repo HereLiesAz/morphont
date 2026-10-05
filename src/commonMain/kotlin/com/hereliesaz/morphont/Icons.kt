@@ -58,6 +58,7 @@ object MIcons {
     val Move = icon("move", listOf("M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"))
     val SelectAll = icon("selectAll", listOf("M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4", "M9 9h6v6H9z"))
     val Fit = icon("fit", listOf("M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"))
+    val Spark = icon("spark", listOf("M12 3c.6 4.6 2.4 6.4 7 7-4.6.6-6.4 2.4-7 7-.6-4.6-2.4-6.4-7-7 4.6-.6 6.4-2.4 7-7z", "M19 3v3M17.5 4.5h3"))
     val Duplicate = icon("dup", listOf("M8 8h12v12H8z", "M4 16V4h12"))
 }
 
