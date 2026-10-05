@@ -73,6 +73,8 @@ private data class TupleVariation(
 class VariableFont private constructor(
     private val r: Reader,
     val unitsPerEm: Int,
+    /** This font's own vertical metrics (`hhea` ascender/descender, `OS/2` x/cap height when present). */
+    val metrics: FontMetrics,
     val axes: List<AxisInfo>,
     private val cmap: Map<Int, Int>,
     private val numGlyphs: Int,
@@ -454,7 +456,12 @@ class VariableFont private constructor(
     }
 
     companion object {
-        fun parse(bytes: ByteArray): VariableFont {
+        /**
+         * Parses a TrueType font. [requireVariable] false also accepts a
+         * static font (no `fvar`), which then simply has no axes -- enough
+         * for drawing reference ghosts, not for a family import.
+         */
+        fun parse(bytes: ByteArray, requireVariable: Boolean = true): VariableFont {
             val r = Reader(bytes)
             val numTables = r.u16(4)
             val tables = LinkedHashMap<String, TableEntry>()
@@ -498,10 +505,21 @@ class VariableFont private constructor(
             val cmapTable = tables["cmap"] ?: error("Missing 'cmap' table -- can't determine this font's character set.")
             val cmap = parseCmap(r, cmapTable.offset)
 
-            val fvarTable = tables["fvar"] ?: error("Missing 'fvar' table -- this isn't a variable font.")
-            val axesOffset = fvarTable.offset + r.u16(fvarTable.offset + 4)
-            val axisCount = r.u16(fvarTable.offset + 8)
-            val axisSize = r.u16(fvarTable.offset + 10)
+            val fvarTable = tables["fvar"]
+            if (fvarTable == null && requireVariable) error("Missing 'fvar' table -- this isn't a variable font.")
+            val axesOffset = if (fvarTable == null) 0 else fvarTable.offset + r.u16(fvarTable.offset + 4)
+            val axisCount = if (fvarTable == null) 0 else r.u16(fvarTable.offset + 8)
+            val axisSize = if (fvarTable == null) 0 else r.u16(fvarTable.offset + 10)
+
+            val ascender = r.i16(hhea.offset + 4).toFloat()
+            val descender = r.i16(hhea.offset + 6).toFloat()
+            val os2 = tables["OS/2"]
+            val os2Version = if (os2 != null && os2.length >= 2) r.u16(os2.offset) else 0
+            // sxHeight/sCapHeight exist from OS/2 version 2 on, at offsets 86/88.
+            val xHeight = if (os2 != null && os2Version >= 2 && os2.length >= 90) r.i16(os2.offset + 86).toFloat() else unitsPerEm * 0.5f
+            val capHeight = if (os2 != null && os2Version >= 2 && os2.length >= 90) r.i16(os2.offset + 88).toFloat() else unitsPerEm * 0.7f
+            val metrics = FontMetrics(unitsPerEm.toFloat(), ascender, capHeight, xHeight, descender)
+
             val axes = (0 until axisCount).map { i ->
                 val ao = axesOffset + i * axisSize
                 AxisInfo(
@@ -537,6 +555,7 @@ class VariableFont private constructor(
             return VariableFont(
                 r = r,
                 unitsPerEm = unitsPerEm,
+                metrics = metrics,
                 axes = axes,
                 cmap = cmap,
                 numGlyphs = numGlyphs,

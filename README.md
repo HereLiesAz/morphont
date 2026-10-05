@@ -93,14 +93,59 @@ Interpolation requires every anchor to be point-for-point compatible
 where they disagree. "Copy [anchor] to other N" seeds matching topology
 so anchors can then be reshaped without adding or removing points.
 
+## Editing tools
+
+- **Clipboard.** Copy / Cut / Paste / Select all, from each panel's toolbar,
+  the Edit menu, or Ctrl/Cmd + C/X/V/A. The unit is whole contours (a glyph
+  contour is always closed): every contour the selection touches is taken,
+  or the whole outline when nothing is selected. Paste lands in place and
+  selects what it pasted; the clipboard survives switching anchors and
+  glyphs. Pasting changes point counts, so re-copy to the other anchors to
+  keep interpolation alive. Also: Delete, Esc, arrow-key nudges (Shift = 10),
+  `+`/`-`/`0` for zoom.
+- **Touch proxy.** On touch input, a selection grows a pad ~76dp below it
+  (above, near the bottom edge), joined by a dashed tether. Dragging the pad
+  moves the selection 1:1 -- the finger never covers the nodes it moves.
+- **View.** A stable metric-based frame (it no longer refits while you drag),
+  shared zoom/pan across panels: mouse wheel or pinch to zoom, two fingers to
+  pan, View → Fit to reset.
+- **Guides.** Static metric lines (ascender, cap, x-height, baseline,
+  descender, origin/advance) from editable metrics (View → Metrics…; a font
+  import brings its own `hhea`/`OS/2` values). Rulers on top and left: drag
+  out of one to create a guide, drag a guide to move it, drop it back on a
+  ruler to delete it. Optional grid (View → Grid step). **Measurements**
+  draws every contour's width/height, each ghost's width, and the
+  selection's extent, live -- for comparing the widths of a character's
+  parts.
+- **Snapping.** Light: within ~7px a dragged point (or a selection's edges/
+  centre) pulls onto metrics, guides, other on-curve points, ghost points,
+  and (more weakly) the grid; the line it caught flashes. View → Snap
+  toggles it.
+- **Ghosts.** Reference outlines behind every panel: primitive shapes, a
+  character from any TrueType file (static or variable, scaled to this
+  project's UPM; loaded per session), or a glyph from this project. A
+  project glyph is ghosted **live**: each panel shows that glyph's own same
+  anchor and the Preview interpolates it at the same slider values, so it
+  always matches the working character's weight, width, and every other
+  axis. Place mode: drag to move, corner squares to scale (about the
+  opposite corner), the top knob to rotate; Flip ↔/↕ and ±15° buttons.
+  Nodes mode edits the ghost's points (a live ghost detaches into a static
+  copy first). Ghosts, guides and metrics save with the glyph.
+- **Simplify.** Edit → Simplify shows a slider that removes points
+  cheapest-first (distance from each point to the chord of its neighbours),
+  with the original as a red hairline under the reduced fill and the worst
+  drift in font units. When every anchor is compatible, the same points go
+  from all of them, so interpolation survives. Apply or Cancel.
+
 ## Project layout
 
 - `Model.kt` -- the glyph data model (points, contours, corners)
 - `Interpolation.kt` -- the interpolation math (additive per-axis forced-Bezier), independent of any UI
 - `Geometry.kt` -- font-space <-> canvas-space mapping, outline path building
-- `Hit.kt` / `Gestures.kt` -- point hit-testing and pointer-gesture handling (select, drag, rubber-band, draw)
+- `Hit.kt` / `Gestures.kt` -- point hit-testing and pointer-gesture handling (zoom/pinch, touch proxy, ghost placement, rulers/guides, draw, drag with snapping, rubber-band)
+- `Editing.kt` -- UI-free editing geometry: bounds, affine transforms, ghost shapes, clipboard extraction, snapping, node-reduction order
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)
-- `AnchorCanvas.kt` / `Panels.kt` -- the actual UI
+- `AnchorCanvas.kt` / `Panels.kt` / `Controls.kt` -- the canvas renderer, the panels, and the shared chrome (axis picker, Edit/View/Ghost menus, ghost/simplify context bar, keyboard shortcuts) both shells use
 - `Theme.kt` -- the visual language, built on `HereLiesAz/convey` directly (see below)
 - `Storage.kt` -- IndexedDB persistence (one record per glyph) + JSON export/import; migrates a legacy single-blob `localStorage` project automatically on first successful open
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point
@@ -151,6 +196,13 @@ reimplementation of its ideas:
   instance.
 
 ## Known gaps
+
+- The clipboard is in-app only (not the OS clipboard), and Android's shell
+  doesn't yet wire hardware-keyboard shortcuts.
+- Reference fonts for ghosts are held for the session only and must be
+  TrueType-outline (`glyf`); CFF/OTF isn't parsed.
+- Metrics are stored per glyph (so imported fonts' values travel with each
+  glyph) and carry over to the next opened glyph that has none of its own.
 
 - Shift-click additive/toggle point selection isn't implemented --
   `PointerEvent.keyboardModifiers.isShiftPressed` didn't resolve against

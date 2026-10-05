@@ -98,7 +98,58 @@ val ANCHOR_LABELS: Map<String, String> = buildMap {
 /** Every anchor except `regular` -- the hand-drawn extremes of every axis. */
 val CORNER_ANCHORS = ANCHORS.filter { it != "regular" }
 
+/**
+ * A glyph's whole editable record. [guides], [ghosts] and [metrics] are
+ * editor-only reference material: interpolation and export ignore them,
+ * and every one defaults empty/null so files saved before they existed
+ * decode unchanged (and files saved now stay readable by older builds,
+ * whose codec ignores unknown keys).
+ */
 @Serializable
 data class Glyph(
     val corners: MutableMap<String, GlyphCorner> = ANCHORS.associateWith { GlyphCorner() }.toMutableMap(),
+    val guides: List<Guide> = emptyList(),
+    val ghosts: List<GhostData> = emptyList(),
+    val metrics: FontMetrics? = null,
+)
+
+/** A user-placed guide line: [vertical] ones sit at x = [pos], horizontal ones at y = [pos] (font units). */
+@Serializable
+data class Guide(val vertical: Boolean, val pos: Float)
+
+/**
+ * A ghosted reference outline drawn behind every anchor for comparison.
+ *
+ * A static ghost (a primitive shape, or a character from a reference font)
+ * owns its [contours]. A linked ghost names [sourceGlyph] in this project
+ * instead and is drawn live: each anchor panel shows that glyph's own same
+ * anchor, and the Preview shows it interpolated at the same slider values,
+ * so the reference always carries the working character's weight, width,
+ * and every other axis. [matrix] (`a b c d e f`, mapping `x' = a*x + c*y + e`,
+ * `y' = b*x + d*y + f`) places either kind; static ghosts bake it into their
+ * contours before node editing, linked ones detach into static ones first.
+ */
+@Serializable
+data class GhostData(
+    val label: String,
+    val contours: List<ContourData> = emptyList(),
+    val visible: Boolean = true,
+    val sourceGlyph: String? = null,
+    val matrix: List<Float> = IDENTITY_MATRIX,
+)
+
+val IDENTITY_MATRIX = listOf(1f, 0f, 0f, 1f, 0f, 0f)
+
+/**
+ * Vertical metrics the static guides are drawn from. Defaults are a
+ * conventional 1000-UPM layout; importing a font replaces them with that
+ * font's own `hhea`/`OS/2` values.
+ */
+@Serializable
+data class FontMetrics(
+    val unitsPerEm: Float = 1000f,
+    val ascender: Float = 800f,
+    val capHeight: Float = 700f,
+    val xHeight: Float = 500f,
+    val descender: Float = -200f,
 )

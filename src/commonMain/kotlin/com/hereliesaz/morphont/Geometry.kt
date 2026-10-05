@@ -91,3 +91,22 @@ fun buildOutlinePath(contours: List<ContourData>, map: (Float, Float) -> Offset)
     }
     return path
 }
+
+/**
+ * The editing canvases' frame: a stable box built from the vertical metrics
+ * and advance width (not the outline's own bounds, which used to make the
+ * view jump as points were dragged), then zoomed/panned by [view].
+ */
+fun editorViewBox(metrics: FontMetrics, advance: Float, zoom: Float, panX: Float, panY: Float): ViewBox {
+    val upm = metrics.unitsPerEm.coerceAtLeast(1f)
+    val minX = -0.15f * upm
+    val maxX = maxOf(advance, 0.5f * upm) + 0.15f * upm
+    val minY = minOf(metrics.descender, 0f) - 0.12f * upm
+    val maxY = maxOf(metrics.ascender, metrics.capHeight, 0f) + 0.12f * upm
+    val z = zoom.coerceIn(0.05f, 64f)
+    val w = (maxX - minX) / z
+    val h = (maxY - minY) / z
+    val cx = (minX + maxX) / 2f + panX
+    val cy = (minY + maxY) / 2f + panY
+    return ViewBox(cx - w / 2f, cy - h / 2f, w, h)
+}
