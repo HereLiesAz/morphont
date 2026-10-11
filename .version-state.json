@@ -1,7 +1,7 @@
 {
-  "run_id": "38097244771",
+  "run_id": "38097248749",
   "schema": 1,
   "source_sha": "d8674d0ffc6d273b2ef02b560673ee09adfe7dfa",
-  "trigger_id": "manual-38097234062",
-  "version": "0.4.4.1"
+  "trigger_id": "manual-38097235289",
+  "version": "0.4.4.2"
 }
