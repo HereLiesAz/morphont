@@ -12,6 +12,7 @@ import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isAltPressed
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.max
@@ -104,6 +105,11 @@ fun proxyPadCenter(selCx: Float, selTop: Float, selBottom: Float, canvasSize: Si
  * two-finger pinch/pan, the touch proxy pad, the active ghost's transform
  * box, rulers (drag out a guide), contour drawing, points, existing guides,
  * then rubber-band selection on empty space.
+ *
+ * Pen: a tap places a corner node; press-and-drag places a smooth node and
+ * pulls out its out-arm (the in-arm mirrors it), as in Photoshop. Dragging
+ * a lone arm of a smooth node mirrors the opposite arm; holding Alt (where a
+ * keyboard reports it) breaks the mirror, turning that node into a corner.
  */
 suspend fun PointerInputScope.handleAnchorGestures(
     frameProvider: () -> CanvasFrame?,
@@ -230,10 +236,15 @@ suspend fun PointerInputScope.handleAnchorGestures(
                     x += r.dx; y += r.dy
                 }
                 target.addDrawPoint(x, y)
+                // Dragging on from the new node pulls out its arms (same undo step as the node).
+                followOrPinch(f, down.id, f.dragStartSlopPx) { pos, _ ->
+                    val arm = f.mapper.toFont(pos)
+                    target.dragDrawArm(arm.x, arm.y)
+                }
             } else {
                 onPointHit()
+                followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
             }
-            followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
             return@awaitEachGesture
         }
 
@@ -302,7 +313,7 @@ private fun snapTargetsFor(f: CanvasFrame, target: AnchorState, exclude: Set<Poi
     return base.copy(xs = base.xs + SnapTarget(anchorGlyph.width, "advance"))
 }
 
-/** Drags [keys] of [target] by the pointer delta, with light snapping, recording one undo step. */
+/** Drags [keys] of [target] by the pointer delta (nodes carry their arms, see [dragPoints]), with light snapping, recording one undo step. */
 private suspend fun AwaitPointerEventScope.dragSelection(
     f: CanvasFrame,
     downId: PointerId,
@@ -324,8 +335,11 @@ private suspend fun AwaitPointerEventScope.dragSelection(
     }
     val targets = if (f.app.view.snap) snapTargetsFor(f, target, keys.toSet()) else null
     var pushed = false
+    var breakMirror = false
     followOrPinch(f, downId, slop) { pos, _ ->
         if (!pushed) { target.pushHistory(); pushed = true }
+        // Alt anywhere in the drag breaks a smooth node's mirror for the rest of it.
+        if (currentEvent.keyboardModifiers.isAltPressed) breakMirror = true
         val delta = pos - startPos
         var dx = delta.x / f.mapper.scale
         var dy = -delta.y / f.mapper.scale
@@ -334,12 +348,7 @@ private suspend fun AwaitPointerEventScope.dragSelection(
             dx = r.dx; dy = r.dy
             feedback.snapX = r.xLine; feedback.snapY = r.yLine
         }
-        val updated = origGlyph.deepCopy()
-        for ((ci, pi) in keys) {
-            val op = origGlyph.contours.getOrNull(ci)?.points?.getOrNull(pi) ?: continue
-            updated.contours[ci].points[pi] = Pt(op.x + dx, op.y + dy, op.onCurve, op.smooth)
-        }
-        target.replaceGlyph(updated)
+        target.replaceGlyph(dragPoints(origGlyph, keys, dx, dy, breakMirror))
     }
     feedback.clearSnap()
 }

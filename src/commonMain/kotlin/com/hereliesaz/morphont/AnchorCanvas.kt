@@ -351,19 +351,26 @@ private fun DrawScope.drawGuide(g: Guide, map: (Float, Float) -> Offset, color: 
     else drawLine(color, map(-100000f, g.pos), map(100000f, g.pos), width)
 }
 
+/**
+ * Nodes and their arms. A smooth (mirrored) node is a circle, a corner node
+ * a square; selected ones are filled, others outlined. Arm endpoints are
+ * small diamonds, joined only to their own node.
+ */
 private fun DrawScope.drawNodes(glyph: GlyphCorner, selection: Set<PointKey>, map: (Float, Float) -> Offset, uiScale: Float, dim: Boolean) {
     val hair = uiScale.coerceAtLeast(1f)
     val alpha = if (dim) 0.4f else 1f
     glyph.contours.forEachIndexed { ci, c ->
-        val n = c.points.size
-        c.points.forEachIndexed { pi, p ->
-            val next = c.points[(pi + 1) % n]
-            if (!p.onCurve || !next.onCurve) drawLine(ctrlLineColor, map(p.x, p.y), map(next.x, next.y), strokeWidth = hair)
+        val pts = c.points
+        pts.forEachIndexed { pi, p ->
+            if (!p.onCurve) return@forEachIndexed
+            for (arm in listOfNotNull(inArmIndex(pts, pi), outArmIndex(pts, pi))) {
+                drawLine(ctrlLineColor, map(p.x, p.y), map(pts[arm].x, pts[arm].y), strokeWidth = hair)
+            }
         }
-        c.points.forEachIndexed { pi, p ->
+        pts.forEachIndexed { pi, p ->
             val selected = (ci to pi) in selection
             val center = map(p.x, p.y)
-            if (p.onCurve) {
+            if (p.onCurve && p.smooth) {
                 if (selected) {
                     drawCircle(selectedFill, radius = 6.5f * uiScale, center = center)
                     drawCircle(bgColor, radius = 2.3f * uiScale, center = center)
@@ -371,9 +378,20 @@ private fun DrawScope.drawNodes(glyph: GlyphCorner, selection: Set<PointKey>, ma
                     drawCircle(bgColor, radius = 4.8f * uiScale, center = center)
                     drawCircle(nodeRing.copy(alpha = alpha), radius = 4.8f * uiScale, center = center, style = Stroke(width = 1.5f * uiScale))
                 }
+            } else if (p.onCurve) {
+                // Same footprint as the circle, so the two node kinds read apart by shape alone.
+                if (selected) {
+                    val h = 5.8f * uiScale; val hole = 2f * uiScale
+                    drawRect(selectedFill, topLeft = center - Offset(h, h), size = Size(2 * h, 2 * h))
+                    drawRect(bgColor, topLeft = center - Offset(hole, hole), size = Size(2 * hole, 2 * hole))
+                } else {
+                    val h = 4.3f * uiScale
+                    drawRect(bgColor, topLeft = center - Offset(h, h), size = Size(2 * h, 2 * h))
+                    drawRect(nodeRing.copy(alpha = alpha), topLeft = center - Offset(h, h), size = Size(2 * h, 2 * h), style = Stroke(width = 1.5f * uiScale))
+                }
             } else {
-                // Off-curve handles are diamonds, so the two kinds read apart without colour.
-                val r = (if (selected) 5.5f else 4.2f) * uiScale
+                // Arm endpoints: smaller diamonds, never mistaken for either node kind.
+                val r = (if (selected) 4.6f else 3.4f) * uiScale
                 val d = androidx.compose.ui.graphics.Path().apply {
                     moveTo(center.x, center.y - r); lineTo(center.x + r, center.y)
                     lineTo(center.x, center.y + r); lineTo(center.x - r, center.y); close()
@@ -381,7 +399,7 @@ private fun DrawScope.drawNodes(glyph: GlyphCorner, selection: Set<PointKey>, ma
                 if (selected) drawPath(d, selectedFill)
                 else {
                     drawPath(d, bgColor)
-                    drawPath(d, offCurveColor.copy(alpha = alpha), style = Stroke(width = 1.4f * uiScale))
+                    drawPath(d, offCurveColor.copy(alpha = alpha), style = Stroke(width = 1.3f * uiScale))
                 }
             }
         }

@@ -43,10 +43,11 @@ class SpaceMapper(private val vb: ViewBox, private val canvasSize: Size) {
 }
 
 /**
- * Builds the fillable outline path for [contours], using TrueType-style
- * quadratic curves: a lone off-curve point is a normal quadratic control;
- * a run of consecutive off-curve points implies on-curve midpoints
- * between them. Uses even-odd fill so counters/holes render correctly.
+ * Builds the fillable outline path for [contours] in the cubic model (see
+ * [Pt]): no off-curve points between two nodes is a line, two are a cubic's
+ * arms. (A malformed run is drawn as best it can: one point as a quadratic,
+ * more as a cubic through the first and last.) Uses even-odd fill so
+ * counters/holes render correctly.
  */
 fun buildOutlinePath(contours: List<ContourData>, map: (Float, Float) -> Offset): Path {
     val path = Path().apply { fillType = PathFillType.EvenOdd }
@@ -73,16 +74,9 @@ fun buildOutlinePath(contours: List<ContourData>, map: (Float, Float) -> Offset)
                     path.quadraticTo(c1.x, c1.y, end.x, end.y)
                 }
                 else -> {
-                    for (k in offRun.indices) {
-                        val c1 = map(offRun[k].x, offRun[k].y)
-                        if (k < offRun.size - 1) {
-                            val nxt = offRun[k + 1]
-                            val mid = map((offRun[k].x + nxt.x) / 2f, (offRun[k].y + nxt.y) / 2f)
-                            path.quadraticTo(c1.x, c1.y, mid.x, mid.y)
-                        } else {
-                            path.quadraticTo(c1.x, c1.y, end.x, end.y)
-                        }
-                    }
+                    val c1 = map(offRun.first().x, offRun.first().y)
+                    val c2 = map(offRun.last().x, offRun.last().y)
+                    path.cubicTo(c1.x, c1.y, c2.x, c2.y, end.x, end.y)
                 }
             }
             offRun = mutableListOf()

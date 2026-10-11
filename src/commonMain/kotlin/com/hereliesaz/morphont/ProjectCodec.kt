@@ -23,19 +23,28 @@ object ProjectCodec {
     )
 
     fun migrateGlyph(glyph: Glyph): Glyph {
-        if (legacyAnchorNames.keys.none { it in glyph.corners }) return glyph
-        val migrated = glyph.corners.mapKeys { (name, _) -> legacyAnchorNames[name] ?: name }
-        return glyph.copy(corners = migrated.toMutableMap())
+        var g = glyph
+        if (legacyAnchorNames.keys.any { it in g.corners }) {
+            val migrated = g.corners.mapKeys { (name, _) -> legacyAnchorNames[name] ?: name }
+            g = g.copy(corners = migrated.toMutableMap())
+        }
+        // Quadratic saves convert exactly to the cubic model (see quadraticToCubic), ghosts included.
+        if (g.outlineFormat < OUTLINE_CUBIC) g = g.copy(
+            corners = g.corners.mapValues { (_, c) -> GlyphCorner(c.width, quadraticToCubic(c.contours)) }.toMutableMap(),
+            ghosts = g.ghosts.map { it.copy(contours = quadraticToCubic(it.contours)) },
+            outlineFormat = OUTLINE_CUBIC,
+        )
+        return g
     }
 
-    fun encodeGlyph(glyph: Glyph): String = json.encodeToString(glyph)
+    fun encodeGlyph(glyph: Glyph): String = json.encodeToString(glyph.copy(outlineFormat = OUTLINE_CUBIC))
 
     fun decodeGlyph(text: String): Glyph = migrateGlyph(json.decodeFromString(text))
 
     fun encodeProject(project: Map<String, Glyph>): String {
         val ordered = project.entries
             .sortedBy { it.key }
-            .associate { (name, glyph) -> name to glyph }
+            .associate { (name, glyph) -> name to glyph.copy(outlineFormat = OUTLINE_CUBIC) }
         return json.encodeToString(ordered)
     }
 

@@ -88,7 +88,7 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
         val target = app.editTarget(app.activeAnchor)
         val hint = when {
             target.drawingContourIndex != null && target.glyph.contours.getOrNull(target.drawingContourIndex!!)?.points.isNullOrEmpty() ->
-                "Tap to place points. Switch back to Select to close the contour."
+                "Tap for a corner node, drag for a smooth curve. Switch back to Select to close the contour."
             app.activeGhost == null && nodeCount(app) == 0 && app.activeAnchor == "regular" -> "Draw Regular first: pick the pen and tap out an outline."
             app.activeGhost == null && nodeCount(app) == 0 -> "Draw Regular first, then copy its outline here (Copy to every anchor) and reshape it."
             else -> null
