@@ -95,23 +95,53 @@ class AnchorState(initial: GlyphCorner) {
         selection = emptySet()
     }
 
+    /** Pen tap: appends a corner node to the contour being drawn (see [appendDrawNode]). */
     fun addDrawPoint(x: Float, y: Float) {
         val ci = drawingContourIndex ?: return
         pushHistory()
         val updated = glyph.deepCopy()
-        updated.contours[ci].points.add(Pt(x, y, onCurve = true))
+        updated.contours[ci] = appendDrawNode(updated.contours[ci], x, y)
         glyph = updated
     }
 
-    fun toggleTypeSelected() {
+    /**
+     * Pen drag, continuing the [addDrawPoint] that started it (same undo
+     * step): the node just placed turns smooth, its out-arm follows the
+     * pointer and its in-arm mirrors it (see [setDrawArm]).
+     */
+    fun dragDrawArm(x: Float, y: Float) {
+        val ci = drawingContourIndex ?: return
+        val updated = glyph.deepCopy()
+        val c = updated.contours.getOrNull(ci) ?: return
+        if (c.points.none { it.onCurve }) return
+        updated.contours[ci] = setDrawArm(c, x, y)
+        glyph = updated
+    }
+
+    /** Make curve / make straight on the selected segments (see [toggleCurveSelection]). */
+    fun toggleCurveSelected() {
         if (selection.isEmpty()) return
         pushHistory()
-        val updated = glyph.deepCopy()
-        for ((ci, pi) in selection) {
-            val p = updated.contours[ci].points[pi]
-            p.onCurve = !p.onCurve
-        }
-        glyph = updated
+        val (g, sel) = toggleCurveSelection(glyph, selection)
+        glyph = g
+        selection = sel
+    }
+
+    /** Whether every selected node (or node of a selected arm) is already smooth. */
+    val selectionIsSmooth: Boolean
+        get() = selectedNodes().let { n -> n.isNotEmpty() && n.all { (ci, pi) -> glyph.contours[ci].points[pi].smooth } }
+
+    private fun selectedNodes(): Set<PointKey> = selection.mapNotNull { (ci, pi) ->
+        val pts = glyph.contours.getOrNull(ci)?.points ?: return@mapNotNull null
+        val p = pts.getOrNull(pi) ?: return@mapNotNull null
+        if (p.onCurve) ci to pi else armOwner(pts, pi)?.let { ci to it }
+    }.toSet()
+
+    /** Corner <-> smooth: all smooth nodes become corners, otherwise all become smooth (and re-aligned, see [setSmooth]). */
+    fun toggleSmoothSelected() {
+        if (selectedNodes().isEmpty()) return
+        pushHistory()
+        glyph = setSmooth(glyph, selection, !selectionIsSmooth)
     }
 
     fun selectAll() {
@@ -144,16 +174,11 @@ class AnchorState(initial: GlyphCorner) {
         glyph = updated
     }
 
-    /** Moves the selection by a font-unit delta as one undoable edit (keyboard nudges). */
+    /** Moves the selection by a font-unit delta as one undoable edit (keyboard nudges); nodes carry their arms. */
     fun nudgeSelected(dx: Float, dy: Float) {
         if (selection.isEmpty()) return
         pushHistory()
-        val updated = glyph.deepCopy()
-        for ((ci, pi) in selection) {
-            val p = updated.contours.getOrNull(ci)?.points?.getOrNull(pi) ?: continue
-            p.x += dx; p.y += dy
-        }
-        glyph = updated
+        glyph = dragPoints(glyph, selection, dx, dy)
     }
 
     /** Applies [t] to the selected points as one undoable edit (flip/rotate buttons). */
@@ -177,15 +202,11 @@ class AnchorState(initial: GlyphCorner) {
         if (drawingContourIndex != null) finishContour()
     }
 
+    /** Deletes selected nodes with their arms and retracts selected arms, keeping contours valid (see [deleteSelection]). */
     fun deleteSelected() {
         if (selection.isEmpty()) return
         pushHistory()
-        val updated = glyph.deepCopy()
-        val newContours = updated.contours.mapIndexed { ci, c ->
-            ContourData(c.points.filterIndexed { pi, _ -> (ci to pi) !in selection }.toMutableList())
-        }.filter { it.points.isNotEmpty() }.toMutableList()
-        updated.contours.clear()
-        updated.contours.addAll(newContours)
+        val updated = deleteSelection(glyph, selection)
         selection = emptySet()
         drawingContourIndex = null
         glyph = updated
@@ -458,6 +479,7 @@ class AppState {
         guides = guides.toList(),
         ghosts = ghosts.map { it.toData() },
         metrics = metrics,
+        outlineFormat = OUTLINE_CUBIC,
     )
 
     /** Copies the active anchor's outline into every other anchor, seeding matching topology. */
@@ -574,7 +596,7 @@ class AppState {
         if (activeGhost != null) return // never touch the glyph while a ghost is being edited
         val names = if (compatibility() == null) listOf(activeAnchor) + ANCHORS.filter { it != activeAnchor } else listOf(activeAnchor)
         val glyphs = names.map { anchors.getValue(it).glyph }
-        val total = glyphs.first().contours.sumOf { it.points.size }
+        val total = glyphs.first().contours.sumOf { c -> c.points.count { it.onCurve } }
         val order = reductionOrder(glyphs)
         if (order.isEmpty()) { setStatus("Nothing to reduce: every contour is already at its minimum.", true); return }
         reduction = ReductionSession(names, order, total)

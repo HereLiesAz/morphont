@@ -69,17 +69,25 @@ fun shapeContours(kind: ShapeKind, b: FontRect): MutableList<ContourData> {
             listOf(on(b.minX, b.cy - t), on(b.minX, b.cy + t), on(b.maxX, b.cy + t), on(b.maxX, b.cy - t))
         }
         ShapeKind.ELLIPSE -> {
-            // Eight off-curve controls on a circle of radius r/cos(22.5deg): TrueType's
-            // implied on-curve midpoints then land exactly on the true ellipse.
-            val k = 1f / cos(PI.toFloat() / 8f)
-            (0 until 8).map { i ->
-                val a = PI.toFloat() / 8f + i * PI.toFloat() / 4f
-                Pt(b.cx + cos(a) * b.width / 2f * k, b.cy + sin(a) * b.height / 2f * k, onCurve = false)
+            // Four smooth nodes at the extremes, counter-clockwise, each arm KAPPA of the
+            // radius along the tangent: the standard cubic circle (max radial error ~0.03%).
+            val rx = b.width / 2f; val ry = b.height / 2f
+            val ex = listOf(1f, 0f, -1f, 0f); val ey = listOf(0f, 1f, 0f, -1f)
+            (0 until 4).flatMap { i ->
+                val j = (i + 1) % 4
+                listOf(
+                    Pt(b.cx + ex[i] * rx, b.cy + ey[i] * ry, onCurve = true, smooth = true),
+                    Pt(b.cx + (ex[i] - KAPPA * ey[i]) * rx, b.cy + (ey[i] + KAPPA * ex[i]) * ry, onCurve = false),
+                    Pt(b.cx + (ex[j] + KAPPA * ey[j]) * rx, b.cy + (ey[j] - KAPPA * ex[j]) * ry, onCurve = false),
+                )
             }
         }
     }
     return mutableListOf(ContourData(pts.toMutableList()))
 }
+
+/** Arm length, as a fraction of the radius, of a four-node cubic circle: 4/3 * (sqrt(2) - 1). */
+const val KAPPA = 0.5522848f
 
 /**
  * The clipboard unit is whole contours: a glyph contour is always closed, so
@@ -128,12 +136,14 @@ fun applyAffine(contours: List<ContourData>, m: Affine): List<ContourData> {
 }
 
 /**
- * Applies [t] to just the [keys] points of [g]. Point order is never
- * changed (even for a mirror), so anchors stay point-compatible.
+ * Applies [t] to just the [keys] points of [g], plus the arms of every
+ * selected node (they travel with it; an affine map keeps mirrored arms
+ * mirrored). Point order is never changed (even for a mirror), so anchors
+ * stay point-compatible.
  */
 fun transformPoints(g: GlyphCorner, keys: Collection<PointKey>, t: Affine): GlyphCorner {
     val out = g.deepCopy()
-    for ((ci, pi) in keys) {
+    for ((ci, pi) in withArms(g, keys)) {
         val p = out.contours.getOrNull(ci)?.points?.getOrNull(pi) ?: continue
         val x = t[0] * p.x + t[2] * p.y + t[4]
         val y = t[1] * p.x + t[3] * p.y + t[5]
@@ -240,32 +250,34 @@ private fun segDistance(px: Float, py: Float, ax: Float, ay: Float, bx: Float, b
 
 /**
  * Greedy simplification order shared by every anchor in [glyphs] so they stay
- * point-compatible: at each step, remove the point whose removal deviates the
- * outline least in the anchor where it hurts most (distance from the point to
- * the chord between its surviving neighbours). Contours keep at least three
- * points and at least one on-curve point. The topology is taken from the first
- * glyph; callers must pass only mutually compatible glyphs.
+ * point-compatible: at each step, remove the node whose removal deviates the
+ * outline least in the anchor where it hurts most (distance from the node, or
+ * either of its arms, to the chord between its surviving neighbour nodes). Only nodes are removed --
+ * their arms go with them (see [withoutPoints]) -- and contours keep at least
+ * three nodes. The topology is taken from the first glyph; callers must pass
+ * only mutually compatible glyphs.
  */
 fun reductionOrder(glyphs: List<GlyphCorner>): List<Removal> {
     val ref = glyphs.firstOrNull() ?: return emptyList()
     val out = mutableListOf<Removal>()
     ref.contours.forEachIndexed { ci, contour ->
-        val alive = contour.points.indices.toMutableList()
+        val alive = contour.points.indices.filter { contour.points[it].onCurve }.toMutableList()
         while (alive.size > 3) {
             var bestIdx = -1
             var bestCost = Float.POSITIVE_INFINITY
             for (k in alive.indices) {
                 val pi = alive[k]
-                val remainingOn = alive.count { it != pi && contour.points[it].onCurve }
-                if (remainingOn == 0) continue
                 val prev = alive[(k - 1 + alive.size) % alive.size]
                 val next = alive[(k + 1) % alive.size]
                 var cost = 0f
                 for (g in glyphs) {
                     val pts = g.contours[ci].points
-                    val p = pts[pi]; val a = pts[prev]; val b = pts[next]
-                    val d = segDistance(p.x, p.y, a.x, a.y, b.x, b.y)
-                    if (d > cost) cost = d
+                    val a = pts[prev]; val b = pts[next]
+                    // The node and its arms: a node on the chord whose arms bend away from it still carries shape.
+                    for (q in listOfNotNull(pi, inArmIndex(pts, pi), outArmIndex(pts, pi))) {
+                        val d = segDistance(pts[q].x, pts[q].y, a.x, a.y, b.x, b.y)
+                        if (d > cost) cost = d
+                    }
                 }
                 if (cost < bestCost) { bestCost = cost; bestIdx = k }
             }
@@ -287,10 +299,15 @@ fun reductionOrder(glyphs: List<GlyphCorner>): List<Removal> {
     return out.indices.sortedWith(compareBy({ runMax[it] }, { it })).map { out[it] }
 }
 
+/**
+ * [glyph] with the [removed] nodes deleted, each with its arms, keeping every
+ * contour valid (see [deleteFromContour]). Contours are never dropped here, so
+ * the result's contour indices still match [glyph]'s.
+ */
 fun withoutPoints(glyph: GlyphCorner, removed: Set<PointKey>): GlyphCorner =
     GlyphCorner(
         glyph.width,
         glyph.contours.mapIndexed { ci, c ->
-            ContourData(c.points.filterIndexed { pi, _ -> (ci to pi) !in removed }.map { it.copy2() }.toMutableList())
+            deleteFromContour(c, c.points.indices.filter { (ci to it) in removed && c.points[it].onCurve }.toSet())
         }.toMutableList(),
     )

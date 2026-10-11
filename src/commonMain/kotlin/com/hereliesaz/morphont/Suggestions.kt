@@ -207,13 +207,13 @@ private fun cleanup(app: AppState): List<Suggestion> {
     val scope = scopeFor(app)
     val glyphs = scope.map { app.anchors.getValue(it).glyph }
     val g = app.anchors.getValue(app.activeAnchor).glyph
-    // Duplicates: a point on top of its predecessor -- in every anchor of the scope.
+    // Duplicates: a node on top of the node before it (a zero-length line) -- in every anchor of the scope.
     val dupes = mutableSetOf<PointKey>()
     g.contours.forEachIndexed { ci, c ->
         if (c.points.size > 3) c.points.indices.forEach { pi ->
             val ok = glyphs.all { gg ->
                 val pts = gg.contours[ci].points; val p = pts[pi]; val q = pts[(pi - 1 + pts.size) % pts.size]
-                hypot(p.x - q.x, p.y - q.y) < 0.5f
+                p.onCurve && q.onCurve && hypot(p.x - q.x, p.y - q.y) < 0.5f
             }
             if (ok) dupes.add(ci to pi)
         }
@@ -260,7 +260,7 @@ private fun alignment(app: AppState): List<Suggestion> {
         val worst = keys.maxOfOrNull { (ci, pi) -> abs(g.contours[ci].points[pi].y - y) } ?: 0f
         if (keys.isNotEmpty()) out.add(Suggestion("Snap ${keys.size} point${if (keys.size > 1) "s" else ""} to $label", "up to ${kotlin.math.ceil(worst).toInt()}u off") { a ->
             val ng = st.glyph.deepCopy()
-            for ((ci, pi) in keys) ng.contours[ci].points[pi].y = y
+            for ((ci, pi) in keys) ng.contours[ci].points.let { moveNodeWithArms(it, pi, it[pi].x, y) }
             st.replaceWithHistory(ng)
             a.setStatus("Snapped ${keys.size} point(s) to $label.")
         })
@@ -282,8 +282,10 @@ private fun alignment(app: AppState): List<Suggestion> {
         if (pairs.isNotEmpty()) out.add(Suggestion("Straighten ${pairs.size} ${if (vertical) "near-vertical" else "near-horizontal"} line${if (pairs.size > 1) "s" else ""}") { a ->
             val ng = st.glyph.deepCopy()
             for ((k1, k2) in pairs) {
-                val p = ng.contours[k1.first].points[k1.second]; val q = ng.contours[k2.first].points[k2.second]
-                if (vertical) { val x = round((p.x + q.x) / 2f); p.x = x; q.x = x } else { val y = round((p.y + q.y) / 2f); p.y = y; q.y = y }
+                val pts = ng.contours[k1.first].points
+                val p = pts[k1.second]; val q = pts[k2.second]
+                if (vertical) { val x = round((p.x + q.x) / 2f); moveNodeWithArms(pts, k1.second, x, p.y); moveNodeWithArms(pts, k2.second, x, q.y) }
+                else { val y = round((p.y + q.y) / 2f); moveNodeWithArms(pts, k1.second, p.x, y); moveNodeWithArms(pts, k2.second, q.x, y) }
             }
             st.replaceWithHistory(ng)
             a.setStatus("Straightened ${pairs.size} line(s).")

@@ -152,7 +152,9 @@ fun SelectionPill(app: AppState, modifier: Modifier = Modifier) {
         }
         if (app.clipboard != null) IconAction(MIcons.Paste, "Paste", { app.paste() }, size = 40)
         if (has) {
-            IconAction(MIcons.Curve, "Toggle on-curve", { t.toggleTypeSelected() }, size = 40)
+            IconAction(MIcons.Curve, "Make curve / straight", { t.toggleCurveSelected() }, size = 40)
+            val smooth = t.selectionIsSmooth
+            IconAction(if (smooth) MIcons.Corner else MIcons.Smooth, if (smooth) "Make corner" else "Make smooth", { t.toggleSmoothSelected() }, size = 40)
             IconAction(MIcons.SelectAll, "Select all", { t.selectAll() }, size = 40)
             if (t.selection.size >= 2) {
                 IconAction(MIcons.FlipH, "Flip horizontally", { t.flipSelected(true) }, size = 40)

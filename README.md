@@ -92,13 +92,37 @@ label (on the axis strip or filmstrip) opens a menu of all 14; the Preview
 shows four sliders and expands to the rest.
 
 Interpolation requires every anchor to be point-for-point compatible
-(same contour count, same points per contour, same on/off-curve types) --
+(same contour count, same points per contour, same node/arm types) --
 `compatibilityIssue()` checks this and the Preview panel reports exactly
 where they disagree. "Copy [anchor] to other N" seeds matching topology
 so anchors can then be reshaped without adding or removing points.
 
 ## Editing tools
 
+- **Nodes and arms.** Outlines are cubic Béziers edited the PostScript /
+  Photoshop way: each node has up to two arms (handles), and between two
+  nodes sit either no arms (a straight line) or two (a curve) -- the point
+  right after a node is its out-arm, the one right before it its in-arm.
+  A **smooth** node (drawn as a circle) keeps its arms mirrored: dragging
+  one swings the other through the node at the same angle and length. A
+  **corner** node (drawn as a square) leaves them independent; Alt-drag an
+  arm on desktop to break a smooth node into a corner. Arm ends are small
+  diamonds. Moving a node carries its arms. The selection pill's curve
+  button makes the selected segments curves (arms at 1/3 and 2/3, so
+  nothing moves) or straight again, and its corner/smooth button flips
+  node type -- going smooth re-aligns the two arms on the average of their
+  directions, each at the average of their lengths. Deleting a node joins
+  its neighbours with their own outer arms; deleting an arm retracts it
+  onto its node.
+- **Pen.** Tap places a corner node; press and drag places a smooth node
+  and pulls out its arms, as in Photoshop. A neighbour without an arm of
+  its own gets one sitting on that neighbour, so the segment is a cubic
+  that still meets it without a tangent.
+- **Format.** TrueType imports and projects saved before the cubic model
+  (quadratic, with implied on-curve midpoints) convert exactly on load:
+  each implied midpoint becomes a smooth node and each quadratic
+  `Q(P0, C, P1)` the cubic `(P0, P0 + 2/3 (C - P0), P1 + 2/3 (C - P1), P1)`.
+  Saves carry `"outlineFormat": 2` so they are never converted twice.
 - **Clipboard.** Copy / Cut / Paste / Select all, from each panel's toolbar,
   the Edit menu, or Ctrl/Cmd + C/X/V/A. The unit is whole contours (a glyph
   contour is always closed): every contour the selection touches is taken,
@@ -129,7 +153,7 @@ so anchors can then be reshaped without adding or removing points.
   selection's extent, live -- for comparing the widths of a character's
   parts.
 - **Snapping.** Light: within ~7px a dragged point (or a selection's edges/
-  centre) pulls onto metrics, guides, other on-curve points, ghost points,
+  centre) pulls onto metrics, guides, other nodes, ghost nodes,
   and (more weakly) the grid; the line it caught flashes. View → Snap
   toggles it.
 - **Ghosts.** Reference outlines behind every panel: primitive shapes, a
@@ -146,8 +170,9 @@ so anchors can then be reshaped without adding or removing points.
   glyph as a bare outline, and the glyph is locked -- gestures, the
   selection pill, keys, Undo, Copy to anchors, Simplify and suggestions all
   apply to the ghost or are disabled. Never both at once. Ghosts, guides and metrics save with the glyph.
-- **Simplify.** Edit → Simplify shows a slider that removes points
-  cheapest-first (distance from each point to the chord of its neighbours),
+- **Simplify.** Edit → Simplify shows a slider that removes nodes (each
+  with its arms) cheapest-first (distance from each node, or either of its
+  arms, to the chord of its neighbouring nodes),
   with the original as a red hairline under the reduced fill and the worst
   drift in font units. When every anchor is compatible, the same points go
   from all of them, so interpolation survives. Apply or Cancel.
@@ -174,6 +199,7 @@ so anchors can then be reshaped without adding or removing points.
 - `Interpolation.kt` -- the interpolation math (additive per-axis forced-Bezier), independent of any UI
 - `Geometry.kt` -- font-space <-> canvas-space mapping, outline path building
 - `Hit.kt` / `Gestures.kt` -- point hit-testing and pointer-gesture handling (zoom/pinch, touch proxy, ghost placement, rulers/guides, draw, drag with snapping, rubber-band)
+- `Outline.kt` -- the cubic node/arm model: arm lookup, mirrored drags, corner/smooth, line/curve, valid deletion, pen nodes, exact quadratic-to-cubic conversion
 - `Editing.kt` -- UI-free editing geometry: bounds, affine transforms, ghost shapes, clipboard extraction, snapping, node-reduction order
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)
 - `Editor.kt` -- the shared editor screen (phone and wide layouts) and the welcome screen, used by both shells
@@ -202,13 +228,14 @@ of the way until needed.
 - **Wide screens (web ≥900dp, tablets):** glyph tabs, a tool rail, an
   **anchor filmstrip** of live thumbnails under the canvas, and an inspector
   column (Preview + sliders, Ghosts, Guides).
-- **Floating, contextual:** the selection pill (copy, cut, paste, on/off,
-  select all, delete, with a size readout) only while something is selected;
+- **Floating, contextual:** the selection pill (copy, cut, paste,
+  curve/straight, corner/smooth, select all, delete, with a size readout) only while something is selected;
   the ghost bar only while placing a ghost; the Simplify card only while
   simplifying; status as a transient toast.
 - **Monochrome.** Hierarchy is carried by brightness: the selected node, the
   active tool and the anchor being edited are the whitest things on screen.
-  On-curve nodes are rings, off-curve handles diamonds. The palette's one
+  Smooth nodes are circles, corner nodes squares (filled when selected),
+  arm ends small diamonds. The palette's one
   colour, `Mono.error`, is kept for errors.
 - **Own parts:** a monoline icon set (`Icons.kt`, no icon library) and a
   hairline slider (`HairSlider`) in place of Material's thick one.

@@ -3,11 +3,14 @@ package com.hereliesaz.morphont
 import kotlinx.serialization.Serializable
 
 /**
- * A single glyph point in font-design space (not screen space). [onCurve]
- * true = on-curve; false = an off-curve quadratic control point, using the
- * same TrueType-style convention (runs of consecutive off-curve points
- * imply on-curve midpoints between them) as the original point-editing
- * tools this was ported from.
+ * A single glyph point in font-design space (not screen space), in a
+ * PostScript/Photoshop-style cubic model. [onCurve] true = a node; false =
+ * one arm (handle) of a node. Between two consecutive nodes of a contour
+ * sit either no off-curve points (a straight line) or exactly two (a cubic
+ * Bezier): the off-curve point right after a node is that node's out-arm,
+ * the one right before it its in-arm. [smooth] on a node means its two arms
+ * are kept mirrored (collinear, equal length); a node without it is a
+ * corner. See Outline.kt for the helpers that keep contours in this shape.
  */
 @Serializable
 data class Pt(var x: Float, var y: Float, var onCurve: Boolean, var smooth: Boolean = false) {
@@ -111,7 +114,19 @@ data class Glyph(
     val guides: List<Guide> = emptyList(),
     val ghosts: List<GhostData> = emptyList(),
     val metrics: FontMetrics? = null,
+    /**
+     * Which point model the saved contours use: absent in files written
+     * before the cubic model, so they decode as [OUTLINE_QUADRATIC] and
+     * [ProjectCodec] converts them; it stamps [OUTLINE_CUBIC] on every save.
+     */
+    val outlineFormat: Int = OUTLINE_QUADRATIC,
 )
+
+/** TrueType-style quadratic contours (runs of off-curve points with implied midpoints): projects saved before the cubic model. */
+const val OUTLINE_QUADRATIC = 1
+
+/** The cubic node-and-arms model described on [Pt]. */
+const val OUTLINE_CUBIC = 2
 
 /** A user-placed guide line: [vertical] ones sit at x = [pos], horizontal ones at y = [pos] (font units). */
 @Serializable

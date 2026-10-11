@@ -42,6 +42,9 @@ object MIcons {
     val Copy = icon("copy", listOf("M10 8h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z", "M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"))
     val Paste = icon("paste", listOf("M9 4h6v3H9z", "M15 5h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h3"))
     val Cut = icon("cut", listOf(circle(6f, 18f, 3f), circle(18f, 18f, 3f), "M8 16 19 4M16 16 5 4"))
+    // Node types, drawn as on the canvas: a square is a corner, a circle on a straight tangent is smooth.
+    val Corner = icon("corner", listOf("M4 20 12 8l8 12", "M10 6h4v4h-4z"))
+    val Smooth = icon("smooth", listOf("M4 12h5.6M14.4 12H20", circle(12f, 12f, 2.4f)), listOf("M3 10.4 4.6 12 3 13.6 1.4 12z", "M21 10.4 22.6 12 21 13.6 19.4 12z"))
     val Curve = icon("curve", listOf("M3 19C7 7 17 7 21 19", circle(12f, 10f, 2.2f)))
     val Delete = icon("delete", listOf("M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"))
     val Plus = icon("plus", listOf("M12 5v14M5 12h14"))

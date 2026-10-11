@@ -128,7 +128,8 @@ class VariableFont private constructor(
             for (end in raw.endPtsOfContours) {
                 val pts = mutableListOf<Pt>()
                 for (pi in start..end) pts.add(Pt(varied.first[pi], varied.second[pi], raw.onCurve[pi]))
-                contours.add(ContourData(pts))
+                // glyf outlines are quadratic; convert exactly to Morphont's cubic node model.
+                quadraticToCubic(ContourData(pts)).takeIf { it.points.isNotEmpty() }?.let { contours.add(it) }
                 start = end + 1
             }
             return contours
