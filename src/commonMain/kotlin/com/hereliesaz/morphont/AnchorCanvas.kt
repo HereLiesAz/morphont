@@ -78,6 +78,9 @@ fun AnchorCanvas(
     travelPathOverlay: TravelPathOverlay? = null,
     interactionScale: Float = 1f,
     onPointHit: () -> Unit = {},
+    /** Canvas pixels covered by floating UI at the top and bottom; the touch pad avoids them. */
+    coveredTopPx: Float = 0f,
+    coveredBottomPx: Float = 0f,
     modifier: Modifier = Modifier,
 ) {
     var canvasSize by remember { mutableStateOf(Size.Zero) }
@@ -108,7 +111,7 @@ fun AnchorCanvas(
         val proxy = if (!showProxy) null else boundsOfSelection(target.glyph, target.selection)?.let { b ->
             val tl = mapper.toCanvas(b.minX, b.maxY)
             val br = mapper.toCanvas(b.maxX, b.minY)
-            proxyPadCenter((tl.x + br.x) / 2f, tl.y, br.y, canvasSize, density)
+            proxyPadCenter((tl.x + br.x) / 2f, tl.y, br.y, canvasSize, density, coveredTopPx, coveredBottomPx)
         }
         val handles = if (ghost != null && app.ghostTransformMode && ghost.visible) {
             boundsOfContours(app.ghostContours(ghost, anchorName))?.let { b ->

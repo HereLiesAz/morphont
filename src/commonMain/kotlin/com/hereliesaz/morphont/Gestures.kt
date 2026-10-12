@@ -90,12 +90,26 @@ fun boxDragTransform(b: FontRect, rotate: Boolean, corner: Int, start: Offset, c
  * above it when that would leave the canvas -- always far enough away that
  * the finger on the pad never covers the nodes it moves.
  */
-fun proxyPadCenter(selCx: Float, selTop: Float, selBottom: Float, canvasSize: Size, density: Float): Offset {
+fun proxyPadCenter(
+    selCx: Float,
+    selTop: Float,
+    selBottom: Float,
+    canvasSize: Size,
+    density: Float,
+    coveredTop: Float = 0f,
+    coveredBottom: Float = 0f,
+): Offset {
     val gap = 76f * density
     val margin = 36f * density
+    // [coveredTop]/[coveredBottom]: canvas pixels hidden under the floating rows (suggestions,
+    // selection pill, bottom cards). Those take a touch before the canvas does, so the pad --
+    // margin included, which exceeds its hit radius -- stays clear of them when there's room.
+    var minY = coveredTop + margin
+    var maxY = canvasSize.height - coveredBottom - margin
+    if (maxY < minY) { minY = margin; maxY = max(margin, canvasSize.height - margin) }
     var y = selBottom + gap
-    if (y > canvasSize.height - margin) y = selTop - gap
-    y = y.coerceIn(margin, max(margin, canvasSize.height - margin))
+    if (y > maxY) y = selTop - gap
+    y = y.coerceIn(minY, maxY)
     val x = selCx.coerceIn(margin, max(margin, canvasSize.width - margin))
     return Offset(x, y)
 }
