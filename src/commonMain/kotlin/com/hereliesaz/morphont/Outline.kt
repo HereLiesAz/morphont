@@ -1,6 +1,8 @@
 package com.hereliesaz.morphont
 
+import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.sqrt
 
 /*
  * The cubic outline model (see [Pt]): a contour is a cyclic list of points
@@ -76,10 +78,9 @@ fun withArms(g: GlyphCorner, keys: Collection<PointKey>): Set<PointKey> {
 /**
  * Moves [keys] of [orig] by ([dx], [dy]): a node carries its arms along;
  * an arm dragged on its own re-mirrors the opposite arm of a smooth node
- * through it, unless [breakMirror] (Alt-drag), which instead turns that
- * node into a corner so its drawn shape stays truthful.
+ * through it. A corner node's arms move independently.
  */
-fun dragPoints(orig: GlyphCorner, keys: Collection<PointKey>, dx: Float, dy: Float, breakMirror: Boolean = false): GlyphCorner {
+fun dragPoints(orig: GlyphCorner, keys: Collection<PointKey>, dx: Float, dy: Float): GlyphCorner {
     val moving = withArms(orig, keys)
     val out = orig.deepCopy()
     for ((ci, pi) in moving) {
@@ -94,7 +95,6 @@ fun dragPoints(orig: GlyphCorner, keys: Collection<PointKey>, dx: Float, dy: Flo
         if ((ci to o) in moving) continue
         val node = pts[o]
         if (!node.smooth) continue
-        if (breakMirror) { node.smooth = false; continue }
         val k = oppositeArm(pts, pi) ?: continue
         if ((ci to k) in moving) continue
         val (mx, my) = mirrorArm(node.x, node.y, p.x, p.y)
@@ -336,7 +336,33 @@ fun quadraticToCubic(c: ContourData): ContourData {
             i = (i + 2) % m
         }
     } while (i != start)
+    markTangentNodesSmooth(out)
     return ContourData(out)
+}
+
+/**
+ * Converted outlines assume smooth curves wherever they can: a node whose
+ * in- and out-arms already leave it in opposite directions (within about
+ * 2 degrees) is marked smooth. Nodes with a missing or zero-length arm, or a
+ * real angle between the arms, stay corners.
+ */
+private fun markTangentNodesSmooth(pts: MutableList<Pt>) {
+    val n = pts.size
+    if (n < 3) return
+    for (i in 0 until n) {
+        val p = pts[i]
+        if (!p.onCurve) continue
+        val a = pts[(i - 1 + n) % n]
+        val b = pts[(i + 1) % n]
+        if (a.onCurve || b.onCurve) continue
+        val ax = a.x - p.x; val ay = a.y - p.y
+        val bx = b.x - p.x; val by = b.y - p.y
+        val la = sqrt(ax * ax + ay * ay); val lb = sqrt(bx * bx + by * by)
+        if (la < 1e-3f || lb < 1e-3f) continue
+        val cross = (ax * by - ay * bx) / (la * lb)
+        val dot = (ax * bx + ay * by) / (la * lb)
+        if (dot < 0f && abs(cross) < 0.035f) p.smooth = true
+    }
 }
 
 fun quadraticToCubic(contours: List<ContourData>): MutableList<ContourData> =

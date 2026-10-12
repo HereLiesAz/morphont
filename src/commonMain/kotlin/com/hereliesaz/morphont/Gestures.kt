@@ -108,8 +108,9 @@ fun proxyPadCenter(selCx: Float, selTop: Float, selBottom: Float, canvasSize: Si
  *
  * Pen: a tap places a corner node; press-and-drag places a smooth node and
  * pulls out its out-arm (the in-arm mirrors it), as in Photoshop. Dragging
- * a lone arm of a smooth node mirrors the opposite arm; holding Alt (where a
- * keyboard reports it) breaks the mirror, turning that node into a corner.
+ * a lone arm of a smooth node mirrors the opposite arm. Alt-click on a node
+ * (where a keyboard reports Alt), or a touch long-press on it, toggles it
+ * between smooth and corner.
  */
 suspend fun PointerInputScope.handleAnchorGestures(
     frameProvider: () -> CanvasFrame?,
@@ -252,6 +253,37 @@ suspend fun PointerInputScope.handleAnchorGestures(
         if (hitKey != null) {
             onPointHit()
             if (hitKey !in target.selection) target.selection = setOf(hitKey)
+            val hitNode = target.glyph.contours[hitKey.first].points[hitKey.second].onCurve
+            // Alt-click on a node toggles it between smooth (mirrored arms) and corner.
+            if (hitNode && event.keyboardModifiers.isAltPressed) {
+                target.toggleNodeSmooth(hitKey)
+                followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
+                return@awaitEachGesture
+            }
+            // Touch: holding a node still for the long-press timeout does the same.
+            if (hitNode && down.type == PointerType.Touch) {
+                val early = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                    var end: HoldEnd? = null
+                    while (end == null) {
+                        val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                        end = when {
+                            c == null || !c.pressed -> HoldEnd.RELEASED
+                            (c.position - startPos).getDistance() > f.dragStartSlopPx -> HoldEnd.MOVED
+                            else -> null
+                        }
+                    }
+                    end
+                }
+                when (early) {
+                    null -> {
+                        target.toggleNodeSmooth(hitKey)
+                        followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
+                        return@awaitEachGesture
+                    }
+                    HoldEnd.RELEASED -> return@awaitEachGesture
+                    HoldEnd.MOVED -> Unit
+                }
+            }
             val keys = target.selection.toList()
             dragSelection(f, down.id, target, keys, startPos, f.dragStartSlopPx, feedback, primary = hitKey)
             return@awaitEachGesture
@@ -335,11 +367,8 @@ private suspend fun AwaitPointerEventScope.dragSelection(
     }
     val targets = if (f.app.view.snap) snapTargetsFor(f, target, keys.toSet()) else null
     var pushed = false
-    var breakMirror = false
     followOrPinch(f, downId, slop) { pos, _ ->
         if (!pushed) { target.pushHistory(); pushed = true }
-        // Alt anywhere in the drag breaks a smooth node's mirror for the rest of it.
-        if (currentEvent.keyboardModifiers.isAltPressed) breakMirror = true
         val delta = pos - startPos
         var dx = delta.x / f.mapper.scale
         var dy = -delta.y / f.mapper.scale
@@ -348,7 +377,7 @@ private suspend fun AwaitPointerEventScope.dragSelection(
             dx = r.dx; dy = r.dy
             feedback.snapX = r.xLine; feedback.snapY = r.yLine
         }
-        target.replaceGlyph(dragPoints(origGlyph, keys, dx, dy, breakMirror))
+        target.replaceGlyph(dragPoints(origGlyph, keys, dx, dy))
     }
     feedback.clearSnap()
 }
@@ -452,3 +481,6 @@ private suspend fun AwaitPointerEventScope.pinch(f: CanvasFrame) {
         prevSpan = span
     }
 }
+
+/** How a touch hold on a node ended before the long-press timeout. */
+private enum class HoldEnd { RELEASED, MOVED }
