@@ -69,7 +69,7 @@ kotlin {
                 implementation(compose.ui)
                 implementation(compose.components.resources)
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-                implementation("compose.conveyance:convey:6f467bb")
+                implementation("compose.conveyance:convey:68ca8d5")
             }
         }
         val commonTest by getting {
