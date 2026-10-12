@@ -69,6 +69,8 @@ kotlin {
                 implementation(compose.ui)
                 implementation(compose.components.resources)
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+                // Version = a convey commit's short SHA; every push to convey main publishes all
+                // its variants (android, desktop, wasmJs) to GitHub Packages through HereLiesAz/workflows.
                 implementation("compose.conveyance:convey:68ca8d5")
             }
         }
