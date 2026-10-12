@@ -43,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,13 +78,21 @@ private fun nodeCount(app: AppState) = app.anchors.getValue(app.activeAnchor).gl
 /** Canvas plus everything that floats on it, identical in both layouts. */
 @Composable
 private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: Modifier, suggestions: List<Suggestion>, bottomInset: Int = 16, extraBottom: @Composable () -> Unit = {}) {
-    Box(modifier) {
+    // How far the floating rows reach into the canvas from the top and bottom, so the touch pad
+    // is never placed under them (they'd take the touch first).
+    var coveredTop by remember { mutableStateOf(0f) }
+    var coveredBottom by remember { mutableStateOf(0f) }
+    var stageTop by remember { mutableStateOf(0f) }
+    var stageHeight by remember { mutableStateOf(0f) }
+    Box(modifier.onGloballyPositioned { stageTop = it.positionInRoot().y; stageHeight = it.size.height.toFloat() }) {
         AnchorCanvas(
             anchorName = app.activeAnchor,
             app = app,
             travelPathOverlay = if (app.activeAnchor == "regular") computeTravelPathOverlay(app) else null,
             interactionScale = touchScale,
             onPointHit = host.onPointHit,
+            coveredTopPx = coveredTop,
+            coveredBottomPx = coveredBottom,
             modifier = Modifier.fillMaxSize(),
         )
         val target = app.editTarget(app.activeAnchor)
@@ -94,7 +104,8 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
             else -> null
         }
         Column(
-            Modifier.align(Alignment.TopCenter).padding(top = 30.dp, start = 24.dp, end = 12.dp),
+            Modifier.align(Alignment.TopCenter).padding(top = 30.dp, start = 24.dp, end = 12.dp)
+                .onGloballyPositioned { coveredTop = it.positionInRoot().y + it.size.height - stageTop },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -107,7 +118,8 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
             Text(hint, fontSize = 14.sp, color = Mono.inkDim, modifier = Modifier.align(Alignment.Center).padding(32.dp))
         }
         Column(
-            Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset.dp, start = 12.dp, end = 12.dp),
+            Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset.dp, start = 12.dp, end = 12.dp)
+                .onGloballyPositioned { coveredBottom = stageTop + stageHeight - it.positionInRoot().y },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
