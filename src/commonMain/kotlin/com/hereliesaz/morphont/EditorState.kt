@@ -144,6 +144,14 @@ class AnchorState(initial: GlyphCorner) {
         glyph = setSmooth(glyph, selection, !selectionIsSmooth)
     }
 
+    /** Flips one node between smooth (mirrored arms) and corner: Alt-click, or a touch long-press. */
+    fun toggleNodeSmooth(key: PointKey) {
+        val node = glyph.contours.getOrNull(key.first)?.points?.getOrNull(key.second) ?: return
+        if (!node.onCurve) return
+        pushHistory()
+        glyph = setSmooth(glyph, listOf(key), !node.smooth)
+    }
+
     fun selectAll() {
         selection = glyph.contours.flatMapIndexed { ci, c -> c.points.indices.map { ci to it } }.toSet()
     }

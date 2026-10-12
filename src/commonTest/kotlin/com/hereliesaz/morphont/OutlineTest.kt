@@ -51,6 +51,18 @@ class OutlineTest {
     }
 
     @Test
+    fun importedNodesAreSmoothWhereverTheirArmsAreTangent() {
+        // A real on-curve node between two collinear controls is tangent: smooth.
+        val q = ContourData(mutableListOf(on(0f, 0f), off(0f, 100f), on(50f, 100f), off(100f, 100f), on(100f, 0f)))
+        val c = quadraticToCubic(q)
+        assertTrue(c.points[3].smooth)
+        // A sharp join, or a node beside a straight segment, stays a corner.
+        assertTrue(!c.points[0].smooth)
+        val sharp = quadraticToCubic(ContourData(mutableListOf(on(0f, 0f), off(0f, 100f), on(50f, 100f), off(50f, 0f), on(100f, 0f))))
+        assertTrue(!sharp.points[3].smooth)
+    }
+
+    @Test
     fun allOffCurveContourGetsANodeAtEveryMidpoint() {
         val q = ContourData(mutableListOf(off(0f, 0f), off(0f, 100f), off(100f, 100f), off(100f, 0f)))
         val c = quadraticToCubic(q)
@@ -85,10 +97,6 @@ class OutlineTest {
         val pts = g.contours[0].points
         assertPt(150f, 130f, pts[4])
         assertPt(50f, 70f, pts[2]) // same line through the node, same length
-        // Alt-drag leaves the other arm and makes the node a corner.
-        val broken = dragPoints(smoothNode(), listOf(0 to 4), 0f, 30f, breakMirror = true).contours[0].points
-        assertPt(50f, 100f, broken[2])
-        assertTrue(!broken[3].smooth)
     }
 
     @Test

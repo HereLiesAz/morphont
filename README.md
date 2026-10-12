@@ -105,8 +105,9 @@ so anchors can then be reshaped without adding or removing points.
   right after a node is its out-arm, the one right before it its in-arm.
   A **smooth** node (drawn as a circle) keeps its arms mirrored: dragging
   one swings the other through the node at the same angle and length. A
-  **corner** node (drawn as a square) leaves them independent; Alt-drag an
-  arm on desktop to break a smooth node into a corner. Arm ends are small
+  **corner** node (drawn as a square) leaves them independent. Alt-click a
+  node, or long-press it on a touchscreen, to switch it between smooth and
+  corner. Arm ends are small
   diamonds. Moving a node carries its arms. The selection pill's curve
   button makes the selected segments curves (arms at 1/3 and 2/3, so
   nothing moves) or straight again, and its corner/smooth button flips
@@ -122,6 +123,9 @@ so anchors can then be reshaped without adding or removing points.
   (quadratic, with implied on-curve midpoints) convert exactly on load:
   each implied midpoint becomes a smooth node and each quadratic
   `Q(P0, C, P1)` the cubic `(P0, P0 + 2/3 (C - P0), P1 + 2/3 (C - P1), P1)`.
+  Smooth curves are assumed wherever possible: any other node whose two
+  arms already leave it in opposite directions (within about 2 degrees)
+  also comes in smooth.
   Saves carry `"outlineFormat": 2` so they are never converted twice.
 - **Clipboard.** Copy / Cut / Paste / Select all, from each panel's toolbar,
   the Edit menu, or Ctrl/Cmd + C/X/V/A. The unit is whole contours (a glyph
