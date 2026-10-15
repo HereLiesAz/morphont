@@ -159,6 +159,25 @@ so anchors can then be reshaped without adding or removing points.
 - **TrueType import.** Both static and variable `.ttf` files are accepted.
   Static font outlines populate every anchor identically; variable fonts
   sample their supported axis extremes.
+- **UFO import (desktop).** In **Glyphs & file → Import UFO**, select a
+  `.ufo` directory (not a GLIF by itself) or `.ufoz` ZIP archive. Reads UFO
+  2/3 default-layer `glyphs/contents.plist`, GLIF glyph names, per-glyph
+  advances, font metrics, closed cubic/quadratic contours and nested affine
+  components. Quadratic curves convert exactly to editable cubic handles;
+  components are decomposed into contours. Each anchor starts as an
+  independently editable copy of the master, not a multi-master designspace.
+  Skipped glyphs (e.g. unsupported open contours or component cycles) are
+  reported instead of being silently altered. Extra UFO layers, kerning,
+  custom lib metadata, hints and Unicode mappings are not retained by
+  Morphont's existing glyph-project format. Android/web UFO import is not
+  yet available; their TTF import remains unchanged.
+- **Desktop glyph filenames.** Forbidden Windows characters (notably `*`)
+  and reserved DOS device names are reversibly escaped on disk. Existing
+  URL-encoded glyph files stay readable. Saves use atomic replacement when
+  supported, avoiding deletion of the previous glyph before replacement.
+- **Simplify input.** The floating simplify control uses Compose's native
+  slider gestures, plus **−1** and **+1** buttons for exact node-by-node
+  adjustment. The preview remains non-destructive until **Apply**.
 - **Transform box.** Two or more selected points get a dashed box whose
   handles sit just outside the points: corner squares scale (about the
   opposite corner), the knob above rotates. The selection pill adds flip
@@ -229,10 +248,12 @@ so anchors can then be reshaped without adding or removing points.
 - `Icons.kt` -- the monoline icon set
 - `Suggestions.kt` -- the suggested-edits engine (outline offset, stem measurement, and each suggestion)
 - `Theme.kt` -- the palette and primitives (`MonoButton`, `IconAction`, `Caps`, `floating`, `HairSlider`), built on `HereLiesAz/convey` (see below)
-- `desktopMain/` -- the desktop window, per-user app-data storage and native file dialogs
+- `desktopMain/` -- desktop window, per-user storage (Windows-safe glyph filenames), UFO/ZIP import and platform file pickers
 - `Storage.kt` -- IndexedDB persistence (one record per glyph) + JSON export/import; migrates a legacy single-blob `localStorage` project automatically on first successful open
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point
-- `VariableFont.kt` / `FamilyImport.kt` -- the from-scratch OpenType variable-font parser used to import a whole character family from one variable TTF
+- `VariableFont.kt` / `FamilyImport.kt` -- static and variable TrueType-outline glyph family import
+- `desktopMain/UfoImport.kt` -- secure XML plist/GLIF parser and directory/ZIP UFO package import; component expansion and curve conversion
+- `desktopTest/UfoImportTest.kt` -- UFO/UFOZ, geometry, metrics, component, filename-safety regression tests
 
 ## Design
 

@@ -209,12 +209,24 @@ fun SimplifyCard(app: AppState, modifier: Modifier = Modifier) {
             IconAction(MIcons.Close, "Cancel", { app.reduction = null }, size = 40)
             IconAction(MIcons.Check, "Apply", { app.applyReduction() }, size = 40, selected = true, enabled = r.removeCount > 0)
         }
-        HairSlider(
-            value = r.removeCount.toFloat(),
-            onValueChange = { r.removeCount = kotlin.math.round(it).toInt().coerceIn(0, r.order.size) },
-            valueRange = 0f..r.order.size.toFloat(),
-            modifier = Modifier.fillMaxWidth().padding(end = 10.dp),
-        )
+        if (r.order.isNotEmpty()) {
+            // Material's platform-native gesture handling avoids the custom
+            // HairSlider pointer capture that left this preview stuck.
+            androidx.compose.material3.Slider(
+                value = r.removeCount.toFloat(),
+                onValueChange = { r.removeCount = kotlin.math.round(it).toInt().coerceIn(0, r.order.size) },
+                valueRange = 0f..r.order.size.toFloat(),
+                modifier = Modifier.fillMaxWidth().padding(end = 10.dp),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MonoButton(onClick = { r.removeCount = (r.removeCount - 1).coerceAtLeast(0) }, enabled = r.removeCount > 0) {
+                Text("−1")
+            }
+            MonoButton(onClick = { r.removeCount = (r.removeCount + 1).coerceAtMost(r.order.size) }, enabled = r.removeCount < r.order.size) {
+                Text("+1")
+            }
+        }
     }
 }
 

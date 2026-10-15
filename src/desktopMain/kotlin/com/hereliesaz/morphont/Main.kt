@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -17,7 +18,9 @@ import androidx.compose.ui.window.rememberWindowState
 import com.hereliesaz.morphont.resources.Res
 import com.hereliesaz.morphont.resources.morphont_logo
 import compose.conveyance.ConveySystem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
@@ -42,6 +45,7 @@ fun DesktopApp() {
         ConveySystem {
             val app = remember { AppState().apply { glyphLookup = { DesktopStorage.loadGlyph(it) } } }
             val focus = remember { FocusRequester() }
+            val scope = rememberCoroutineScope()
 
             fun open(name: String) { DesktopStorage.loadGlyph(name)?.let { app.loadGlyph(name, it) } }
 
@@ -74,6 +78,24 @@ fun DesktopApp() {
                 }
             }, { app.setStatus(it, true) })
 
+            fun importUfo() = DesktopStorage.pickUfo({ file ->
+                scope.launch {
+                    try {
+                        app.setStatus("Importing UFO…")
+                        val result = withContext(Dispatchers.IO) {
+                            importUfoFile(file).also { DesktopStorage.saveGlyphs(it.glyphs) }
+                        }
+                        app.glyphNames = DesktopStorage.listGlyphNames()
+                        result.glyphs.keys.firstOrNull()?.let { open(it) }
+                        val note = if (result.skipped.isEmpty()) "" else
+                            " Skipped ${result.skipped.size}: ${result.skipped.take(3).joinToString("; ")}"
+                        app.setStatus("Imported ${result.glyphs.size} UFO glyphs.$note")
+                    } catch (e: Exception) {
+                        app.setStatus("UFO import failed: ${e.message}", true)
+                    }
+                }
+            }, { app.setStatus(it, true) })
+
             fun importProject() = DesktopStorage.pickText("Open a Morphont project", { text ->
                 try {
                     val names = DesktopStorage.importProjectText(text)
@@ -93,6 +115,7 @@ fun DesktopApp() {
                     listGlyphNames = { DesktopStorage.listGlyphNames().also { app.glyphNames = it } },
                     fileActions = listOf(
                         "Import a TrueType font (.ttf)" to { importFont() },
+                        "Import UFO (.ufo / .ufoz)" to { importUfo() },
                         "Open a project (.json)" to { importProject() },
                         "Save the whole project" to {
                             DesktopStorage.saveText("Save project", "morphont-project.json", DesktopStorage.exportProjectText(),
@@ -136,6 +159,7 @@ fun DesktopApp() {
                 if (app.currentGlyphName == null) {
                     WelcomeScreen(app, host, actions = listOf(
                         "Import a TrueType font" to { importFont() },
+                        "Import UFO (.ufo / .ufoz)" to { importUfo() },
                         "Open a Morphont project" to { importProject() },
                     ))
                 } else {
