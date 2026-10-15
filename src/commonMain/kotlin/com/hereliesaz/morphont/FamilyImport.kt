@@ -45,23 +45,25 @@ fun buildFamilyFromVariableFont(bytes: ByteArray): FamilyImportResult {
             skipped.add(codepoint to "astral codepoint, not representable by this app's single-Char glyph naming yet")
             continue
         }
-        val corners = LinkedHashMap<String, GlyphCorner>()
-        val width = font.advanceWidth(codepoint) ?: 0f
-        // A static font needs just one evaluation per codepoint, not one for
-        // each of Morphont's many axis anchors. Copy points to keep anchors
-        // independently editable even when their initial coordinates match.
-        val sharedOutline = if (defaultOnly) font.outlineAt(codepoint, emptyMap()) else null
-        var ok = !defaultOnly || sharedOutline != null
-        if (ok) for (anchor in ANCHORS) {
-            val outline = if (defaultOnly) sharedOutline else font.outlineAt(codepoint, coordsPerAnchor.getValue(anchor))
-            if (outline == null) { ok = false; break }
-            corners[anchor] = GlyphCorner(width, outline.map { it.deepCopy() }.toMutableList())
+        // Failure in one glyph must not abort the rest of the font. In
+        // particular, malformed glyf/gvar offsets previously surfaced as a
+        // raw "Index ... out of bounds" and discarded the entire import.
+        try {
+            val corners = LinkedHashMap<String, GlyphCorner>()
+            val width = font.advanceWidth(codepoint) ?: 0f
+            val sharedOutline = if (defaultOnly) font.outlineAt(codepoint, emptyMap()) else null
+            for (anchor in ANCHORS) {
+                val outline = if (defaultOnly) sharedOutline else font.outlineAt(codepoint, coordsPerAnchor.getValue(anchor))
+                requireNotNull(outline) { "unsupported or unresolved composite" }
+                corners[anchor] = GlyphCorner(width, outline.map { it.deepCopy() }.toMutableList())
+            }
+            glyphs[codepoint.toChar().toString()] = Glyph(corners, metrics = font.metrics, outlineFormat = OUTLINE_CUBIC)
+        } catch (e: RuntimeException) {
+            skipped.add(codepoint to (e.message ?: "invalid glyph data"))
         }
-        if (!ok) {
-            skipped.add(codepoint to "composite glyph nested too deeply or uses an unsupported component transform")
-            continue
-        }
-        glyphs[codepoint.toChar().toString()] = Glyph(corners, metrics = font.metrics, outlineFormat = OUTLINE_CUBIC)
+    }
+    require(glyphs.isNotEmpty()) {
+        "No glyphs could be imported: ${skipped.take(3).joinToString { (cp, reason) -> "U+${cp.toString(16).uppercase()}: $reason" }}"
     }
     return FamilyImportResult(glyphs, skipped)
 }

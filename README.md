@@ -158,7 +158,13 @@ so anchors can then be reshaped without adding or removing points.
   node with its handles when the selected target is either node or handle.
 - **TrueType import.** Both static and variable `.ttf` files are accepted.
   Static font outlines populate every anchor identically; variable fonts
-  sample their supported axis extremes.
+  sample their supported axis extremes. The parser validates table bounds,
+  cmap glyph IDs, per-glyph loca/glyf spans, and gvar tuple payloads before
+  reading. A malformed individual glyph is skipped and reported without
+  aborting otherwise importable characters; invalid font-wide tables reject
+  the font with a descriptive error. A font with no importable characters is
+  rejected rather than saving an empty import. This does not add CFF/OTF
+  support or repair malformed font geometry.
 - **Glyph labels.** UFO production identifiers such as `uni0041`,
   `unicode0041` and `u1F600` display as their Unicode characters in the
   browser, tabs and editor header. The original glyph name remains the saved
@@ -258,6 +264,7 @@ so anchors can then be reshaped without adding or removing points.
 - `Storage.kt` -- IndexedDB persistence (one record per glyph) + JSON export/import; migrates a legacy single-blob `localStorage` project automatically on first successful open
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point
 - `VariableFont.kt` / `FamilyImport.kt` -- static and variable TrueType-outline glyph family import
+- `commonTest/TrueTypeImportTest.kt` -- independently constructed SFNT fixture for damaged-glyph recovery, table bounds, and end-of-buffer reads
 - `desktopMain/UfoImport.kt` -- secure XML plist/GLIF parser and directory/ZIP UFO package import; component expansion and curve conversion
 - `desktopTest/UfoImportTest.kt` -- UFO/UFOZ, geometry, metrics, component, filename-safety regression tests
 - `Format.kt` / `commonTest/FormatTest.kt` -- Unicode presentation for legacy production names, independent of glyph identity

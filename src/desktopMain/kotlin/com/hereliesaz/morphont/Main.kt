@@ -72,7 +72,13 @@ fun DesktopApp() {
                     DesktopStorage.saveGlyphs(result.glyphs)
                     app.glyphNames = DesktopStorage.listGlyphNames()
                     result.glyphs.keys.sorted().firstOrNull()?.let { open(it) }
-                    app.setStatus("Imported ${result.glyphs.size} character(s) from the TrueType font.")
+                    val skipped = result.skippedCharacters
+                    val warning = if (skipped.isEmpty()) "" else
+                        " Skipped ${skipped.size} invalid glyph(s): " +
+                            skipped.take(2).joinToString("; ") { (cp, reason) ->
+                                "U+${cp.toString(16).uppercase()} ($"+"reason)"
+                            }
+                    app.setStatus("Imported ${result.glyphs.size} character(s) from the TrueType font.$"+"warning")
                 } catch (e: Exception) {
                     app.setStatus("Import failed: ${e.message}", true)
                 }
