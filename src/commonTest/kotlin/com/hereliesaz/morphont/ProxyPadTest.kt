@@ -1,5 +1,6 @@
 package com.hereliesaz.morphont
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,6 +15,18 @@ class ProxyPadTest {
         assertEquals(PadMode.MOVE, effectivePadMode(PadMode.ROTATE, 1))
         assertEquals(PadMode.SCALE, effectivePadMode(PadMode.SCALE, 2))
         assertEquals(PadMode.ROTATE, effectivePadMode(PadMode.ROTATE, 3))
+    }
+
+    @Test
+    fun nodeMoveHitTestResolvesAnOverlappingHandleToItsOwner() {
+        val state = AnchorState(GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
+            Pt(0f, 0f, true), Pt(0f, 90f, true),
+            Pt(90f, 90f, true), Pt(90f, 0f, true),
+        )))))
+        val mapper = SpaceMapper(ViewBox(0f, 0f, 100f, 100f), Size(100f, 100f))
+        val handlePosition = Offset(0f, 70f)
+        assertEquals(0 to 1, hitTestPoint(state.glyph, mapper, handlePosition, 8f))
+        assertEquals(0 to 0, hitTestPoint(state.glyph, mapper, handlePosition, 8f, nodeOnly = true))
     }
 
     @Test

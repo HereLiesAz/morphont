@@ -142,10 +142,18 @@ so anchors can then be reshaped without adding or removing points.
   Move / Scale / Turn switch works for multiple selected points:
   Scale grows the selection as you drag up, Turn rotates it as you drag
   sideways.
-- **Simplify.** The slider ranks node removals by worst geometric drift
-  across compatible anchors. There is no protected three-node minimum: the
-  far end deliberately collapses entire contours, even to empty. Applying
-  the preview is one undoable edit.
+- **Simplify.** The slider compares the true cubic Bézier spans and all
+  incoming/outgoing handles, for both sharp corners and mirrored smooth nodes,
+  against the curve formed by removing a node. It recalculates after every
+  removal and ranks by worst geometric drift across compatible anchors. Each
+  contour retains at least three on-curve nodes; handles do not count toward
+  that minimum. The slider shows the reachable minimum and Apply is undoable.
+- **Node Move (M).** The dedicated move tool selects on-curve nodes only.
+  Even grabbing a nearby handle moves its owning node and both handles rather
+  than reshaping a control point. Select (V) returns to normal point/handle
+  editing; Pen (P) starts drawing. Desktop arrow keys always nudge whole nodes,
+  including when just a handle is selected. Trash or Delete removes the full
+  node with its handles when the selected target is either node or handle.
 - **TrueType import.** Both static and variable `.ttf` files are accepted.
   Static font outlines populate every anchor identically; variable fonts
   sample their supported axis extremes.

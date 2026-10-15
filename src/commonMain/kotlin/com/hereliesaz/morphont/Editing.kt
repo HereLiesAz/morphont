@@ -240,62 +240,122 @@ fun buildSnapTargets(
  */
 data class Removal(val key: PointKey, val error: Float)
 
-private fun segDistance(px: Float, py: Float, ax: Float, ay: Float, bx: Float, by: Float): Float {
-    val vx = bx - ax; val vy = by - ay
-    val len2 = vx * vx + vy * vy
-    if (len2 <= 1e-9f) return hypot(px - ax, py - ay)
-    val t = (((px - ax) * vx + (py - ay) * vy) / len2).coerceIn(0f, 1f)
-    return hypot(px - (ax + t * vx), py - (ay + t * vy))
+/**
+ * One cubic span. Straight edges are represented by one-third controls,
+ * so this calculation sees the same geometry whether handles are explicit
+ * or a saved contour predates handle completion.
+ */
+private data class CubicSpan(val a: Pt, val h1: Pt, val h2: Pt, val b: Pt) {
+    fun at(t: Float): Pair<Float, Float> {
+        val u = 1f - t
+        val w0 = u * u * u
+        val w1 = 3f * u * u * t
+        val w2 = 3f * u * t * t
+        val w3 = t * t * t
+        return (w0 * a.x + w1 * h1.x + w2 * h2.x + w3 * b.x) to
+            (w0 * a.y + w1 * h1.y + w2 * h2.y + w3 * b.y)
+    }
+
+}
+
+/** Uses both control handles of every cubic, including sharp corners and mirrored nodes. */
+private fun spanBetween(pts: List<Pt>, from: Int, to: Int): CubicSpan {
+    val a = pts[from]
+    val b = pts[to]
+    val out = outArmIndex(pts, from)
+    val inn = inArmIndex(pts, to)
+    val h1 = out?.let { pts[it] } ?: Pt(a.x + (b.x - a.x) / 3f, a.y + (b.y - a.y) / 3f, false)
+    val h2 = inn?.let { pts[it] } ?: Pt(b.x - (b.x - a.x) / 3f, b.y - (b.y - a.y) / 3f, false)
+    return CubicSpan(a, h1, h2, b)
 }
 
 /**
- * Greedy simplification order shared by every anchor in [glyphs] so they stay
- * point-compatible: at each step, remove the node whose removal deviates the
- * outline least in the anchor where it hurts most (distance from the node, or
- * either of its arms, to the chord between its surviving neighbour nodes). Only nodes are removed --
- * their arms go with them (see [withoutPoints]) -- and contours keep at least
- * no protected minimum: the last stages can collapse or erase a contour when
- * deliberately over-simplifying. The topology is taken from the first glyph; callers must pass
- * only mutually compatible glyphs.
+ * Deviation of the two true Bézier spans around the candidate node from
+ * the cubic that [deleteFromContour] will actually produce. The old in/out
+ * handles and both surviving neighbours' handles all contribute, whether
+ * or not a node is marked smooth.
+ */
+private fun curveRemovalError(contour: ContourData, nodeOrdinal: Int): Float {
+    val pts = contour.points
+    val nodes = pts.indices.filter { pts[it].onCurve }
+    val count = nodes.size
+    val before = nodes[(nodeOrdinal + count - 1) % count]
+    val mid = nodes[nodeOrdinal]
+    val after = nodes[(nodeOrdinal + 1) % count]
+    val first = spanBetween(pts, before, mid)
+    val second = spanBetween(pts, mid, after)
+    val replacement = spanBetween(pts, before, after)
+
+    // Compare the drawn curves, not their arbitrary parameter speeds.
+    // Bidirectional polyline distance catches missed lobes and preserves
+    // geometric equivalence when an outline's two old spans share one new one.
+    val source = (0..12).map { first.at(it / 12f) } +
+        (1..12).map { second.at(it / 12f) }
+    val merged = (0..24).map { replacement.at(it / 24f) }
+    fun pointToLine(p: Pair<Float, Float>, a: Pair<Float, Float>, b: Pair<Float, Float>): Float {
+        val dx = b.first - a.first
+        val dy = b.second - a.second
+        val lengthSquared = dx * dx + dy * dy
+        if (lengthSquared < 1e-9f) return hypot(p.first - a.first, p.second - a.second)
+        val t = (((p.first - a.first) * dx + (p.second - a.second) * dy) / lengthSquared).coerceIn(0f, 1f)
+        return hypot(p.first - a.first - t * dx, p.second - a.second - t * dy)
+    }
+    fun worstDistance(from: List<Pair<Float, Float>>, to: List<Pair<Float, Float>>): Float =
+        from.maxOf { point ->
+            (0 until to.lastIndex).minOf { i -> pointToLine(point, to[i], to[i + 1]) }
+        }
+    return maxOf(worstDistance(source, merged), worstDistance(merged, source))
+}
+
+/**
+ * Greedy, geometry-aware simplification shared by all compatible anchors.
+ * Rank each candidate by its worst true cubic deviation across anchors,
+ * recalculating after every removal. Both sides' handles matter, even at
+ * corners or mirrored smooth nodes. A contour always retains three nodes.
+ * Keys refer to the original contour point indices, so preview and apply
+ * remove the same nodes without losing anchor compatibility.
  */
 fun reductionOrder(glyphs: List<GlyphCorner>): List<Removal> {
     val ref = glyphs.firstOrNull() ?: return emptyList()
     val out = mutableListOf<Removal>()
-    ref.contours.forEachIndexed { ci, contour ->
-        val alive = contour.points.indices.filter { contour.points[it].onCurve }.toMutableList()
-        while (alive.isNotEmpty()) {
-            var bestIdx = -1
+    ref.contours.forEachIndexed { ci, original ->
+        val alive = original.points.indices.filter { original.points[it].onCurve }.toMutableList()
+        val working = glyphs.map { it.contours[ci].deepCopy() }.toMutableList()
+        // Only the removed node and its immediate neighbours' segments change.
+        // Cache everyone else's true-curve loss across steps.
+        val costs = HashMap<Int, Float>()
+        while (alive.size > 3) {
+            var bestOrdinal = -1
             var bestCost = Float.POSITIVE_INFINITY
-            for (k in alive.indices) {
-                val pi = alive[k]
-                val prev = alive[(k - 1 + alive.size) % alive.size]
-                val next = alive[(k + 1) % alive.size]
-                var cost = 0f
-                for (g in glyphs) {
-                    val pts = g.contours[ci].points
-                    val a = pts[prev]; val b = pts[next]
-                    // The node and its arms: a node on the chord whose arms bend away from it still carries shape.
-                    for (q in listOfNotNull(pi, inArmIndex(pts, pi), outArmIndex(pts, pi))) {
-                        val d = segDistance(pts[q].x, pts[q].y, a.x, a.y, b.x, b.y)
-                        if (d > cost) cost = d
-                    }
+            for (ordinal in alive.indices) {
+                val cost = costs.getOrPut(alive[ordinal]) {
+                    working.maxOf { curveRemovalError(it, ordinal) }
                 }
-                if (cost < bestCost) { bestCost = cost; bestIdx = k }
+                if (cost < bestCost) {
+                    bestCost = cost
+                    bestOrdinal = ordinal
+                }
             }
-            if (bestIdx < 0) break
-            out.add(Removal(ci to alive[bestIdx], bestCost))
-            alive.removeAt(bestIdx)
+            if (bestOrdinal < 0) break
+            val removed = alive.removeAt(bestOrdinal)
+            out.add(Removal(ci to removed, bestCost))
+            costs.remove(removed)
+            for (i in working.indices) {
+                val nodes = working[i].points.indices.filter { working[i].points[it].onCurve }
+                working[i] = deleteFromContour(working[i], setOf(nodes[bestOrdinal]))
+            }
+            costs.remove(alive[(bestOrdinal + alive.size - 1) % alive.size])
+            costs.remove(alive[bestOrdinal % alive.size])
         }
     }
-    // Interleave contours by cost so the slider always removes the cheapest point next.
-    // A removal can only happen after its contour's earlier ones, so rank by the running
-    // max within that contour (monotone per contour), ties broken by original order.
+    // A contour's removals depend on its earlier ones. Compare running
+    // maxima when interleaving contours to keep each prefix valid.
     val runMax = FloatArray(out.size)
     val perContour = HashMap<Int, Float>()
     out.forEachIndexed { i, r ->
-        val m = maxOf(perContour[r.key.first] ?: 0f, r.error)
-        perContour[r.key.first] = m
-        runMax[i] = m
+        val cost = maxOf(perContour[r.key.first] ?: 0f, r.error)
+        perContour[r.key.first] = cost
+        runMax[i] = cost
     }
     return out.indices.sortedWith(compareBy({ runMax[it] }, { it })).map { out[it] }
 }

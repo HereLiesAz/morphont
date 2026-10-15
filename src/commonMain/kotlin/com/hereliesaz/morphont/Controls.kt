@@ -161,7 +161,7 @@ fun SelectionPill(app: AppState, modifier: Modifier = Modifier) {
                 IconAction(MIcons.RotateLeft, "Rotate 15° left", { t.rotateSelected(15f) }, size = 40)
                 IconAction(MIcons.RotateRight, "Rotate 15° right", { t.rotateSelected(-15f) }, size = 40)
             }
-            if (app.touchInput && t.selection.size >= 2) {
+            if (app.touchInput && t.selection.size >= 2 && !app.nodeMoveMode) {
                 // What the touch pad does: move, scale or turn the selection.
                 Box(Modifier.padding(horizontal = 4.dp)) {
                     Segmented(listOf("Move", "Scale", "Turn"), app.padMode.ordinal) { app.padMode = PadMode.entries[it] }
@@ -204,7 +204,7 @@ fun SimplifyCard(app: AppState, modifier: Modifier = Modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Caps("Simplify" + if (r.anchorNames.size > 1) " · all anchors" else "", color = Mono.ink)
-                Caps("${r.totalPoints} → ${r.totalPoints - r.removeCount} nodes · drift ${r.error.toInt()}u", size = 10)
+                Caps("${r.totalPoints} → ${r.totalPoints - r.removeCount} nodes · min ${r.totalPoints - r.order.size} · drift ${r.error.toInt()}u", size = 10)
             }
             IconAction(MIcons.Close, "Cancel", { app.reduction = null }, size = 40)
             IconAction(MIcons.Check, "Apply", { app.applyReduction() }, size = 40, selected = true, enabled = r.removeCount > 0)
@@ -653,8 +653,22 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
             app.activeGhost != null -> app.activeGhostId = null
             else -> t.selection = emptySet()
         }
-        e.key == Key.P -> if (t.drawingContourIndex == null) t.startNewContour()
-        e.key == Key.V -> if (t.drawingContourIndex != null) t.finishContour()
+        e.key == Key.P -> {
+            if (app.activeGhost == null || !app.ghostTransformMode) {
+                app.nodeMoveMode = false
+                if (t.drawingContourIndex == null) t.startNewContour()
+            }
+        }
+        e.key == Key.V -> {
+            if (t.drawingContourIndex != null) t.finishContour()
+            app.nodeMoveMode = false
+        }
+        e.key == Key.M -> {
+            if (app.activeGhost == null || !app.ghostTransformMode) {
+                if (t.drawingContourIndex != null) t.finishContour()
+                app.nodeMoveMode = true
+            }
+        }
         e.key == Key.DirectionLeft -> t.nudgeSelected(-step, 0f)
         e.key == Key.DirectionRight -> t.nudgeSelected(step, 0f)
         e.key == Key.DirectionUp -> t.nudgeSelected(0f, step)

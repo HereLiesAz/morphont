@@ -170,8 +170,8 @@ suspend fun PointerInputScope.handleAnchorGestures(
         val proxy = f.proxyCenter
         if (proxy != null && (startPos - proxy).getDistance() <= f.proxyRadiusPx * 1.3f) {
             onPointHit()
-            val keys = target.selection.toList()
-            val padMode = effectivePadMode(app.padMode, keys.size)
+            val keys = if (app.nodeMoveMode) target.selectedNodes().toList() else target.selection.toList()
+            val padMode = if (app.nodeMoveMode) PadMode.MOVE else effectivePadMode(app.padMode, keys.size)
             when (padMode) {
                 PadMode.MOVE -> dragSelection(f, down.id, target, keys, startPos, slop = 0.5f, feedback, snapEnabled = false)
                 else -> {
@@ -269,20 +269,20 @@ suspend fun PointerInputScope.handleAnchorGestures(
             return@awaitEachGesture
         }
 
-        val hitKey = hitTestPoint(target.glyph, f.mapper, startPos, radiusPx = f.hitRadiusPx)
+        val hitKey = hitTestPoint(target.glyph, f.mapper, startPos, radiusPx = f.hitRadiusPx, nodeOnly = app.nodeMoveMode)
         if (hitKey != null) {
             onPointHit()
             if (hitKey !in target.selection) target.selection = setOf(hitKey)
             val hitNode = target.glyph.contours[hitKey.first].points[hitKey.second].onCurve
             // Alt-click on a node toggles it between smooth (mirrored arms) and corner.
-            if (hitNode && event.keyboardModifiers.isAltPressed) {
+            if (hitNode && !app.nodeMoveMode && event.keyboardModifiers.isAltPressed) {
                 target.toggleNodeSmooth(hitKey)
                 followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
                 return@awaitEachGesture
             }
             // Touch: holding a node still for the long-press timeout does the same.
             var movedDuringHold = false
-            if (hitNode && down.type == PointerType.Touch) {
+            if (hitNode && !app.nodeMoveMode && down.type == PointerType.Touch) {
                 val early = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
                     var end: HoldEnd? = null
                     while (end == null) {
@@ -305,7 +305,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
                     HoldEnd.MOVED -> movedDuringHold = true
                 }
             }
-            val keys = target.selection.toList()
+            val keys = if (app.nodeMoveMode) listOf(hitKey) else target.selection.toList()
             dragSelection(f, down.id, target, keys, startPos, if (movedDuringHold) 0.5f else f.dragStartSlopPx, feedback, primary = hitKey)
             return@awaitEachGesture
         }
@@ -321,6 +321,12 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 dragGuide(f, g.vertical, feedback, down.id, existing = g)
                 return@awaitEachGesture
             }
+        }
+
+        // Node Move never starts a marquee that could select handles.
+        if (app.nodeMoveMode) {
+            followOrPinch(f, down.id, f.dragStartSlopPx) { _, _ -> }
+            return@awaitEachGesture
         }
 
         // Empty space: rubber band (or pinch on touch).

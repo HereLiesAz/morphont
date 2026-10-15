@@ -134,7 +134,7 @@ class AnchorState(initial: GlyphCorner) {
     val selectionIsSmooth: Boolean
         get() = selectedNodes().let { n -> n.isNotEmpty() && n.all { (ci, pi) -> glyph.contours[ci].points[pi].smooth } }
 
-    private fun selectedNodes(): Set<PointKey> = selection.mapNotNull { (ci, pi) ->
+    fun selectedNodes(): Set<PointKey> = selection.mapNotNull { (ci, pi) ->
         val pts = glyph.contours.getOrNull(ci)?.points ?: return@mapNotNull null
         val p = pts.getOrNull(pi) ?: return@mapNotNull null
         if (p.onCurve) ci to pi else armOwner(pts, pi)?.let { ci to it }
@@ -185,11 +185,12 @@ class AnchorState(initial: GlyphCorner) {
         glyph = updated
     }
 
-    /** Moves the selection by a font-unit delta as one undoable edit (keyboard nudges); nodes carry their arms. */
+    /** Arrow keys always move whole nodes, even when only an arm is selected. */
     fun nudgeSelected(dx: Float, dy: Float) {
-        if (selection.isEmpty()) return
+        val nodes = selectedNodes()
+        if (nodes.isEmpty()) return
         pushHistory()
-        glyph = dragPoints(glyph, selection, dx, dy)
+        glyph = dragPoints(glyph, nodes, dx, dy)
     }
 
     /** Applies [t] to the selected points as one undoable edit (flip/rotate buttons). */
@@ -213,11 +214,12 @@ class AnchorState(initial: GlyphCorner) {
         if (drawingContourIndex != null) finishContour()
     }
 
-    /** Deletes selected nodes with their arms and retracts selected arms, keeping contours valid (see [deleteSelection]). */
+    /** Trash deletes whole nodes, even when just a handle is selected. */
     fun deleteSelected() {
-        if (selection.isEmpty()) return
+        val nodes = selectedNodes()
+        if (nodes.isEmpty()) return
         pushHistory()
-        val updated = deleteSelection(glyph, selection)
+        val updated = deleteSelection(glyph, nodes)
         selection = emptySet()
         drawingContourIndex = null
         glyph = updated
@@ -360,6 +362,9 @@ class AppState {
 
     var padMode by mutableStateOf(PadMode.MOVE)
 
+    /** Move on-curve nodes with their handles instead of editing individual handles. */
+    var nodeMoveMode by mutableStateOf(false)
+
     /** Whether the suggested-edits row is expanded (it's behind a button, not always on screen). */
     var showSuggestions by mutableStateOf(false)
 
@@ -469,6 +474,7 @@ class AppState {
         activeGhostId = null
         reduction = null
         activeAnchor = "regular"
+        nodeMoveMode = false
         setStatus("Loaded \"$name\".")
     }
 
@@ -620,7 +626,7 @@ class AppState {
         if (removed.isNotEmpty()) for (name in r.anchorNames) {
             val st = anchors.getValue(name)
             val reduced = withoutPoints(st.glyph, removed)
-            st.replaceWithHistory(GlyphCorner(reduced.width, reduced.contours.filter { it.points.isNotEmpty() }.toMutableList()))
+            st.replaceWithHistory(reduced)
         }
         val scope = if (r.anchorNames.size > 1) "every anchor" else (ANCHOR_LABELS[r.anchorNames.first()] ?: r.anchorNames.first())
         setStatus("Removed ${removed.size} point(s) from $scope.")

@@ -58,13 +58,64 @@ class EditingTest {
         ))))
         val order = reductionOrder(listOf(g(0f), g(3f)))
         assertEquals(0 to 1, order.first().key)
-        assertEquals(0f, order.first().error)
+        assertTrue(kotlin.math.abs(order.first().error) < 0.001f)
         val reduced = withoutPoints(g(0f), setOf(order.first().key))
         assertEquals(4, reduced.contours[0].points.size)
-        // Oversimplify every node away when deliberately requested.
-        assertEquals(5, order.size)
-        val erased = withoutPoints(g(0f), order.map { it.key }.toSet())
-        assertTrue(erased.contours.single().points.isEmpty())
+        // A single closed contour retains a triangle; do not erase it.
+        assertEquals(2, order.size)
+        val triangle = withoutPoints(g(0f), order.map { it.key }.toSet())
+        assertEquals(3, triangle.contours.single().points.count { it.onCurve })
+        assertTrue(isValidCubicContour(triangle.contours.single()))
+    }
+
+    @Test
+    fun simplificationMeasuresCurvedCornersAndMirroredHandles() {
+        // A six-node rectangle has two redundant nodes: B on the bottom,
+        // D on the right. D stays straight; B becomes a large curve.
+        val raw = GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
+            Pt(0f, 0f, true), Pt(25f, 0f, true), Pt(50f, 0f, true),
+            Pt(50f, 50f, true), Pt(50f, 100f, true), Pt(0f, 100f, true),
+        ))))
+        val unchanged = AnchorState(raw).glyph
+        assertEquals(0 to 3, reductionOrder(listOf(unchanged)).first().key)
+
+        val corner = unchanged.deepCopy()
+        val c = corner.contours.single().points
+        c[2].y = 70f // incoming control for B: independent corner arm
+        c[4].y = -45f // outgoing control for B: independent corner arm
+        assertEquals(0 to 9, reductionOrder(listOf(corner)).first().key)
+
+        val mirrored = unchanged.deepCopy()
+        val m = mirrored.contours.single().points
+        m[2].y = 65f
+        m[4].y = -65f
+        m[3].smooth = true
+        assertEquals(0 to 9, reductionOrder(listOf(mirrored)).first().key)
+        assertEquals(3, reductionOrder(listOf(mirrored)).size)
+    }
+
+    @Test
+    fun simplifySliderCanReachThreePerContourNotCountHandles() {
+        val app = AppState()
+        val g = Glyph()
+        g.corners["regular"] = GlyphCorner(500f, mutableListOf(
+            ContourData(mutableListOf(
+                Pt(0f, 0f, true), Pt(0f, 100f, true), Pt(100f, 100f, true),
+                Pt(100f, 0f, true), Pt(50f, 0f, true),
+            )),
+        ))
+        app.loadGlyph("test", g)
+        app.startReduction()
+        val preview = app.reduction!!
+        assertEquals(5, preview.totalPoints)
+        assertEquals(2, preview.order.size)
+        preview.removeCount = preview.order.size
+        assertEquals(3, preview.totalPoints - preview.removeCount)
+        app.applyReduction()
+        val contour = app.anchors.getValue("regular").glyph.contours.single()
+        assertEquals(3, contour.points.count { it.onCurve })
+        assertEquals(9, contour.points.size) // two handles per node are not extra nodes
+        assertTrue(isValidCubicContour(contour))
     }
 
     @Test

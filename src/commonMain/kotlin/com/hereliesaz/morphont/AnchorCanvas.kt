@@ -123,7 +123,7 @@ fun AnchorCanvas(
                 GhostHandles(corners, Offset(top.x, top.y - 30f * uiScale), b)
             }
         } else null
-        val selHandles = if (target.selection.size >= 2 && target.drawingContourIndex == null && app.reduction == null &&
+        val selHandles = if (target.selection.size >= 2 && !app.nodeMoveMode && target.drawingContourIndex == null && app.reduction == null &&
             !(ghost != null && app.ghostTransformMode)
         ) {
             boundsOfSelection(target.glyph, target.selection)?.let { b ->
