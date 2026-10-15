@@ -159,6 +159,12 @@ so anchors can then be reshaped without adding or removing points.
 - **TrueType import.** Both static and variable `.ttf` files are accepted.
   Static font outlines populate every anchor identically; variable fonts
   sample their supported axis extremes.
+- **Glyph labels.** UFO production identifiers such as `uni0041`,
+  `unicode0041` and `u1F600` display as their Unicode characters in the
+  browser, tabs and editor header. The original glyph name remains the saved
+  key and is still used for opening, linking and export; older imports are
+  displayed correctly without deleting or renaming any glyphs. Non-printing,
+  invalid and alternate names remain literal.
 - **UFO import (desktop).** In **Glyphs & file → Import UFO**, select a
   `.ufo` directory (not a GLIF by itself) or `.ufoz` ZIP archive. Reads UFO
   2/3 default-layer `glyphs/contents.plist`, GLIF glyph names, per-glyph
@@ -254,6 +260,7 @@ so anchors can then be reshaped without adding or removing points.
 - `VariableFont.kt` / `FamilyImport.kt` -- static and variable TrueType-outline glyph family import
 - `desktopMain/UfoImport.kt` -- secure XML plist/GLIF parser and directory/ZIP UFO package import; component expansion and curve conversion
 - `desktopTest/UfoImportTest.kt` -- UFO/UFOZ, geometry, metrics, component, filename-safety regression tests
+- `Format.kt` / `commonTest/FormatTest.kt` -- Unicode presentation for legacy production names, independent of glyph identity
 
 ## Design
 

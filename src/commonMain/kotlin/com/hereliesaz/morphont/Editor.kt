@@ -175,7 +175,7 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = openBrowser)) {
-                Text(app.currentGlyphName ?: "", fontSize = 38.sp, lineHeight = 40.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(app.currentGlyphName?.let(::displayGlyphName) ?: "", fontSize = 38.sp, lineHeight = 40.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Caps("${ANCHOR_LABELS[app.activeAnchor]} · ${nodeCount(app)} nodes")
             }
             SuggestionsButton(app, suggestions)
@@ -289,7 +289,7 @@ private fun GlyphTabs(app: AppState, host: EditorHost, openBrowser: () -> Unit, 
                     .background(if (current) Mono.panelHeader else Color.Transparent)
                     .clickable { host.openGlyph(n) }.padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
-            ) { Text(n, fontSize = 20.sp, color = if (current) Mono.ink else Mono.inkDim, maxLines = 1) }
+            ) { Text(displayGlyphName(n), fontSize = 20.sp, color = if (current) Mono.ink else Mono.inkDim, maxLines = 1) }
         }
         Box(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = openBrowser).padding(horizontal = 10.dp, vertical = 8.dp)) {
             Caps("All ${names.size}")
@@ -342,7 +342,9 @@ fun WelcomeScreen(app: AppState, host: EditorHost, actions: List<Pair<String, ()
                             Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Mono.panel).border(1.dp, Mono.border, RoundedCornerShape(12.dp))
                                 .clickable { host.openGlyph(n) },
                             contentAlignment = Alignment.Center,
-                        ) { Text(n, fontSize = if (n.length <= 2) 26.sp else 12.sp, color = Mono.ink, maxLines = 1) }
+                        ) { val label = displayGlyphName(n)
+                            Text(label, fontSize = if (label.length <= 2) 26.sp else 12.sp, color = Mono.ink, maxLines = 1)
+                        }
                     }
                 }
             }

@@ -559,7 +559,9 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
                             .background(if (current) Mono.ink else Mono.panelHeader)
                             .clickable { host.openGlyph(n); onDismiss() },
                         contentAlignment = Alignment.Center,
-                    ) { Text(n, fontSize = if (n.length <= 2) 26.sp else 12.sp, color = if (current) Mono.onPrimary else Mono.ink, maxLines = 1) }
+                    ) { val label = displayGlyphName(n)
+                        Text(label, fontSize = if (label.length <= 2) 26.sp else 12.sp, color = if (current) Mono.onPrimary else Mono.ink, maxLines = 1)
+                    }
                 }
             }
         }
@@ -592,7 +594,9 @@ private fun ProjectGlyphPicker(app: AppState, host: EditorHost, onDismiss: () ->
                         Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Mono.panelHeader)
                             .clickable { app.addLinkedGhost(n); onDismiss() },
                         contentAlignment = Alignment.Center,
-                    ) { Text(n, fontSize = if (n.length <= 2) 26.sp else 12.sp, color = Mono.ink, maxLines = 1) }
+                    ) { val label = displayGlyphName(n)
+                        Text(label, fontSize = if (label.length <= 2) 26.sp else 12.sp, color = Mono.ink, maxLines = 1)
+                    }
                 }
             }
         }
