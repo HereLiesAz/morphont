@@ -28,6 +28,8 @@ class AnchorState(initial: GlyphCorner) {
     var drawingContourIndex by mutableStateOf<Int?>(null)
 
     private val history: SnapshotStateList<GlyphCorner> = SnapshotStateList<GlyphCorner>().apply { add(glyph.deepCopy()) }
+    /** AppState registers this so undo spans geometry, guides and layer actions. */
+    var onHistoryPush: (() -> Unit)? = null
 
     fun replaceGlyph(new: GlyphCorner) {
         glyph = new
@@ -37,6 +39,7 @@ class AnchorState(initial: GlyphCorner) {
     fun pushHistory() {
         history.add(glyph.deepCopy())
         if (history.size > 80) history.removeAt(0)
+        onHistoryPush?.invoke()
     }
 
     /** Pops the most recently pushed pre-edit state and makes it current. */
@@ -89,10 +92,8 @@ class AnchorState(initial: GlyphCorner) {
         if (contour != null && contour.points.isEmpty()) {
             updated.contours.removeAt(ci)
             glyph = updated
-        } else {
-            // Capture the completed geometry so the next undo removes only
-            // the most recent edit instead of jumping back past the contour.
-            pushHistory()
+            // Starting and cancelling an empty contour is not a new edit.
+            if (history.size > 1) history.removeAt(history.lastIndex)
         }
         drawingContourIndex = null
         selection = emptySet()
@@ -248,12 +249,14 @@ class GhostLayer(
     var matrix by mutableStateOf(matrix)
     val state = AnchorState(GlyphCorner(0f, contours.map { it.deepCopy() }.toMutableList()))
     private val matrixHistory = mutableListOf<Affine>()
+    var onMatrixHistoryPush: (() -> Unit)? = null
 
     val isLinked: Boolean get() = sourceGlyph != null
 
     fun pushMatrixHistory() {
         matrixHistory.add(matrix)
         if (matrixHistory.size > 80) matrixHistory.removeAt(0)
+        onMatrixHistoryPush?.invoke()
     }
 
     fun undoMatrix(): Boolean {
@@ -322,6 +325,62 @@ class ReductionSession(val anchorNames: List<String>, val order: List<Removal>, 
 /** Overall application state: every axis's anchors, preview and UI selections. */
 class AppState {
     val anchors: Map<String, AnchorState> = ANCHORS.associateWith { AnchorState(GlyphCorner()) }
+    private val undoActions = mutableListOf<() -> Unit>()
+    private var recording = true
+    /** Increment before bulk imports so pending autosaves cannot overwrite newly imported records. */
+    var autosaveEpoch by mutableStateOf(0)
+        private set
+
+    init {
+        anchors.values.forEach { state ->
+            state.onHistoryPush = { recordUndo { state.undo() } }
+        }
+    }
+
+    private fun recordUndo(action: () -> Unit) {
+        if (!recording) return
+        undoActions.add(action)
+        if (undoActions.size > 150) undoActions.removeAt(0)
+    }
+
+    private fun attachGhost(g: GhostLayer) {
+        g.state.onHistoryPush = { recordUndo { g.state.undo() } }
+        g.onMatrixHistoryPush = { recordUndo { g.undoMatrix() } }
+    }
+
+    private fun groupUndo(block: () -> Unit, undo: () -> Unit) {
+        recording = false
+        try { block() } finally { recording = true }
+        recordUndo(undo)
+    }
+
+    fun beginBulkImport() {
+        autosaveEpoch++
+    }
+
+    fun clearGuides() {
+        if (guides.isEmpty()) return
+        val before = guides.toList()
+        recordUndo { guides.clear(); guides.addAll(before) }
+        guides.clear()
+    }
+
+    fun updateMetrics(newMetrics: FontMetrics) {
+        val before = metrics
+        if (before == newMetrics) return
+        recordUndo { metrics = before }
+        metrics = newMetrics
+    }
+
+    fun replaceGuide(old: Guide?, new: Guide?) {
+        val before = guides.toList()
+        if (old != null) guides.remove(old)
+        if (new != null) guides.add(new)
+        if (guides.toList() != before) recordUndo {
+            guides.clear()
+            guides.addAll(before)
+        }
+    }
 
     // Regular is the natural starting point: draw one usable outline there,
     // copy its topology outward, then reshape the extremes.
@@ -345,6 +404,8 @@ class AppState {
     var glyphNames by mutableStateOf<List<String>>(emptyList())
     var status by mutableStateOf("")
     var statusIsError by mutableStateOf(false)
+    /** Persistent last report; a fleeting toast must not hide import diagnostics. */
+    var lastReport by mutableStateOf("")
 
     val view = ViewSettings()
 
@@ -433,19 +494,40 @@ class AppState {
 
     /** Undo for whatever the user is acting on: a ghost's placement, a ghost's nodes, or the active anchor. */
     fun undo() {
-        val g = activeGhost
-        if (g != null && ghostTransformMode) { if (!g.undoMatrix()) setStatus("Nothing to undo on this ghost.") ; return }
-        commandTarget.undo()
+        if (undoActions.isEmpty()) {
+            setStatus("Nothing to undo.")
+            return
+        }
+        val action = undoActions.removeAt(undoActions.lastIndex)
+        val previous = recording
+        recording = false
+        try { action() } finally { recording = previous }
     }
 
     /** Switches the active ghost between placement and node editing; node editing bakes/detaches first. */
     fun setGhostNodeMode(nodes: Boolean) {
         val g = activeGhost ?: return
-        if (nodes) {
-            if (g.isLinked) {
-                g.detach(ghostContours(g, activeAnchor))
-                setStatus("Node editing detached \"${g.label}\" from its source glyph; it no longer follows the axes.")
-            } else g.bake()
+        if (nodes && ghostTransformMode) {
+            val original = g.toData()
+            recordUndo {
+                g.sourceGlyph = original.sourceGlyph
+                g.beside = original.beside
+                g.matrix = original.matrix
+                g.state.loadFresh(GlyphCorner(0f, original.contours.map { it.deepCopy() }.toMutableList()))
+                ghostTransformMode = true
+                activeGhostId = g.id
+            }
+            // Detaching or baking is one undo step, not another geometry
+            // history entry whose restoration forgets the placement matrix.
+            recording = false
+            try {
+                if (g.isLinked) {
+                    g.detach(ghostContours(g, activeAnchor))
+                    setStatus("Node editing detached \"${g.label}\"; Undo restores its live link.")
+                } else g.bake()
+            } finally {
+                recording = true
+            }
         }
         ghostTransformMode = !nodes
     }
@@ -456,6 +538,7 @@ class AppState {
     fun setStatus(msg: String, isError: Boolean = false) {
         status = msg
         statusIsError = isError
+        if (msg.isNotEmpty()) lastReport = msg
     }
 
     fun cornersSnapshot(): Map<String, GlyphCorner> = anchors.mapValues { it.value.glyph }
@@ -473,10 +556,13 @@ class AppState {
         ghosts.clear()
         linkedGlyphs.clear()
         glyph.ghosts.forEach {
-            ghosts.add(GhostLayer(nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph, it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside))
+            val layer = GhostLayer(nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph, it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside)
+            attachGhost(layer)
+            ghosts.add(layer)
             it.sourceGlyph?.let { src -> cacheLinked(src) }
         }
-        glyph.metrics?.let { metrics = it }
+        metrics = glyph.metrics ?: FontMetrics()
+        undoActions.clear()
         activeGhostId = null
         reduction = null
         activeAnchor = "regular"
@@ -496,6 +582,8 @@ class AppState {
         ghosts.clear()
         activeGhostId = null
         reduction = null
+        metrics = FontMetrics()
+        undoActions.clear()
     }
 
     fun toGlyph(): Glyph = Glyph(
@@ -510,13 +598,12 @@ class AppState {
     fun copyActiveToOthers() {
         if (activeGhost != null) return // never touch the glyph while a ghost is being edited
         val src = anchors.getValue(activeAnchor)
-        var count = 0
-        for (name in ANCHORS) {
-            if (name == activeAnchor) continue
-            val dst = anchors.getValue(name)
-            dst.replaceWithHistory(src.glyph.deepCopy())
-            count++
-        }
+        val targets = ANCHORS.filter { it != activeAnchor }.map { anchors.getValue(it) }
+        val count = targets.size
+        groupUndo(
+            block = { targets.forEach { it.replaceWithHistory(src.glyph.deepCopy()) } },
+            undo = { targets.forEach { it.undo() } },
+        )
         setStatus("Copied ${ANCHOR_LABELS[activeAnchor]}'s outline to the other $count anchor(s) -- reshape each toward its extreme without adding or removing points.")
     }
 
@@ -552,7 +639,10 @@ class AppState {
 
     fun addGhost(label: String, contours: List<ContourData>) {
         if (contours.isEmpty()) { setStatus("That ghost has no outline.", true); return }
-        ghosts.add(GhostLayer(nextGhostId++, label, contours))
+        val layer = GhostLayer(nextGhostId++, label, contours)
+        attachGhost(layer)
+        ghosts.add(layer)
+        recordUndo { ghosts.remove(layer); if (activeGhostId == layer.id) activeGhostId = null }
         setStatus("Added ghost \"$label\". Use its Edit button in Ghosts to move, scale, rotate or reshape it.")
     }
 
@@ -560,7 +650,10 @@ class AppState {
     fun addLinkedGhost(name: String) {
         cacheLinked(name)
         if (name != currentGlyphName && name !in linkedGlyphs) { setStatus("Couldn't read \"$name\".", true); return }
-        ghosts.add(GhostLayer(nextGhostId++, name, emptyList(), sourceGlyph = name))
+        val layer = GhostLayer(nextGhostId++, name, emptyList(), sourceGlyph = name)
+        attachGhost(layer)
+        ghosts.add(layer)
+        recordUndo { ghosts.remove(layer); if (activeGhostId == layer.id) activeGhostId = null }
         setStatus("Ghosting \"$name\" live: it follows every axis, here and in the Preview.")
     }
 
@@ -578,8 +671,15 @@ class AppState {
     }
 
     fun removeGhost(id: Int) {
-        ghosts.removeAll { it.id == id }
-        if (activeGhostId == id) activeGhostId = null
+        val index = ghosts.indexOfFirst { it.id == id }
+        if (index < 0) return
+        val layer = ghosts.removeAt(index)
+        val wasActive = activeGhostId == id
+        if (wasActive) activeGhostId = null
+        recordUndo {
+            ghosts.add(index.coerceAtMost(ghosts.size), layer)
+            if (wasActive) activeGhostId = id
+        }
     }
 
     /** Bounds of the active ghost as drawn in the active anchor's panel. */
@@ -630,10 +730,17 @@ class AppState {
     fun applyReduction() {
         val r = reduction ?: return
         val removed = r.removed
-        if (removed.isNotEmpty()) for (name in r.anchorNames) {
-            val st = anchors.getValue(name)
-            val reduced = withoutPoints(st.glyph, removed)
-            st.replaceWithHistory(GlyphCorner(reduced.width, reduced.contours.filter { it.points.isNotEmpty() }.toMutableList()))
+        if (removed.isNotEmpty()) {
+            val targets = r.anchorNames.map { anchors.getValue(it) }
+            groupUndo(
+                block = {
+                    for (st in targets) {
+                        val reduced = withoutPoints(st.glyph, removed)
+                        st.replaceWithHistory(GlyphCorner(reduced.width, reduced.contours.filter { it.points.isNotEmpty() }.toMutableList()))
+                    }
+                },
+                undo = { targets.forEach { it.undo() } },
+            )
         }
         val scope = if (r.anchorNames.size > 1) "every anchor" else (ANCHOR_LABELS[r.anchorNames.first()] ?: r.anchorNames.first())
         setStatus("Removed ${removed.size} point(s) from $scope.")

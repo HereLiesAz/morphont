@@ -148,10 +148,28 @@ class OutlineTest {
         val pts = curved.contours[0].points
         assertEquals(6, pts.size)
         assertTrue(isValidCubicContour(curved.contours[0]))
-        assertPt(30f, 90f, pts[2]); assertPt(60f, 90f, pts[3])
+        assertPt(30f, 108f, pts[2]); assertPt(60f, 108f, pts[3])
         assertEquals(setOf(0 to 1, 0 to 4), sel)
         val (straight, _) = toggleCurveSelection(curved, sel)
         assertEquals(sq.contours[0].points.map { it.x to it.y }, straight.contours[0].points.map { it.x to it.y })
+    }
+
+    @Test
+    fun curveButtonWorksAfterAutomaticHandleCompletion() {
+        val state = AnchorState(GlyphCorner(500f, mutableListOf(
+            ContourData(mutableListOf(on(0f, 0f), on(0f, 90f), on(90f, 90f), on(90f, 0f))),
+        )))
+        state.selection = setOf(0 to 3, 0 to 6) // adjacent nodes, not their handles
+        state.toggleCurveSelected()
+        val bent = state.glyph.contours.single().points
+        assertPt(30f, 108f, bent[4])
+        assertPt(60f, 108f, bent[5])
+        state.toggleCurveSelected()
+        val flat = state.glyph.contours.single().points
+        assertPt(30f, 90f, flat[4])
+        assertPt(60f, 90f, flat[5])
+        state.undo()
+        assertPt(30f, 108f, state.glyph.contours.single().points[4])
     }
 
     @Test

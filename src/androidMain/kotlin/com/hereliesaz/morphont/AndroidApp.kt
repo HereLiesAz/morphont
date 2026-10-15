@@ -2,6 +2,7 @@ package com.hereliesaz.morphont
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -13,6 +14,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import compose.conveyance.ConveySystem
@@ -44,6 +47,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
     MorphontTheme {
         ConveySystem {
             val app = remember { AppState().apply { glyphLookup = { storage.loadGlyph(it) } } }
+            val keyboardFocus = remember { FocusRequester() }
             val scope = rememberCoroutineScope()
             val haptics = LocalHapticFeedback.current
             var importingFont by remember { mutableStateOf(false) }
@@ -84,6 +88,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                         scope.launch {
                             try {
                                 val names = withContext(Dispatchers.IO) { storage.importProjectText(text) }
+                                app.beginBulkImport()
                                 app.glyphNames = names
                                 when (openFirstAvailableGlyph(names)) {
                                     OpenGlyphOutcome.OPENED -> app.setStatus("Loaded project (${names.size} glyph(s)); opened ${names.first()}.")
@@ -119,21 +124,23 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                 val result = withContext(Dispatchers.Default) {
                                     buildFamilyFromVariableFont(bytes)
                                 }
-                                withContext(Dispatchers.IO) { storage.saveGlyphs(result.glyphs) }
+                                val collisions = withContext(Dispatchers.IO) { storage.saveNewGlyphs(result.glyphs) }
                                 app.glyphNames = withContext(Dispatchers.IO) { storage.listGlyphNames() }
-                                val firstImportedName = result.glyphs.keys.sorted().firstOrNull()
+                                val inserted = result.glyphs.keys.filterNot { it in collisions }.sorted()
+                                val firstImportedName = inserted.firstOrNull()
                                 if (firstImportedName != null) {
                                     result.glyphs[firstImportedName]?.let {
                                         loadPersistentGlyph(firstImportedName, it)
                                     }
                                 }
-                                val skippedNote = if (result.skippedCharacters.isEmpty()) "" else
-                                    " Skipped: " + result.skippedCharacters.joinToString { (cp, reason) ->
-                                        "U+${cp.toString(16)} ($reason)"
-                                    }
+                                val warnings = listOfNotNull(
+                                    result.skippedCharacters.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
+                                    collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
+                                )
+                                val skippedNote = if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}."
                                 val openedNote = if (firstImportedName == null) "" else " Opened $firstImportedName."
                                 app.setStatus(
-                                    "Imported ${result.glyphs.size} character(s) from the TrueType font.$openedNote$skippedNote",
+                                    "Imported ${inserted.size} character(s) from the TrueType font.$openedNote$skippedNote",
                                 )
                             } catch (e: Exception) {
                                 app.setStatus("Import failed: ${e.message}", true)
@@ -157,7 +164,8 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                         "Open a project (.json)" to { importProjectIntoApp() },
                         "Export the whole project" to {
                             scope.launch {
-                                val text = withContext(Dispatchers.IO) { storage.exportProjectText() }
+                                val unsaved = app.currentGlyphName?.let { it to app.toGlyph() }
+                                val text = withContext(Dispatchers.IO) { storage.exportProjectText(unsaved) }
                                 files.saveJson("morphont-project.json", text, { app.setStatus("Project exported.") }, { app.setStatus(it, true) })
                             }
                             Unit
@@ -188,7 +196,10 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                             )
                         },
                     ),
-                    onPointHit = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+                    onPointHit = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        runCatching { keyboardFocus.requestFocus() }
+                    },
                     touchScale = 1.35f,
                 )
             }
@@ -228,6 +239,9 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 }
                 initialized = true
             }
+            LaunchedEffect(initialized) {
+                if (initialized) runCatching { keyboardFocus.requestFocus() }
+            }
 
             // Debounces edits within one glyph, but flushes immediately -- instead of
             // losing it to the debounce's cancellation -- the moment the open glyph
@@ -236,10 +250,16 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 var saveJob: Job? = null
                 var pendingName: String? = null
                 var pendingGlyph: Glyph? = null
-                snapshotFlow { Triple(initialized, app.currentGlyphName, app.toGlyph()) }
-                    .collect { (ready, name, glyph) ->
+                var pendingEpoch = app.autosaveEpoch
+                snapshotFlow { Triple(initialized, app.autosaveEpoch, app.currentGlyphName to app.toGlyph()) }
+                    .collect { (ready, epoch, named) ->
                         if (!ready) return@collect
-                        if (name != pendingName) {
+                        val (name, glyph) = named
+                        if (epoch != pendingEpoch) {
+                            saveJob?.cancel()
+                            pendingName = null
+                            pendingGlyph = null
+                        } else if (name != pendingName) {
                             val outgoingName = pendingName
                             val outgoingGlyph = pendingGlyph
                             if (outgoingName != null && outgoingGlyph != null) {
@@ -247,13 +267,16 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                 withContext(Dispatchers.IO) { storage.saveGlyph(outgoingName, outgoingGlyph) }
                             }
                         }
+                        pendingEpoch = epoch
                         pendingName = name
                         pendingGlyph = glyph
                         if (name == null) return@collect
                         saveJob?.cancel()
                         saveJob = launch {
                             delay(ANDROID_AUTOSAVE_DEBOUNCE_MS)
-                            withContext(Dispatchers.IO) { storage.saveGlyph(name, glyph) }
+                            if (epoch == app.autosaveEpoch) withContext(Dispatchers.IO) {
+                                storage.saveGlyph(name, glyph)
+                            }
                         }
                     }
             }
@@ -277,7 +300,8 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
             }
 
 
-            Box(Modifier.fillMaxSize().background(Mono.ground).editorKeys(app)) {
+            Box(Modifier.fillMaxSize().background(Mono.ground)
+                .focusRequester(keyboardFocus).focusable().editorKeys(app)) {
                 if (app.currentGlyphName == null) {
                     WelcomeScreen(
                         app,

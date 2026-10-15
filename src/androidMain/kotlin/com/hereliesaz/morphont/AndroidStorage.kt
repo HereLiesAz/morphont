@@ -189,13 +189,21 @@ class AndroidStorage(context: Context) {
         writeGlyphFile(liveDirectory(), name, glyph)
     }
 
-    fun saveGlyphs(glyphs: Map<String, Glyph>) {
+    /** An imported font never silently overwrites an existing project glyph. */
+    fun saveNewGlyphs(glyphs: Map<String, Glyph>): List<String> {
         val directory = liveDirectory()
-        glyphs.forEach { (name, glyph) -> writeGlyphFile(directory, name, glyph) }
+        val existing = glyphs.keys.filter(::glyphExists)
+        for ((name, glyph) in glyphs) {
+            if (name !in existing) writeGlyphFile(directory, name, glyph)
+        }
+        return existing
     }
 
-    fun exportProjectText(): String =
-        ProjectCodec.encodeProject(projectSnapshot())
+    fun exportProjectText(unsaved: Pair<String, Glyph>? = null): String {
+        val project = projectSnapshot().toMutableMap()
+        unsaved?.let { (name, glyph) -> project[name] = glyph }
+        return ProjectCodec.encodeProject(project)
+    }
 
     fun importProjectText(text: String): List<String> {
         val project = ProjectCodec.decodeProject(text)

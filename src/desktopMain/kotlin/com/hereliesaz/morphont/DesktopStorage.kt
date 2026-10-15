@@ -31,6 +31,54 @@ internal fun desktopGlyphName(fileName: String): String? =
     }.getOrNull() else null
 
 /**
+ * Transactional directory swap, injectable for temp-directory regression tests.
+ * Failure while encoding/staging leaves the previous project untouched.
+ */
+internal fun replaceProjectDirectory(directory: File, project: Map<String, Glyph>): List<String> {
+    require(directory.isDirectory || directory.mkdirs()) { "Cannot create glyph storage directory" }
+    val parent = directory.parentFile.toPath()
+    val stage = Files.createTempDirectory(parent, "morphont-stage-")
+    val backup = Files.createTempDirectory(parent, "morphont-backup-")
+    Files.delete(backup)
+    var backedUp = false
+    var installed = false
+    try {
+        project.forEach { (name, glyph) ->
+            Files.writeString(stage.resolve(desktopGlyphFileName(name)), ProjectCodec.encodeGlyph(glyph))
+        }
+        Files.move(directory.toPath(), backup)
+        backedUp = true
+        try {
+            Files.move(stage, directory.toPath())
+            installed = true
+        } catch (failure: Exception) {
+            Files.move(backup, directory.toPath())
+            backedUp = false
+            throw failure
+        }
+        return project.keys.sorted()
+    } finally {
+        if (stage.toFile().exists()) stage.toFile().deleteRecursively()
+        if (installed && backedUp && backup.toFile().exists()) backup.toFile().deleteRecursively()
+    }
+}
+
+/** Crash recovery for a directory import interrupted between its two renames. */
+internal fun recoverProjectDirectory(base: File, glyphs: File) {
+    if (glyphs.exists()) return
+    val backup = base.listFiles().orEmpty()
+        .filter { it.isDirectory && it.name.startsWith("morphont-backup-") }
+        .maxByOrNull { it.lastModified() }
+    if (backup != null) Files.move(backup.toPath(), glyphs.toPath())
+}
+
+/** Merge the active working glyph into an export without writing it to storage. */
+internal fun projectForExport(saved: Map<String, Glyph>, unsaved: Pair<String, Glyph>?): Map<String, Glyph> =
+    saved.toMutableMap().apply {
+        unsaved?.let { (name, glyph) -> put(name, glyph) }
+    }
+
+/**
  * Desktop persistence: one JSON file per glyph (through [ProjectCodec], the
  * same contract as web and Android) in the OS's per-user app-data folder.
  * Writes go to a temp file and are renamed into place, so a crash mid-save
@@ -45,7 +93,11 @@ object DesktopStorage {
             os.contains("mac") -> File(home, "Library/Application Support/Morphont")
             else -> File(System.getenv("XDG_DATA_HOME") ?: "$home/.local/share", "morphont")
         }
-        File(base, "glyphs").apply { mkdirs() }
+        val glyphs = File(base, "glyphs")
+        // Recover the previous project if the process died between the two
+        // directory renames of a project import.
+        recoverProjectDirectory(base, glyphs)
+        glyphs.apply { mkdirs() }
     }
 
     private fun fileFor(name: String) = File(dir, desktopGlyphFileName(name))
@@ -60,27 +112,41 @@ object DesktopStorage {
 
     fun saveGlyph(name: String, glyph: Glyph) {
         val target = fileFor(name)
-        val tmp = File(dir, target.name + ".tmp")
-        tmp.writeText(ProjectCodec.encodeGlyph(glyph))
+        // Unique temp files make simultaneous imports/autosaves safe, unlike
+        // the shared <glyph>.json.tmp filename.
+        val temp = Files.createTempFile(dir.toPath(), "morphont-glyph-", ".tmp")
         try {
-            Files.move(tmp.toPath(), target.toPath(),
-                StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
-            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            Files.writeString(temp, ProjectCodec.encodeGlyph(glyph))
+            try {
+                Files.move(temp, target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                Files.move(temp, target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            Files.deleteIfExists(temp)
         }
     }
 
-    fun saveGlyphs(glyphs: Map<String, Glyph>) = glyphs.forEach { (n, g) -> saveGlyph(n, g) }
-
-    fun exportProjectText(): String = ProjectCodec.encodeProject(listGlyphNames().associateWith { loadGlyph(it) ?: Glyph() })
-
-    /** Replaces the whole project with [text]'s glyphs; returns their names. */
-    fun importProjectText(text: String): List<String> {
-        val project = ProjectCodec.decodeProject(text)
-        dir.listFiles().orEmpty().filter { it.name.endsWith(".json") }.forEach { it.delete() }
-        saveGlyphs(project)
-        return listGlyphNames()
+    /** Never overwrite an existing glyph when importing another font. */
+    fun saveNewGlyphs(glyphs: Map<String, Glyph>): List<String> {
+        val collisions = glyphs.keys.filter(::glyphExists)
+        glyphs.forEach { (name, glyph) ->
+            if (name !in collisions) saveGlyph(name, glyph)
+        }
+        return collisions
     }
+
+    fun exportProjectText(unsaved: Pair<String, Glyph>? = null): String {
+        val project = listGlyphNames().associateWith { name ->
+            loadGlyph(name) ?: error("Cannot export unreadable glyph: $name")
+        }.toMutableMap()
+        return ProjectCodec.encodeProject(projectForExport(project, unsaved))
+    }
+
+    /** Decoding finishes before the live directory is touched. */
+    fun importProjectText(text: String): List<String> =
+        replaceProjectDirectory(dir, ProjectCodec.decodeProject(text))
 
     /**
      * Select either a .ufo directory or a .ufoz ZIP; JFileChooser can select

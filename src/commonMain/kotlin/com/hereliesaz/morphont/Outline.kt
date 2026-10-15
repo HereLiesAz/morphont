@@ -241,10 +241,10 @@ fun deleteSelection(g: GlyphCorner, selection: Set<PointKey>): GlyphCorner =
 /**
  * Line <-> curve for the selection. The segments acted on are those with
  * both end nodes selected or one of their arms selected; failing that,
- * every segment touching a selected node. If any of them is straight they
- * all become curves (arms at 1/3 and 2/3 of the chord, so the shape doesn't
- * move); otherwise they all become straight. Returns the new glyph and the
- * selection remapped onto the same nodes.
+ * every segment touching a selected node. Every editor segment has handles,
+ * even lines; identify a line by its collinear 1/3 and 2/3 controls.
+ * Convert lines into visibly bowed curves and existing curves into lines.
+ * Returns the new glyph and the selection remapped onto the same nodes.
  */
 fun toggleCurveSelection(g: GlyphCorner, selection: Set<PointKey>): Pair<GlyphCorner, Set<PointKey>> {
     val targets = HashMap<Int, Set<Int>>() // contour -> the `from` node of each segment acted on
@@ -259,7 +259,22 @@ fun toggleCurveSelection(g: GlyphCorner, selection: Set<PointKey>): Pair<GlyphCo
         if (picked.isEmpty()) picked = segs.filter { selected(it.from) || selected(it.to) }
         if (picked.isNotEmpty()) targets[ci] = picked.map { it.from }.toSet()
     }
-    val anyLine = targets.any { (ci, froms) -> segmentsOf(g.contours[ci].points).any { it.from in froms && it.arms == null } }
+    fun straightSegment(points: List<Pt>, segment: Seg): Boolean {
+        val controls = segment.arms ?: return true
+        val start = points[segment.from]
+        val end = points[segment.to]
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        val eps = 0.001f
+        return kotlin.math.abs(controls.first.x - (start.x + dx / 3f)) <= eps &&
+            kotlin.math.abs(controls.first.y - (start.y + dy / 3f)) <= eps &&
+            kotlin.math.abs(controls.second.x - (start.x + dx * 2f / 3f)) <= eps &&
+            kotlin.math.abs(controls.second.y - (start.y + dy * 2f / 3f)) <= eps
+    }
+    val anyLine = targets.any { (ci, froms) ->
+        val points = g.contours[ci].points
+        segmentsOf(points).any { it.from in froms && straightSegment(points, it) }
+    }
     val out = g.deepCopy()
     val newSel = selection.filter { it.first !in targets }.toMutableSet()
     for ((ci, froms) in targets) {
@@ -268,10 +283,17 @@ fun toggleCurveSelection(g: GlyphCorner, selection: Set<PointKey>): Pair<GlyphCo
             when {
                 s.from !in froms -> s
                 !anyLine -> Seg(s.from, s.to, null)
-                s.arms != null -> s
+                !straightSegment(pts, s) -> s
                 else -> {
                     val a = pts[s.from]; val b = pts[s.to]
-                    Seg(s.from, s.to, Pt(a.x + (b.x - a.x) / 3f, a.y + (b.y - a.y) / 3f, false) to Pt(a.x + (b.x - a.x) * 2f / 3f, a.y + (b.y - a.y) * 2f / 3f, false))
+                    val vx = b.x - a.x; val vy = b.y - a.y
+                    // A collinear cubic is still a line. Give the Curve tool a
+                    // meaningful initial bow, proportional to segment length.
+                    val liftX = -vy * 0.2f
+                    val liftY = vx * 0.2f
+                    Seg(s.from, s.to,
+                        Pt(a.x + vx / 3f + liftX, a.y + vy / 3f + liftY, false) to
+                        Pt(a.x + vx * 2f / 3f + liftX, a.y + vy * 2f / 3f + liftY, false))
                 }
             }
         }

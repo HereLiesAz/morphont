@@ -8,11 +8,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.isTertiaryPressed
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isAltPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -157,6 +160,19 @@ suspend fun PointerInputScope.handleAnchorGestures(
         val startPos = down.position
         down.consume()
 
+        // Middle/right mouse drag pans regardless of the current tool. It must
+        // run before the read-only reduction and all selection hit tests.
+        if (down.type == PointerType.Mouse &&
+            (event.buttons.isTertiaryPressed || event.buttons.isSecondaryPressed)
+        ) {
+            var last = startPos
+            followOrPinch(f, down.id, 0.5f) { pos, _ ->
+                panBy(f, pos - last)
+                last = pos
+            }
+            return@awaitEachGesture
+        }
+
         // Node reduction preview is read-only: only zoom/pan.
         if (app.reduction != null) {
             followOrPinch(f, down.id, f.dragStartSlopPx) { _, _ -> }
@@ -195,7 +211,13 @@ suspend fun PointerInputScope.handleAnchorGestures(
 
         // Selection transform box: corner squares scale, the knob rotates.
         val sh = f.selectionHandles
-        if (sh != null) {
+        // Selection handles have generous touch targets and can overlap real
+        // nodes. A hit on a real point always wins over the transform box.
+        val pointUnderPointer = hitTestPoint(
+            target.glyph, f.mapper, startPos, radiusPx = f.hitRadiusPx,
+            nodeOnly = app.nodeMoveMode,
+        )
+        if (sh != null && pointUnderPointer == null) {
             val rotateHit = (startPos - sh.rotate).getDistance() <= f.hitRadiusPx * 1.3f
             val cornerHit = if (rotateHit) -1 else sh.corners.indexOfFirst { (startPos - it).getDistance() <= f.hitRadiusPx * 1.3f }
             if (rotateHit || cornerHit >= 0) {
@@ -269,9 +291,15 @@ suspend fun PointerInputScope.handleAnchorGestures(
             return@awaitEachGesture
         }
 
-        val hitKey = hitTestPoint(target.glyph, f.mapper, startPos, radiusPx = f.hitRadiusPx, nodeOnly = app.nodeMoveMode)
+        val hitKey = pointUnderPointer
         if (hitKey != null) {
             onPointHit()
+            if (event.keyboardModifiers.isShiftPressed && !app.nodeMoveMode) {
+                target.selection = if (hitKey in target.selection)
+                    target.selection - hitKey else target.selection + hitKey
+                followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
+                return@awaitEachGesture
+            }
             if (hitKey !in target.selection) target.selection = setOf(hitKey)
             val hitNode = target.glyph.contours[hitKey.first].points[hitKey.second].onCurve
             // Alt-click on a node toggles it between smooth (mirrored arms) and corner.
@@ -316,7 +344,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 abs((if (g.vertical) startPos.x else startPos.y) - c) <= f.hitRadiusPx * 0.6f
             }
             if (gi >= 0) {
-                val g = app.guides.removeAt(gi)
+                val g = app.guides[gi]
                 feedback.guideDraft = g
                 dragGuide(f, g.vertical, feedback, down.id, existing = g)
                 return@awaitEachGesture
@@ -330,7 +358,8 @@ suspend fun PointerInputScope.handleAnchorGestures(
         }
 
         // Empty space: rubber band (or pinch on touch).
-        target.selection = emptySet()
+        val preserved = if (event.keyboardModifiers.isShiftPressed) target.selection else emptySet()
+        if (preserved.isEmpty()) target.selection = emptySet()
         var rubberBanding = false
         val completed = followOrPinch(f, down.id, f.rubberBandSlopPx) { current, _ ->
             rubberBanding = true
@@ -346,7 +375,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
                     if (pos.x in x0..x1 && pos.y in y0..y1) newSel.add(ci to pi)
                 }
             }
-            target.selection = newSel
+            target.selection = preserved + newSel
         }
         if (rubberBanding || !completed) feedback.rubberRect = null
     }
@@ -429,13 +458,11 @@ private suspend fun AwaitPointerEventScope.dragGuide(
     val end = last
     val draft = feedback.guideDraft
     feedback.guideDraft = null
-    if (end == null) {
-        existing?.let { f.app.guides.add(it) } // a tap on a guide leaves it alone
-        return
-    }
+    if (end == null) return // tapping an existing guide changes nothing
     // Releasing back over a ruler deletes the guide, like most editors.
     val overRuler = f.app.view.showRulers && (end.x < f.rulerPx || end.y < f.rulerPx)
-    if (!overRuler && draft != null) f.app.guides.add(draft)
+    if (overRuler) f.app.replaceGuide(existing, null)
+    else if (draft != null) f.app.replaceGuide(existing, draft)
 }
 
 /** Zooms the shared view by [factor], keeping the font point under [anchor] fixed on screen. */
