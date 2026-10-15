@@ -5,6 +5,52 @@ import kotlin.test.assertEquals
 
 class EditorStateTest {
     @Test
+    fun measurementsAndNodeActionsAreOnByDefault() {
+        val app = AppState()
+        assertEquals(true, app.view.showMeasure)
+        assertEquals(true, app.showNodeTools)
+    }
+
+    @Test
+    fun simplifyNeverShowsMoreNodesThanItStartedWith() {
+        val removals = (0 until 7).map { i -> Removal(0 to (i * 3), i.toFloat()) }
+        val preview = ReductionSession(listOf("regular"), removals, 10)
+        assertEquals(10, preview.remainingNodes)
+        assertEquals(3, preview.minimumNodes)
+        preview.removeCount = 3
+        assertEquals(7, preview.remainingNodes)
+        assertEquals(3, preview.removed.size)
+        preview.removeCount = removals.size
+        assertEquals(3, preview.remainingNodes)
+        preview.removeCount = -5
+        assertEquals(10, preview.remainingNodes)
+        assertEquals(0, preview.removed.size)
+        preview.removeCount = 200
+        assertEquals(3, preview.remainingNodes)
+        assertEquals(removals.size, preview.removed.size)
+    }
+
+    @Test
+    fun simplifyCountTracksActualOnCurveNodesAcrossItsRange() {
+        val app = AppState()
+        val glyph = Glyph()
+        glyph.corners["regular"] = GlyphCorner(500f, mutableListOf(
+            ContourData((0 until 10).map { i -> Pt(i * 25f, if (i % 2 == 0) 0f else 80f, true) }.toMutableList()),
+        ))
+        app.loadGlyph("zigzag", glyph)
+        app.startReduction()
+        val preview = requireNotNull(app.reduction)
+        assertEquals(10, preview.totalPoints)
+        for (count in 0..preview.order.size) {
+            preview.removeCount = count
+            val actual = withoutPoints(app.anchors.getValue("regular").glyph, preview.removed)
+                .contours.sumOf { contour -> contour.points.count { it.onCurve } }
+            assertEquals(actual, preview.remainingNodes)
+            assertEquals(10 - count, preview.remainingNodes)
+        }
+    }
+
+    @Test
     fun undoRevertsOnlyTheMostRecentEdit() {
         val state = AnchorState(GlyphCorner())
         state.startNewContour()

@@ -1,6 +1,13 @@
 package com.hereliesaz.morphont
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -291,5 +298,68 @@ fun HairSlider(
         drawLine(Mono.borderBright, androidx.compose.ui.geometry.Offset(pad, y), androidx.compose.ui.geometry.Offset(size.width - pad, y), 1.dp.toPx())
         drawLine(if (enabled) Mono.ink else Mono.inkFaint, androidx.compose.ui.geometry.Offset(pad, y), androidx.compose.ui.geometry.Offset(x, y), 1.5.dp.toPx())
         drawCircle(if (enabled) Mono.ink else Mono.inkFaint, radius = 6.dp.toPx(), center = androidx.compose.ui.geometry.Offset(x, y))
+    }
+}
+
+/**
+ * Scrollbar shared by desktop, browser and phone layouts. Track taps move
+ * directly; dragging the thumb updates the same [ScrollState] used by wheel,
+ * trackpad and touch scrolling. Hidden when the content fits.
+ */
+@Composable
+fun Scrollbar(state: ScrollState, vertical: Boolean, modifier: Modifier = Modifier) {
+    if (state.maxValue <= 0) return
+    val scope = rememberCoroutineScope()
+    val max = state.maxValue
+    Canvas(modifier
+        .pointerInput(state, vertical, max) {
+            var thumbStart = 0f
+            var usable = 0f
+            detectDragGestures(
+                onDragStart = { down ->
+                    val length = if (vertical) size.height.toFloat() else size.width.toFloat()
+                    val thumb = (length * length / (length + max)).coerceIn(24.dp.toPx().coerceAtMost(length), length)
+                    usable = (length - thumb).coerceAtLeast(1f)
+                    val current = (state.value.toFloat() / max) * usable
+                    val pos = if (vertical) down.y else down.x
+                    thumbStart = (pos - thumb / 2f).coerceIn(0f, usable)
+                    if (pos in current..(current + thumb)) thumbStart = current
+                    scope.launch { state.scrollTo((thumbStart / usable * max).roundToInt()) }
+                },
+            ) { change, delta ->
+                change.consume()
+                val motion = if (vertical) delta.y else delta.x
+                thumbStart = (thumbStart + motion).coerceIn(0f, usable)
+                scope.launch { state.scrollTo((thumbStart / usable * max).roundToInt()) }
+            }
+        }
+        .pointerInput(state, vertical, max) {
+            detectTapGestures { down ->
+                val length = if (vertical) size.height.toFloat() else size.width.toFloat()
+                val thumb = (length * length / (length + max)).coerceIn(24.dp.toPx().coerceAtMost(length), length)
+                val usable = (length - thumb).coerceAtLeast(1f)
+                val pos = if (vertical) down.y else down.x
+                scope.launch {
+                    state.scrollTo(((pos - thumb / 2f).coerceIn(0f, usable) / usable * max).roundToInt())
+                }
+            }
+        }
+    ) {
+        val length = if (vertical) size.height else size.width
+        val cross = if (vertical) size.width else size.height
+        val thumb = (length * length / (length + max)).coerceIn(24.dp.toPx().coerceAtMost(length), length)
+        val start = (length - thumb) * state.value.toFloat() / max
+        drawRoundRect(
+            color = Mono.borderBright.copy(alpha = 0.55f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(cross / 2),
+        )
+        drawRoundRect(
+            color = Mono.inkDim,
+            topLeft = if (vertical) androidx.compose.ui.geometry.Offset(0f, start)
+                else androidx.compose.ui.geometry.Offset(start, 0f),
+            size = if (vertical) androidx.compose.ui.geometry.Size(cross, thumb)
+                else androidx.compose.ui.geometry.Size(thumb, cross),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(cross / 2),
+        )
     }
 }

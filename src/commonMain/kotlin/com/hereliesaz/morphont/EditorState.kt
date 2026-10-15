@@ -292,7 +292,7 @@ class ViewSettings {
     var showMetrics by mutableStateOf(true)
     var showRulers by mutableStateOf(true)
     var showGuides by mutableStateOf(true)
-    var showMeasure by mutableStateOf(false)
+    var showMeasure by mutableStateOf(true)
     var showGhosts by mutableStateOf(true)
     var snap by mutableStateOf(true)
 
@@ -312,8 +312,11 @@ class ViewSettings {
  */
 class ReductionSession(val anchorNames: List<String>, val order: List<Removal>, val totalPoints: Int) {
     var removeCount by mutableStateOf(0)
-    val removed: Set<PointKey> get() = order.take(removeCount).map { it.key }.toSet()
-    val error: Float get() = order.take(removeCount).maxOfOrNull { it.error } ?: 0f
+    val actualRemoved: Int get() = removeCount.coerceIn(0, order.size)
+    val remainingNodes: Int get() = totalPoints - actualRemoved
+    val minimumNodes: Int get() = totalPoints - order.size
+    val removed: Set<PointKey> get() = order.take(actualRemoved).map { it.key }.toSet()
+    val error: Float get() = order.take(actualRemoved).maxOfOrNull { it.error } ?: 0f
 }
 
 /** Overall application state: every axis's anchors, preview and UI selections. */
@@ -364,6 +367,9 @@ class AppState {
 
     /** Move on-curve nodes with their handles instead of editing individual handles. */
     var nodeMoveMode by mutableStateOf(false)
+
+    /** Restore the pointer's contextual actions at any time from the tool rail/dock. */
+    var showNodeTools by mutableStateOf(true)
 
     /** Whether the suggested-edits row is expanded (it's behind a button, not always on screen). */
     var showSuggestions by mutableStateOf(false)
@@ -475,6 +481,7 @@ class AppState {
         reduction = null
         activeAnchor = "regular"
         nodeMoveMode = false
+        showNodeTools = true
         setStatus("Loaded \"$name\".")
     }
 

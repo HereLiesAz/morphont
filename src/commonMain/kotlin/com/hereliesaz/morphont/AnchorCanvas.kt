@@ -357,7 +357,7 @@ private fun DrawScope.drawGuide(g: Guide, map: (Float, Float) -> Offset, color: 
 /**
  * Nodes and their arms. A smooth (mirrored) node is a circle, a corner node
  * a square; selected ones are filled, others outlined. Arm endpoints are
- * small diamonds, joined only to their own node.
+ * small X marks, joined only to their own node.
  */
 private fun DrawScope.drawNodes(glyph: GlyphCorner, selection: Set<PointKey>, map: (Float, Float) -> Offset, uiScale: Float, dim: Boolean) {
     val hair = uiScale.coerceAtLeast(1f)
@@ -393,17 +393,15 @@ private fun DrawScope.drawNodes(glyph: GlyphCorner, selection: Set<PointKey>, ma
                     drawRect(nodeRing.copy(alpha = alpha), topLeft = center - Offset(h, h), size = Size(2 * h, 2 * h), style = Stroke(width = 1.5f * uiScale))
                 }
             } else {
-                // Arm endpoints: smaller diamonds, never mistaken for either node kind.
-                val r = (if (selected) 4.6f else 3.4f) * uiScale
-                val d = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(center.x, center.y - r); lineTo(center.x + r, center.y)
-                    lineTo(center.x, center.y + r); lineTo(center.x - r, center.y); close()
-                }
-                if (selected) drawPath(d, selectedFill)
-                else {
-                    drawPath(d, bgColor)
-                    drawPath(d, offCurveColor.copy(alpha = alpha), style = Stroke(width = 1.3f * uiScale))
-                }
+                // Off-curve handles are Xs; corners remain squares and smooth nodes circles.
+                val radius = (if (selected) 4.8f else 3.7f) * uiScale
+                val ink = if (selected) selectedFill else offCurveColor.copy(alpha = alpha)
+                val a = Offset(radius, radius)
+                val b = Offset(radius, -radius)
+                drawLine(bgColor, center - a, center + a, strokeWidth = 3.6f * uiScale)
+                drawLine(bgColor, center - b, center + b, strokeWidth = 3.6f * uiScale)
+                drawLine(ink, center - a, center + a, strokeWidth = 1.7f * uiScale)
+                drawLine(ink, center - b, center + b, strokeWidth = 1.7f * uiScale)
             }
         }
     }

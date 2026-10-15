@@ -7,6 +7,7 @@ import org.jetbrains.compose.resources.painterResource
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,6 +37,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,6 +45,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import kotlinx.coroutines.launch
+import kotlin.math.exp
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontStyle
@@ -145,6 +162,7 @@ private fun rememberSuggestions(app: AppState): List<Suggestion> {
 
 private fun selectTool(app: AppState) {
     app.nodeMoveMode = false
+    app.showNodeTools = true
     val t = app.editTarget(app.activeAnchor)
     if (t.drawingContourIndex != null) t.finishContour()
 }
@@ -198,8 +216,9 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconAction(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode, size = 44)
-            IconAction(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 44, enabled = !(app.activeGhost != null && app.ghostTransformMode))
-            IconAction(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = 44, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+            IconAction(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+            IconAction(MIcons.Nodes, "Show or hide node tools", { app.showNodeTools = !app.showNodeTools }, selected = app.showNodeTools, size = 42)
+            IconAction(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
             IconAction(MIcons.Guides, "Guides", { sheet = Sheet.GUIDES }, size = 48)
             IconAction(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = 48)
             IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 48, enabled = app.activeGhost == null)
@@ -215,12 +234,16 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
             scrimColor = Color.Black.copy(alpha = 0.55f),
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         ) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 28.dp)) {
-                when (s) {
-                    Sheet.GUIDES -> GuidesSection(app)
-                    Sheet.GHOSTS -> GhostsSection(app, host)
-                    Sheet.PREVIEW -> PreviewSection(app, previewHeight = 280)
+            Box(Modifier.fillMaxWidth()) {
+                val sheetScroll = rememberScrollState()
+                Column(Modifier.fillMaxWidth().verticalScroll(sheetScroll).padding(start = 20.dp, end = 20.dp, bottom = 28.dp)) {
+                    when (s) {
+                        Sheet.GUIDES -> GuidesSection(app)
+                        Sheet.GHOSTS -> GhostsSection(app, host)
+                        Sheet.PREVIEW -> PreviewSection(app, previewHeight = 280)
+                    }
                 }
+                Scrollbar(sheetScroll, true, Modifier.align(Alignment.CenterEnd).width(7.dp).fillMaxHeight())
             }
         }
     }
@@ -243,7 +266,7 @@ private fun WideEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit)
                 Text("Morphont", fontSize = 22.sp, fontStyle = FontStyle.Italic, color = Mono.ink)
             }
             GlyphTabs(app, host, openBrowser, Modifier.weight(1f))
-            Caps("${(app.view.zoom * 100).toInt()}%")
+            ZoomControl(app.view)
             IconAction(MIcons.Undo, "Undo", { app.undo() }, size = 40)
             MonoButton(onClick = openBrowser, selected = true) { Text("Glyphs & file", fontSize = 13.sp) }
         }
@@ -252,24 +275,28 @@ private fun WideEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit)
             Column(Modifier.width(60.dp).fillMaxHeight().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 IconAction(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode, size = 42)
                 IconAction(MIcons.Move, "Move node (M)", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+                IconAction(MIcons.Nodes, "Show or hide node tools", { app.showNodeTools = !app.showNodeTools }, selected = app.showNodeTools, size = 42)
                 IconAction(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
-                IconAction(MIcons.Measure, "Measure", { app.view.showMeasure = !app.view.showMeasure }, selected = app.view.showMeasure, size = 42)
                 IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 42, enabled = app.activeGhost == null)
                 IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 42, enabled = app.activeGhost == null)
                 SuggestionsButton(app, suggestions, size = 42)
-                IconAction(MIcons.Fit, "Fit (0)", { app.view.resetView() }, size = 42)
+                IconAction(MIcons.ResetView, "Reset zoom and pan (0)", { app.view.resetView() }, size = 42)
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
             Stage(app, host, 1f, Modifier.weight(1f).fillMaxHeight(), suggestions, bottomInset = 18) {
                 AnchorFilmstrip(app)
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
-            Column(Modifier.width(360.dp).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                Box(Modifier.padding(20.dp)) { PreviewSection(app) }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
-                Box(Modifier.padding(20.dp)) { GhostsSection(app, host) }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
-                Box(Modifier.padding(20.dp)) { GuidesSection(app) }
+            Box(Modifier.width(360.dp).fillMaxHeight()) {
+                val inspectorScroll = rememberScrollState()
+                Column(Modifier.fillMaxSize().verticalScroll(inspectorScroll).padding(end = 8.dp)) {
+                    Box(Modifier.padding(20.dp)) { PreviewSection(app) }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
+                    Box(Modifier.padding(20.dp)) { GhostsSection(app, host) }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
+                    Box(Modifier.padding(20.dp)) { GuidesSection(app) }
+                }
+                Scrollbar(inspectorScroll, true, Modifier.align(Alignment.CenterEnd).width(8.dp).fillMaxHeight())
             }
         }
     }
@@ -278,22 +305,97 @@ private fun WideEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit)
 @Composable
 private fun GlyphTabs(app: AppState, host: EditorHost, openBrowser: () -> Unit, modifier: Modifier) {
     val names = remember(app.currentGlyphName, app.glyphNames) { host.listGlyphNames() }
-    // The open glyph first, then its neighbours in the project's order.
-    val i = names.indexOf(app.currentGlyphName).coerceAtLeast(0)
-    val shown = (names.drop(i) + names.take(i)).take(10)
-    Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-        for (n in shown) {
-            val current = n == app.currentGlyphName
-            Box(
-                Modifier.height(34.dp).widthIn(min = 38.dp).clip(RoundedCornerShape(10.dp))
-                    .background(if (current) Mono.panelHeader else Color.Transparent)
-                    .clickable { host.openGlyph(n) }.padding(horizontal = 10.dp),
-                contentAlignment = Alignment.Center,
-            ) { Text(displayGlyphName(n), fontSize = 20.sp, color = if (current) Mono.ink else Mono.inkDim, maxLines = 1) }
+    val index = names.indexOf(app.currentGlyphName).coerceAtLeast(0)
+    val shown = names.drop(index) + names.take(index)
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        IconAction(MIcons.ChevronLeft, "Scroll glyphs left",
+            { scope.launch { scroll.animateScrollTo((scroll.value - 280).coerceAtLeast(0)) } },
+            enabled = scroll.value > 0, size = 28)
+        Box(Modifier.weight(1f)) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(scroll).padding(bottom = 9.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                for (name in shown) {
+                    val active = name == app.currentGlyphName
+                    Box(
+                        Modifier.height(34.dp).widthIn(min = 38.dp).clip(RoundedCornerShape(10.dp))
+                            .background(if (active) Mono.panelHeader else Color.Transparent)
+                            .clickable { host.openGlyph(name) }.padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(displayGlyphName(name), fontSize = 20.sp, color = if (active) Mono.ink else Mono.inkDim, maxLines = 1)
+                    }
+                }
+            }
+            Scrollbar(scroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(7.dp))
         }
-        Box(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = openBrowser).padding(horizontal = 10.dp, vertical = 8.dp)) {
-            Caps("All ${names.size}")
-        }
+        IconAction(MIcons.ChevronRight, "Scroll glyphs right",
+            { scope.launch { scroll.animateScrollTo((scroll.value + 280).coerceAtMost(scroll.maxValue)) } },
+            enabled = scroll.value < scroll.maxValue, size = 28)
+        Box(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = openBrowser)
+            .padding(horizontal = 10.dp, vertical = 8.dp)) { Caps("All ${names.size}") }
+    }
+}
+
+/**
+ * Click to enter a percentage; drag left/right to change it continuously.
+ * Shares the editor's canonical zoom value and the same 10–4000% limits as
+ * the mouse wheel and shortcut controls.
+ */
+@Composable
+private fun ZoomControl(view: ViewSettings) {
+    var editing by remember { mutableStateOf(false) }
+    var input by remember { mutableStateOf("") }
+    val inputFocus = remember { FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(editing) {
+        if (editing) inputFocus.requestFocus()
+    }
+    fun commit() {
+        val next = input.trim().removeSuffix("%").trim().toFloatOrNull()
+        if (next != null && next.isFinite()) view.zoom = (next / 100f).coerceIn(0.1f, 40f)
+        editing = false
+    }
+    if (editing) {
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it },
+            modifier = Modifier.width(92.dp).focusRequester(inputFocus).onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) false
+                else when (event.key) {
+                    Key.Enter -> { commit(); true }
+                    Key.Escape -> { editing = false; true }
+                    else -> false
+                }
+            },
+            singleLine = true,
+            suffix = { Text("%") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { commit() }),
+        )
+    } else {
+        Text(
+            "${(view.zoom * 100f).toInt()}%",
+            color = Mono.ink, fontSize = 14.sp,
+            modifier = Modifier
+                .pointerInput(view) {
+                    var original = 1f
+                    var movement = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { original = view.zoom; movement = 0f },
+                        onHorizontalDrag = { change, dx ->
+                            movement += dx
+                            view.zoom = (original * exp(movement / 180f)).coerceIn(0.1f, 40f)
+                            change.consume()
+                        },
+                    )
+                }
+                .clickable { input = (view.zoom * 100f).toInt().toString(); editing = true }
+                .padding(horizontal = 8.dp, vertical = 12.dp),
+        )
     }
 }
 
@@ -305,8 +407,9 @@ private fun GlyphTabs(app: AppState, host: EditorHost, openBrowser: () -> Unit, 
 fun WelcomeScreen(app: AppState, host: EditorHost, actions: List<Pair<String, () -> Unit>>, modifier: Modifier = Modifier) {
     var name by remember { mutableStateOf("") }
     Box(modifier.fillMaxSize().background(Mono.ground).statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.Center) {
+        val welcomeScroll = rememberScrollState()
         Column(
-            Modifier.widthIn(max = 520.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp),
+            Modifier.widthIn(max = 520.dp).fillMaxWidth().verticalScroll(welcomeScroll).padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             androidx.compose.foundation.Image(
@@ -351,5 +454,6 @@ fun WelcomeScreen(app: AppState, host: EditorHost, actions: List<Pair<String, ()
             if (app.status.isNotEmpty()) Text(app.status, fontSize = 13.sp, color = if (app.statusIsError) Mono.error else Mono.inkDim)
             Spacer(Modifier.height(8.dp))
         }
+        Scrollbar(welcomeScroll, true, Modifier.align(Alignment.CenterEnd).width(8.dp).fillMaxHeight())
     }
 }

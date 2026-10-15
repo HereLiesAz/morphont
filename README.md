@@ -148,8 +148,24 @@ so anchors can then be reshaped without adding or removing points.
   removal and ranks by worst geometric drift across compatible anchors.
   Normal reduction retains three nodes per contour. At the extreme end of the
   slider it can discard smaller contours and their counters, leaving three
-  on-curve nodes in the whole glyph. Handles never count as nodes. The preview
-  shows the lost geometry before Apply, which remains undoable.
+  on-curve nodes in the whole glyph. Handles never count as nodes. The displayed
+  `initial → remaining` count is clamped to the planned number of deletions,
+  so moving the slider right cannot increase the count. The preview shows
+  the lost geometry before Apply, which remains undoable.
+- **Pointer actions.** The contextual node toolbar remains available even
+  with nothing selected (Select All is offered), and the **Node tools**
+  button in the phone dock or desktop rail restores it after closing. Its
+  overflowing actions have a visible, draggable horizontal scrollbar.
+- **Guides and measurement.** Measurement overlays are on by default;
+  their toggle remains under **Guides**, rather than duplicating a tool in
+  the desktop rail.
+- **Navigation.** Desktop glyph tabs scroll by trackpad/wheel, the visible
+  scrollbar, or left/right glyph-strip buttons. The inspector, glyph
+  pickers, welcome page and phone sheets also show draggable scrollbars
+  when their contents overflow. The zoom percentage in the desktop header
+  is directly editable (Enter to confirm) or draggable left/right
+  (10–4000%). Reset View (0) uses a circular reset icon and resets pan
+  and zoom together.
 - **Node Move (M).** The dedicated move tool selects on-curve nodes only.
   Even grabbing a nearby handle moves its owning node and both handles rather
   than reshaping a control point. Select (V) returns to normal point/handle
@@ -259,7 +275,7 @@ so anchors can then be reshaped without adding or removing points.
 - `AnchorCanvas.kt` / `Panels.kt` / `Controls.kt` -- the canvas renderer, preview/thumbnail canvases, and the floating parts (selection pill, ghost bar, simplify card, axis strip, filmstrip, inspector sections, dialogs, keyboard shortcuts)
 - `Icons.kt` -- the monoline icon set
 - `Suggestions.kt` -- the suggested-edits engine (outline offset, stem measurement, and each suggestion)
-- `Theme.kt` -- the palette and primitives (`MonoButton`, `IconAction`, `Caps`, `floating`, `HairSlider`), built on `HereLiesAz/convey` (see below)
+- `Theme.kt` -- palette and primitives (`MonoButton`, `IconAction`, `Caps`, `floating`, `HairSlider`, draggable `Scrollbar`), built on `HereLiesAz/convey` (see below)
 - `desktopMain/` -- desktop window, per-user storage (Windows-safe glyph filenames), UFO/ZIP import and platform file pickers
 - `Storage.kt` -- IndexedDB persistence (one record per glyph) + JSON export/import; migrates a legacy single-blob `localStorage` project automatically on first successful open
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point
@@ -278,21 +294,23 @@ of the way until needed.
 - **Phone:** glyph name and node count up top, with Copy to anchors, Undo and
   the glyph browser; directly beneath, the **anchor filmstrip** (the picked
   axis's three anchors as live thumbnails -- tap one to edit it). A tool
-  **dock** (Select, Pen, Guides, Ghosts, Simplify) at the bottom, and a
-  picture-in-picture Preview that opens a sheet with the sliders.
+  **dock** (Select, Move node, Node tools, Pen, Guides, Ghosts, Simplify)
+  at the bottom, and a picture-in-picture Preview that opens a sheet
+  with the sliders.
 - **Gestures:** two-finger pinch zooms, two-finger drag pans; one finger
   edits. Mouse wheel zooms on desktop.
 - **Wide screens (web ≥900dp, tablets):** glyph tabs, a tool rail, an
   **anchor filmstrip** of live thumbnails under the canvas, and an inspector
   column (Preview + sliders, Ghosts, Guides).
-- **Floating, contextual:** the selection pill (copy, cut, paste,
-  curve/straight, corner/smooth, select all, delete, with a size readout) only while something is selected;
-  the ghost bar only while placing a ghost; the Simplify card only while
-  simplifying; status as a transient toast.
+- **Floating, contextual:** the pointer's node-action pill stays recoverable
+  from the tool rail/dock. Actions requiring a selection appear when one
+  exists; the empty-selection state provides Select All. The ghost bar
+  appears only while placing a ghost; the Simplify card only during a
+  preview; status appears as a transient toast.
 - **Monochrome.** Hierarchy is carried by brightness: the selected node, the
   active tool and the anchor being edited are the whitest things on screen.
   Smooth nodes are circles, corner nodes squares (filled when selected),
-  arm ends small diamonds. The palette's one
+  off-curve handle tips are X marks. The palette's one
   colour, `Mono.error`, is kept for errors.
 - **Own parts:** a monoline icon set (`Icons.kt`, no icon library) and a
   hairline slider (`HairSlider`) in place of Material's thick one.

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -138,41 +139,50 @@ fun SectionHead(title: String, trailing: @Composable () -> Unit = {}) {
 
 // ------------------------------------------------------- floating overlays
 
-/** Actions on the current selection, floating over the canvas only while something is selected (or pasteable). */
+/** Recoverable pointer actions. Selection-dependent controls appear when points are selected. */
 @Composable
 fun SelectionPill(app: AppState, modifier: Modifier = Modifier) {
     val t = app.commandTarget
     if (app.reduction != null || (app.activeGhost != null && app.ghostTransformMode)) return
+    if (!app.showNodeTools || t.drawingContourIndex != null) return
     val has = t.selection.isNotEmpty()
-    if (!has && app.clipboard == null) return
-    Row(modifier.floating().height(44.dp).padding(horizontal = 4.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-        if (has) {
-            IconAction(MIcons.Copy, "Copy", { app.copySelection() }, size = 40)
-            IconAction(MIcons.Cut, "Cut", { app.cutSelection() }, size = 40)
-        }
-        if (app.clipboard != null) IconAction(MIcons.Paste, "Paste", { app.paste() }, size = 40)
-        if (has) {
-            val smooth = t.selectionIsSmooth
-            IconAction(if (smooth) MIcons.Corner else MIcons.Smooth, if (smooth) "Make corner" else "Make smooth", { t.toggleSmoothSelected() }, size = 40)
-            IconAction(MIcons.SelectAll, "Select all", { t.selectAll() }, size = 40)
-            if (t.selection.size >= 2) {
-                IconAction(MIcons.FlipH, "Flip horizontally", { t.flipSelected(true) }, size = 40)
-                IconAction(MIcons.FlipV, "Flip vertically", { t.flipSelected(false) }, size = 40)
-                IconAction(MIcons.RotateLeft, "Rotate 15° left", { t.rotateSelected(15f) }, size = 40)
-                IconAction(MIcons.RotateRight, "Rotate 15° right", { t.rotateSelected(-15f) }, size = 40)
+    val nodeScroll = rememberScrollState()
+    Box(modifier.widthIn(max = 520.dp).floating()) {
+        Row(Modifier.height(48.dp).horizontalScroll(nodeScroll).padding(start = 4.dp, end = 4.dp, bottom = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconAction(MIcons.Close, "Hide node tools", { app.showNodeTools = false }, size = 36)
+            if (!has) {
+                IconAction(MIcons.SelectAll, "Select all nodes", { t.selectAll() }, size = 40)
+                Caps("SELECT A NODE", size = 9)
             }
-            if (app.touchInput && t.selection.size >= 2 && !app.nodeMoveMode) {
-                // What the touch pad does: move, scale or turn the selection.
-                Box(Modifier.padding(horizontal = 4.dp)) {
-                    Segmented(listOf("Move", "Scale", "Turn"), app.padMode.ordinal) { app.padMode = PadMode.entries[it] }
+            if (has) {
+                IconAction(MIcons.Copy, "Copy", { app.copySelection() }, size = 40)
+                IconAction(MIcons.Cut, "Cut", { app.cutSelection() }, size = 40)
+            }
+            if (app.clipboard != null) IconAction(MIcons.Paste, "Paste", { app.paste() }, size = 40)
+            if (has) {
+                val smooth = t.selectionIsSmooth
+                IconAction(if (smooth) MIcons.Corner else MIcons.Smooth, if (smooth) "Make corner" else "Make smooth", { t.toggleSmoothSelected() }, size = 40)
+                IconAction(MIcons.SelectAll, "Select all", { t.selectAll() }, size = 40)
+                if (t.selection.size >= 2) {
+                    IconAction(MIcons.FlipH, "Flip horizontally", { t.flipSelected(true) }, size = 40)
+                    IconAction(MIcons.FlipV, "Flip vertically", { t.flipSelected(false) }, size = 40)
+                    IconAction(MIcons.RotateLeft, "Rotate 15° left", { t.rotateSelected(15f) }, size = 40)
+                    IconAction(MIcons.RotateRight, "Rotate 15° right", { t.rotateSelected(-15f) }, size = 40)
                 }
+                if (app.touchInput && t.selection.size >= 2 && !app.nodeMoveMode) {
+                    // What the touch pad does: move, scale or turn the selection.
+                    Box(Modifier.padding(horizontal = 4.dp)) {
+                        Segmented(listOf("Move", "Scale", "Turn"), app.padMode.ordinal) { app.padMode = PadMode.entries[it] }
+                    }
+                }
+                Box(Modifier.width(1.dp).height(20.dp).background(Mono.border))
+                IconAction(MIcons.Delete, "Delete", { t.deleteSelected() }, size = 40)
+                val b = boundsOfSelection(t.glyph, t.selection)
+                val dims = if (b != null && t.selection.size > 1) " · ${b.width.toInt()} × ${b.height.toInt()}" else ""
+                Caps("${t.selection.size} sel$dims", size = 10, modifier = Modifier.padding(start = 4.dp, end = 10.dp))
             }
-            Box(Modifier.width(1.dp).height(20.dp).background(Mono.border))
-            IconAction(MIcons.Delete, "Delete", { t.deleteSelected() }, size = 40)
-            val b = boundsOfSelection(t.glyph, t.selection)
-            val dims = if (b != null && t.selection.size > 1) " · ${b.width.toInt()} × ${b.height.toInt()}" else ""
-            Caps("${t.selection.size} sel$dims", size = 10, modifier = Modifier.padding(start = 4.dp, end = 10.dp))
         }
+        Scrollbar(nodeScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
     }
 }
 
@@ -204,7 +214,7 @@ fun SimplifyCard(app: AppState, modifier: Modifier = Modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Caps("Simplify" + if (r.anchorNames.size > 1) " · all anchors" else "", color = Mono.ink)
-                Caps("${r.totalPoints} → ${r.totalPoints - r.removeCount} nodes · min ${r.totalPoints - r.order.size} · drift ${r.error.toInt()}u", size = 10)
+                Caps("${r.totalPoints} → ${r.remainingNodes} nodes · min ${r.minimumNodes} · drift ${r.error.toInt()}u", size = 10)
             }
             IconAction(MIcons.Close, "Cancel", { app.reduction = null }, size = 40)
             IconAction(MIcons.Check, "Apply", { app.applyReduction() }, size = 40, selected = true, enabled = r.removeCount > 0)
@@ -550,8 +560,10 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
             MonoField(name, { name = it }, "New glyph name", Modifier.weight(1f))
             MonoButton(onClick = { if (host.createGlyph(name)) onDismiss() }, selected = true, enabled = name.isNotBlank()) { Text("Create") }
         }
-        Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.heightIn(max = 340.dp)) {
+            val gridScroll = rememberScrollState()
+            Column(Modifier.verticalScroll(gridScroll).padding(end = 10.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (n in names) {
                     val current = n == app.currentGlyphName
                     Box(
@@ -564,6 +576,8 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
                     }
                 }
             }
+            }
+            Scrollbar(gridScroll, true, Modifier.align(Alignment.CenterEnd).width(7.dp).fillMaxHeight())
         }
         if (host.fileActions.isNotEmpty()) {
             Caps("File")
@@ -587,8 +601,10 @@ private fun ProjectGlyphPicker(app: AppState, host: EditorHost, onDismiss: () ->
     val names = remember { host.listGlyphNames() }
     MonoDialog("Ghost a glyph", onDismiss) {
         Text("Live: it takes the working character's weight, width and every other axis -- here and in the Preview.", fontSize = 13.sp, color = Mono.inkDim)
-        Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.heightIn(max = 340.dp)) {
+            val gridScroll = rememberScrollState()
+            Column(Modifier.verticalScroll(gridScroll).padding(end = 10.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (n in names) {
                     Box(
                         Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Mono.panelHeader)
@@ -599,6 +615,8 @@ private fun ProjectGlyphPicker(app: AppState, host: EditorHost, onDismiss: () ->
                     }
                 }
             }
+            }
+            Scrollbar(gridScroll, true, Modifier.align(Alignment.CenterEnd).width(7.dp).fillMaxHeight())
         }
     }
 }
