@@ -311,8 +311,9 @@ private fun curveRemovalError(contour: ContourData, nodeOrdinal: Int): Float {
  * Greedy, geometry-aware simplification shared by all compatible anchors.
  * Rank each candidate by its worst true cubic deviation across anchors,
  * recalculating after every removal. Both sides' handles matter, even at
- * corners or mirrored smooth nodes. A contour always retains three nodes.
- * Keys refer to the original contour point indices, so preview and apply
+ * corners or mirrored smooth nodes. The normal reduction preserves three
+ * per contour; the extreme slider steps can discard smaller contours until
+ * only three nodes remain in the entire glyph. Keys refer to the original contour point indices, so preview and apply
  * remove the same nodes without losing anchor compatibility.
  */
 fun reductionOrder(glyphs: List<GlyphCorner>): List<Removal> {
@@ -357,7 +358,40 @@ fun reductionOrder(glyphs: List<GlyphCorner>): List<Removal> {
         perContour[r.key.first] = cost
         runMax[i] = cost
     }
-    return out.indices.sortedWith(compareBy({ runMax[it] }, { it })).map { out[it] }
+    val ranked = out.indices.sortedWith(compareBy({ runMax[it] }, { it })).map { out[it] }
+
+    // Ordinary reduction preserves each contour as a three-node minimum.
+    // At the deliberate over-simplification end of the slider, retain the
+    // largest contour and discard other contours, node by node, until the
+    // *whole glyph* reaches three on-curve nodes. The preview makes this loss
+    // of counters/disconnected shapes visible before Apply.
+    val alreadyRemoved = ranked.map { it.key }.toSet()
+    val surviving = ref.contours.mapIndexed { ci, c ->
+        c.points.indices.filter { c.points[it].onCurve && (ci to it) !in alreadyRemoved }
+    }
+    val nonempty = surviving.indices.filter { surviving[it].isNotEmpty() }
+    if (nonempty.size <= 1) return ranked
+    val keep = nonempty.maxBy { ci ->
+        glyphs.maxOf { g ->
+            val rect = boundsOf(g.contours[ci].points)
+            if (rect == null) 0f else rect.width * rect.height
+        }
+    }
+    val additional = mutableListOf<Removal>()
+    var remaining = surviving.sumOf { it.size }
+    for (ci in nonempty) {
+        if (ci == keep || remaining <= 3) continue
+        val size = glyphs.maxOf { g ->
+            val rect = boundsOf(g.contours[ci].points)
+            if (rect == null) 0f else hypot(rect.width, rect.height)
+        }
+        for (pi in surviving[ci]) {
+            if (remaining <= 3) break
+            additional.add(Removal(ci to pi, size))
+            remaining--
+        }
+    }
+    return ranked + additional
 }
 
 /**

@@ -626,7 +626,7 @@ class AppState {
         if (removed.isNotEmpty()) for (name in r.anchorNames) {
             val st = anchors.getValue(name)
             val reduced = withoutPoints(st.glyph, removed)
-            st.replaceWithHistory(reduced)
+            st.replaceWithHistory(GlyphCorner(reduced.width, reduced.contours.filter { it.points.isNotEmpty() }.toMutableList()))
         }
         val scope = if (r.anchorNames.size > 1) "every anchor" else (ANCHOR_LABELS[r.anchorNames.first()] ?: r.anchorNames.first())
         setStatus("Removed ${removed.size} point(s) from $scope.")

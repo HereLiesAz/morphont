@@ -145,9 +145,11 @@ so anchors can then be reshaped without adding or removing points.
 - **Simplify.** The slider compares the true cubic Bézier spans and all
   incoming/outgoing handles, for both sharp corners and mirrored smooth nodes,
   against the curve formed by removing a node. It recalculates after every
-  removal and ranks by worst geometric drift across compatible anchors. Each
-  contour retains at least three on-curve nodes; handles do not count toward
-  that minimum. The slider shows the reachable minimum and Apply is undoable.
+  removal and ranks by worst geometric drift across compatible anchors.
+  Normal reduction retains three nodes per contour. At the extreme end of the
+  slider it can discard smaller contours and their counters, leaving three
+  on-curve nodes in the whole glyph. Handles never count as nodes. The preview
+  shows the lost geometry before Apply, which remains undoable.
 - **Node Move (M).** The dedicated move tool selects on-curve nodes only.
   Even grabbing a nearby handle moves its owning node and both handles rather
   than reshaping a control point. Select (V) returns to normal point/handle

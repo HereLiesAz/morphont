@@ -119,6 +119,34 @@ class EditingTest {
     }
 
     @Test
+    fun overSimplificationCanReachThreeNodesAcrossMultipleContours() {
+        val app = AppState()
+        val outer = ContourData(mutableListOf(
+            Pt(0f, 0f, true), Pt(0f, 100f, true), Pt(100f, 100f, true),
+            Pt(100f, 0f, true), Pt(50f, 0f, true),
+        ))
+        val inner = ContourData(mutableListOf(
+            Pt(20f, 20f, true), Pt(20f, 40f, true),
+            Pt(40f, 40f, true), Pt(40f, 20f, true),
+        ))
+        val glyph = Glyph()
+        glyph.corners["regular"] = GlyphCorner(500f, mutableListOf(outer, inner))
+        app.loadGlyph("O", glyph)
+        app.startReduction()
+        val session = app.reduction!!
+        assertEquals(9, session.totalPoints)
+        assertEquals(6, session.order.size)
+        session.removeCount = session.order.size
+        val preview = withoutPoints(app.anchors.getValue("regular").glyph, session.removed)
+        assertEquals(3, preview.contours.sumOf { contour -> contour.points.count { it.onCurve } })
+        app.applyReduction()
+        val remaining = app.anchors.getValue("regular").glyph.contours
+        assertEquals(1, remaining.size)
+        assertEquals(3, remaining.single().points.count { it.onCurve })
+        assertTrue(isValidCubicContour(remaining.single()))
+    }
+
+    @Test
     fun glyphWithGhostsRoundTripsAndOldFilesStillDecode() {
         val glyph = Glyph(
             guides = listOf(Guide(vertical = true, pos = 120f)),
