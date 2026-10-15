@@ -155,17 +155,23 @@ so anchors can then be reshaped without adding or removing points.
 - **Pointer actions.** The contextual node toolbar remains available even
   with nothing selected (Select All is offered), and the **Node tools**
   button in the phone dock or desktop rail restores it after closing. Its
-  overflowing actions have a visible, draggable horizontal scrollbar.
+  overflowing actions have a draggable scrollbar. Selection hit-testing
+  takes priority over overlapping transform handles, so dragging a node
+  cannot accidentally start a box scale. The straight/curve toggle checks
+  collinear cubic controls (all nodes have handles); converting a line to
+  a curve now creates visible curvature, and back to a line is reversible.
 - **Guides and measurement.** Measurement overlays are on by default;
   their toggle remains under **Guides**, rather than duplicating a tool in
   the desktop rail.
-- **Navigation.** Desktop glyph tabs scroll by trackpad/wheel, the visible
-  scrollbar, or left/right glyph-strip buttons. The inspector, glyph
-  pickers, welcome page and phone sheets also show draggable scrollbars
-  when their contents overflow. The zoom percentage in the desktop header
-  is directly editable (Enter to confirm) or draggable left/right
-  (10–4000%). Reset View (0) uses a circular reset icon and resets pan
-  and zoom together.
+- **Navigation.** Desktop glyph tabs retain their original order when you
+  switch glyphs. They scroll by trackpad/wheel, visible scrollbar, or
+  left/right glyph-strip buttons. The inspector, glyph pickers, welcome
+  page, overflowing phone tool dock and modal dialogs scroll when needed.
+  Scrollbars use one shared pointer recognizer for tap/drag. Middle- or
+  right-mouse dragging pans the canvas (including during simplify); the
+  wheel zooms. Actual pointer hardware determines touch-proxy behavior,
+  not touch-target scale. Desktop zoom percentage is editable (Enter to
+  confirm) or draggable (10–4000%). Reset View (0) resets pan and zoom.
 - **Node Move (M).** The dedicated move tool selects on-curve nodes only.
   Even grabbing a nearby handle moves its owning node and both handles rather
   than reshaping a control point. Select (V) returns to normal point/handle
@@ -174,7 +180,9 @@ so anchors can then be reshaped without adding or removing points.
   node with its handles when the selected target is either node or handle.
 - **TrueType import.** Both static and variable `.ttf` files are accepted.
   Static font outlines populate every anchor identically; variable fonts
-  sample their supported axis extremes. The parser validates table bounds,
+  sample their supported axis extremes. Imports never overwrite existing
+  glyph records: collisions are skipped and counted. The desktop parser
+  runs off the UI thread. The parser validates table bounds,
   cmap glyph IDs, per-glyph loca/glyf spans, and gvar tuple payloads before
   reading. A malformed individual glyph is skipped and reported without
   aborting otherwise importable characters; invalid font-wide tables reject
@@ -201,8 +209,12 @@ so anchors can then be reshaped without adding or removing points.
   yet available; their TTF import remains unchanged.
 - **Desktop glyph filenames.** Forbidden Windows characters (notably `*`)
   and reserved DOS device names are reversibly escaped on disk. Existing
-  URL-encoded glyph files stay readable. Saves use atomic replacement when
-  supported, avoiding deletion of the previous glyph before replacement.
+  URL-encoded glyph files stay readable. Individual saves have unique
+  temporary files and atomic replacement where supported. Project imports
+  stage all glyph files and restore the previous directory if installation
+  fails. Project exports include the currently edited glyph even before
+  its autosave debounce expires. Bulk project replacements invalidate
+  outstanding autosaves on all three platforms.
 - **Simplify input.** The floating simplify control uses Compose's native
   slider gestures, plus **−1** and **+1** buttons for exact node-by-node
   adjustment. The preview remains non-destructive until **Apply**.
@@ -234,7 +246,9 @@ so anchors can then be reshaped without adding or removing points.
   axis. Place mode: drag to move, corner squares to scale (about the
   opposite corner), the top knob to rotate; Flip ↔/↕ and ±15° buttons.
   Nodes mode edits the ghost's points (a live ghost detaches into a static
-  copy first). Editing a ghost is entered only from its **Edit** button in
+  copy first; Undo restores its link and placement). The ghost action bar
+  has a visible horizontal scrollbar. Editing a ghost is entered only from
+  its **Edit** button in
   the Ghosts panel; while it lasts the ghost draws solid and the working
   glyph as a bare outline, and the glyph is locked -- gestures, the
   selection pill, keys, Undo, Copy to anchors, Simplify and suggestions all
@@ -254,11 +268,16 @@ so anchors can then be reshaped without adding or removing points.
     lighten (point-preserving offset), condense / extend (stems kept),
     italicize (12° slant), grade, X/Y thickness, x-height, cap, ascender,
     descender. Same points, same order, so it stays interpolatable.
-  - *Cleanup* -- merge duplicate points, remove points that add no shape,
-    fix contour direction (applied to every anchor when they're compatible).
+  - *Cleanup* -- merge duplicate **on-curve** nodes (skipping their handles),
+    remove points that add no shape and fix contour direction (all compatible
+    anchors share topology).
   - *Alignment* -- snap points a few units off a metric line; straighten
-    nearly vertical/horizontal lines.
-  - *Consistency* -- match stems that almost agree; centre on the advance.
+    nearly vertical/horizontal node-to-node spans even when each segment
+    has two Bézier handles.
+  - *Consistency* -- sample true Bézier ink boundaries for stem widths and
+    contour nesting; match stems that almost agree and centre on the advance.
+    Offset operations carry both handles with their owning nodes rather than
+    deforming smooth/mirrored pairs.
   - *Interpolation* -- when anchors disagree: copy this anchor to all, or
     jump to the first mismatch.
 
@@ -276,6 +295,7 @@ so anchors can then be reshaped without adding or removing points.
 - `Icons.kt` -- the monoline icon set
 - `Suggestions.kt` -- the suggested-edits engine (outline offset, stem measurement, and each suggestion)
 - `Theme.kt` -- palette and primitives (`MonoButton`, `IconAction`, `Caps`, `floating`, `HairSlider`, draggable `Scrollbar`), built on `HereLiesAz/convey` (see below)
+- `commonTest/ControlAuditTest.kt` / `desktopTest/DesktopStorageTest.kt` -- regression coverage for mixed undo, suggestions, curve measurements, ghost linking, and transactional desktop projects
 - `desktopMain/` -- desktop window, per-user storage (Windows-safe glyph filenames), UFO/ZIP import and platform file pickers
 - `Storage.kt` -- IndexedDB persistence (one record per glyph) + JSON export/import; migrates a legacy single-blob `localStorage` project automatically on first successful open
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point
@@ -294,8 +314,8 @@ of the way until needed.
 - **Phone:** glyph name and node count up top, with Copy to anchors, Undo and
   the glyph browser; directly beneath, the **anchor filmstrip** (the picked
   axis's three anchors as live thumbnails -- tap one to edit it). A tool
-  **dock** (Select, Move node, Node tools, Pen, Guides, Ghosts, Simplify)
-  at the bottom, and a picture-in-picture Preview that opens a sheet
+  **dock** (Select, Move node, Node tools, Pen, Reset View, Guides, Ghosts,
+  Simplify) at the bottom; it scrolls horizontally as needed. Preview opens a sheet
   with the sliders.
 - **Gestures:** two-finger pinch zooms, two-finger drag pans; one finger
   edits. Mouse wheel zooms on desktop.
@@ -327,19 +347,23 @@ of the way until needed.
 
 ## Known gaps
 
-- The clipboard is in-app only (not the OS clipboard), and Android's shell
-  doesn't yet wire hardware-keyboard shortcuts.
+- The clipboard is in-app only (not the OS clipboard). Android's root now
+  receives keyboard focus for editor shortcuts; actual hardware combinations
+  still need device-level verification.
 - Reference fonts for ghosts are held for the session only and must be
   TrueType-outline (`glyf`); CFF/OTF isn't parsed.
 - Metrics are stored per glyph (so imported fonts' values travel with each
-  glyph) and carry over to the next opened glyph that has none of its own.
+  glyph); glyphs without saved metrics use the default FontMetrics instead
+  of leaking the previously opened glyph's values. Guides, metrics,
+  ghost add/remove, linked/static ghost mode changes and geometry edits are
+  all part of chronological undo history.
 
-- Shift-click additive/toggle point selection isn't implemented --
-  `PointerEvent.keyboardModifiers.isShiftPressed` didn't resolve against
-  this Compose Multiplatform version's wasmJs pointer-input API, and
-  rather than guess at an unconfirmed alternative this was dropped for
-  now. Rubber-band selection (drag from empty space) still covers most
-  multi-select needs.
+- Shift-click toggles a node/handle in the current selection, and
+  Shift-marquee adds points without clearing the previous selection.
+  Multi-touch gesture interaction still requires device-level testing.
+- Native UFO import is currently desktop-only. Android and web do not
+  yet offer a cross-platform UFO directory/ZIP parser; their TrueType
+  import remains available.
 - **Depends on `compose.conveyance:convey` resolving its Compose
   Multiplatform resources artifact correctly through GitHub Packages**
   (`build.gradle.kts` / `settings.gradle.kts`, authenticated with
@@ -352,9 +376,7 @@ of the way until needed.
   (`ProjectCodec.kt`'s `migrateGlyph`) to today's tag-based names
   (`wght_lo`/`wght_hi`/`wdth_lo`/`wdth_hi`); `regular` is unchanged in
   both schemes.
-- Verified so far: shared and web code compile, the unit tests pass, and
-  headless-Chromium screenshots of the phone and wide layouts match the
-  approved mock-ups. Full interactive
-  coverage (drag-to-reshape across every anchor, the travel-path overlay,
-  save/export/import round-trips) has not yet had a dedicated automated
-  test pass.
+- Current control-audit fixes include source-level checks and new
+  regression cases; Gradle builds, interactive mouse/touch tests, Android
+  hardware-keyboard tests and cross-platform file round-trips still require
+  execution. Do not infer validation from a successful source commit.

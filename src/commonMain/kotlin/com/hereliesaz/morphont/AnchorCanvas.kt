@@ -88,7 +88,9 @@ fun AnchorCanvas(
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current.density
     val uiScale = density * interactionScale
-    val isTouchSurface = interactionScale > 1f
+    // interactionScale enlarges hit targets; it does not identify pointer
+    // hardware. Desktop and web pass >1 for accessibility, even with a mouse.
+    val isTouchSurface = app.touchInput
     val hitRadiusPx = 12f * uiScale
     val rulerPx = 18f * density
     val proxyRadiusPx = 26f * density
@@ -102,7 +104,7 @@ fun AnchorCanvas(
     val vbFor = { z: Float, px: Float, py: Float -> editorViewBox(metrics, advance, z, px, py) }
     val vb = vbFor(view.zoom, view.panX, view.panY)
 
-    val showProxy = (app.touchInput || isTouchSurface) && target.selection.isNotEmpty() &&
+    val showProxy = isTouchSurface && target.selection.isNotEmpty() &&
         target.drawingContourIndex == null && app.reduction == null && !(ghost != null && app.ghostTransformMode)
 
     fun frame(): CanvasFrame? {

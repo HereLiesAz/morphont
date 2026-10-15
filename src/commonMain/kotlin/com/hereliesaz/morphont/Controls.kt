@@ -162,6 +162,7 @@ fun SelectionPill(app: AppState, modifier: Modifier = Modifier) {
             if (has) {
                 val smooth = t.selectionIsSmooth
                 IconAction(if (smooth) MIcons.Corner else MIcons.Smooth, if (smooth) "Make corner" else "Make smooth", { t.toggleSmoothSelected() }, size = 40)
+                IconAction(MIcons.CurveLine, "Toggle line / curve", { t.toggleCurveSelected() }, size = 40)
                 IconAction(MIcons.SelectAll, "Select all", { t.selectAll() }, size = 40)
                 if (t.selection.size >= 2) {
                     IconAction(MIcons.FlipH, "Flip horizontally", { t.flipSelected(true) }, size = 40)
@@ -190,11 +191,14 @@ fun SelectionPill(app: AppState, modifier: Modifier = Modifier) {
 @Composable
 fun GhostBar(app: AppState, modifier: Modifier = Modifier) {
     val g = app.activeGhost ?: return
-    Row(
-        modifier.floating().height(48.dp).padding(start = 14.dp, end = 4.dp).horizontalScroll(rememberScrollState()),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
+    val ghostScroll = rememberScrollState()
+    Box(modifier.widthIn(max = 520.dp).floating()) {
+        Row(
+            Modifier.height(52.dp).horizontalScroll(ghostScroll)
+                .padding(start = 14.dp, end = 4.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
         Text(g.label, fontSize = 14.sp, color = Mono.ink, maxLines = 1)
         Spacer(Modifier.width(6.dp))
         Segmented(listOf("Place", "Nodes"), if (app.ghostTransformMode) 0 else 1) { app.setGhostNodeMode(it == 1) }
@@ -203,6 +207,8 @@ fun GhostBar(app: AppState, modifier: Modifier = Modifier) {
         IconAction(MIcons.RotateLeft, "Rotate 15° left", { app.rotateActiveGhost(15f) }, size = 40)
         IconAction(MIcons.RotateRight, "Rotate 15° right", { app.rotateActiveGhost(-15f) }, size = 40)
         IconAction(MIcons.Check, "Done", { app.activeGhostId = null }, size = 40, selected = true)
+        }
+        Scrollbar(ghostScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
     }
 }
 
@@ -214,7 +220,7 @@ fun SimplifyCard(app: AppState, modifier: Modifier = Modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Caps("Simplify" + if (r.anchorNames.size > 1) " · all anchors" else "", color = Mono.ink)
-                Caps("${r.totalPoints} → ${r.remainingNodes} nodes · min ${r.minimumNodes} · drift ${r.error.toInt()}u", size = 10)
+                Caps("${r.totalPoints} → ${r.remainingNodes} nodes · min ${r.minimumNodes} · drift ${fmt2(r.error)}u", size = 10)
             }
             IconAction(MIcons.Close, "Cancel", { app.reduction = null }, size = 40)
             IconAction(MIcons.Check, "Apply", { app.applyReduction() }, size = 40, selected = true, enabled = r.removeCount > 0)
@@ -479,7 +485,7 @@ fun GuidesSection(app: AppState) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             MonoButton(onClick = { metricsOpen = true }, outlined = true) { Text("Metrics…", fontSize = 12.sp) }
-            MonoButton(onClick = { app.guides.clear() }, enabled = app.guides.isNotEmpty(), outlined = true) { Text("Clear ${app.guides.size} guides", fontSize = 12.sp) }
+            MonoButton(onClick = { app.clearGuides() }, enabled = app.guides.isNotEmpty(), outlined = true) { Text("Clear ${app.guides.size} guides", fontSize = 12.sp) }
         }
         Text("Drag from a ruler to place a guide; drop it back on the ruler to remove it.", fontSize = 12.sp, color = Mono.inkDim)
     }
@@ -492,14 +498,21 @@ fun GuidesSection(app: AppState) {
 fun MonoDialog(title: String, onDismiss: () -> Unit, actions: @Composable () -> Unit = {}, content: @Composable () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Column(
-            Modifier.floating(24).widthIn(min = 300.dp, max = 520.dp).padding(22.dp),
+            Modifier.floating(24).widthIn(min = 280.dp, max = 520.dp)
+                .heightIn(max = 560.dp).padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, fontSize = 22.sp, color = Mono.ink, modifier = Modifier.weight(1f))
                 IconAction(MIcons.Close, "Close", onDismiss, size = 40)
             }
-            content()
+            val dialogScroll = rememberScrollState()
+            Box(Modifier.weight(1f, fill = false).fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().verticalScroll(dialogScroll).padding(end = 9.dp)) {
+                    content()
+                }
+                Scrollbar(dialogScroll, true, Modifier.align(Alignment.CenterEnd).width(7.dp).fillMaxHeight())
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)) { actions() }
         }
     }
@@ -522,7 +535,7 @@ fun MonoField(value: String, onChange: (String) -> Unit, placeholder: String, mo
 @Composable
 private fun MetricsDialog(app: AppState, onDismiss: () -> Unit) {
     val m = app.metrics
-    val fields = remember {
+    val fields = remember(m) {
         listOf(
             "Units per em" to mutableStateOf(m.unitsPerEm.toInt().toString()),
             "Ascender" to mutableStateOf(m.ascender.toInt().toString()),
@@ -534,9 +547,9 @@ private fun MetricsDialog(app: AppState, onDismiss: () -> Unit) {
     MonoDialog("Metrics", onDismiss, actions = {
         MonoButton(onClick = {
             val v = fields.map { it.second.value.toFloatOrNull() }
-            app.metrics = FontMetrics(
+            app.updateMetrics(FontMetrics(
                 v[0]?.coerceAtLeast(16f) ?: m.unitsPerEm, v[1] ?: m.ascender, v[2] ?: m.capHeight, v[3] ?: m.xHeight, v[4] ?: m.descender,
-            )
+            ))
             onDismiss()
         }, selected = true) { Text("Apply") }
     }) {
@@ -554,7 +567,8 @@ private fun MetricsDialog(app: AppState, onDismiss: () -> Unit) {
 @Composable
 fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
-    val names = remember { host.listGlyphNames() }
+    var showReport by remember { mutableStateOf(false) }
+    val names = app.glyphNames
     MonoDialog("Glyphs", onDismiss) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MonoField(name, { name = it }, "New glyph name", Modifier.weight(1f))
@@ -579,6 +593,11 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
             }
             Scrollbar(gridScroll, true, Modifier.align(Alignment.CenterEnd).width(7.dp).fillMaxHeight())
         }
+        if (app.lastReport.isNotEmpty()) {
+            MonoButton(onClick = { showReport = true }, outlined = true) {
+                Text("View latest report", fontSize = 13.sp)
+            }
+        }
         if (host.fileActions.isNotEmpty()) {
             Caps("File")
             Column {
@@ -593,12 +612,15 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
             }
         }
     }
+    if (showReport) MonoDialog("Latest report", { showReport = false }) {
+        Text(app.lastReport, color = Mono.ink, fontSize = 13.sp)
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProjectGlyphPicker(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
-    val names = remember { host.listGlyphNames() }
+    val names = app.glyphNames
     MonoDialog("Ghost a glyph", onDismiss) {
         Text("Live: it takes the working character's weight, width and every other axis -- here and in the Preview.", fontSize = 13.sp, color = Mono.inkDim)
         Box(Modifier.heightIn(max = 340.dp)) {

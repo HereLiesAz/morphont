@@ -44,6 +44,7 @@ object MIcons {
     val Cut = icon("cut", listOf(circle(6f, 18f, 3f), circle(18f, 18f, 3f), "M8 16 19 4M16 16 5 4"))
     // Node types, drawn as on the canvas: a square is a corner, a circle on a straight tangent is smooth.
     val Corner = icon("corner", listOf("M4 20 12 8l8 12", "M10 6h4v4h-4z"))
+    val CurveLine = icon("curveLine", listOf("M4 19C6 3 18 3 20 19", circle(4f, 19f, 1.4f), circle(20f, 19f, 1.4f)))
     val Smooth = icon("smooth", listOf("M4 12h5.6M14.4 12H20", circle(12f, 12f, 2.4f)), listOf("M3 10.4 4.6 12 3 13.6 1.4 12z", "M21 10.4 22.6 12 21 13.6 19.4 12z"))
     val Delete = icon("delete", listOf("M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"))
     val Plus = icon("plus", listOf("M12 5v14M5 12h14"))

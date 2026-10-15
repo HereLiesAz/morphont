@@ -157,24 +157,29 @@ object Storage {
         }
     }
 
-    fun saveGlyphs(glyphs: Map<String, Glyph>) {
-        project.putAll(glyphs)
-        persistAsync("Imported font could not be saved") {
+    fun saveNewGlyphs(glyphs: Map<String, Glyph>): List<String> {
+        val existing = glyphs.keys.filter { it in project }
+        val fresh = glyphs.filterKeys { it !in project }
+        project.putAll(fresh)
+        if (fresh.isNotEmpty()) persistAsync("Imported font could not be saved") {
             writeMutex.withLock {
                 requireDatabase().writeTransaction(GLYPH_STORE) {
                     val store = objectStore(GLYPH_STORE)
-                    for ((name, glyph) in glyphs) {
+                    for ((name, glyph) in fresh) {
                         store.put(storedGlyph(name, glyph))
                     }
                 }
             }
         }
+        return existing
     }
 
     fun glyphExists(name: String): Boolean = project.containsKey(name)
 
-    fun exportProject() {
-        downloadText("morphont-project.json", ProjectCodec.encodeProject(project))
+    fun exportProject(unsaved: Pair<String, Glyph>? = null) {
+        val snapshot = project.toMutableMap()
+        unsaved?.let { (name, glyph) -> snapshot[name] = glyph }
+        downloadText("morphont-project.json", ProjectCodec.encodeProject(snapshot))
     }
 
     fun importProject(onLoaded: (List<String>) -> Unit, onError: (String) -> Unit) {

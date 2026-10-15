@@ -3,8 +3,6 @@ package com.hereliesaz.morphont
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -311,40 +309,35 @@ fun Scrollbar(state: ScrollState, vertical: Boolean, modifier: Modifier = Modifi
     if (state.maxValue <= 0) return
     val scope = rememberCoroutineScope()
     val max = state.maxValue
-    Canvas(modifier
-        .pointerInput(state, vertical, max) {
-            var thumbStart = 0f
-            var usable = 0f
-            detectDragGestures(
-                onDragStart = { down ->
-                    val length = if (vertical) size.height.toFloat() else size.width.toFloat()
-                    val thumb = (length * length / (length + max)).coerceIn(24.dp.toPx().coerceAtMost(length), length)
-                    usable = (length - thumb).coerceAtLeast(1f)
-                    val current = (state.value.toFloat() / max) * usable
-                    val pos = if (vertical) down.y else down.x
-                    thumbStart = (pos - thumb / 2f).coerceIn(0f, usable)
-                    if (pos in current..(current + thumb)) thumbStart = current
-                    scope.launch { state.scrollTo((thumbStart / usable * max).roundToInt()) }
-                },
-            ) { change, delta ->
+    Canvas(modifier.pointerInput(state, vertical, max) {
+        // One recognizer handles track taps and thumb drags. Two competing
+        // pointerInput modifiers were consuming the same gesture on desktop.
+        val pad = 24.dp.toPx()
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val length = if (vertical) size.height.toFloat() else size.width.toFloat()
+            val thumb = (length * length / (length + max)).coerceIn(pad.coerceAtMost(length), length)
+            val usable = (length - thumb).coerceAtLeast(1f)
+            val pos = if (vertical) down.position.y else down.position.x
+            val current = usable * (state.value.toFloat() / max)
+            var origin = if (pos in current..(current + thumb)) current
+                else (pos - thumb / 2f).coerceIn(0f, usable)
+            val tapOrigin = origin
+            down.consume()
+            var moved = false
+            drag(down.id) { change ->
+                moved = true
+                val delta = if (vertical) change.position.y - change.previousPosition.y
+                    else change.position.x - change.previousPosition.x
+                origin = (origin + delta).coerceIn(0f, usable)
+                scope.launch { state.scrollTo((origin / usable * max).roundToInt()) }
                 change.consume()
-                val motion = if (vertical) delta.y else delta.x
-                thumbStart = (thumbStart + motion).coerceIn(0f, usable)
-                scope.launch { state.scrollTo((thumbStart / usable * max).roundToInt()) }
+            }
+            if (!moved) {
+                scope.launch { state.scrollTo((tapOrigin / usable * max).roundToInt()) }
             }
         }
-        .pointerInput(state, vertical, max) {
-            detectTapGestures { down ->
-                val length = if (vertical) size.height.toFloat() else size.width.toFloat()
-                val thumb = (length * length / (length + max)).coerceIn(24.dp.toPx().coerceAtMost(length), length)
-                val usable = (length - thumb).coerceAtLeast(1f)
-                val pos = if (vertical) down.y else down.x
-                scope.launch {
-                    state.scrollTo(((pos - thumb / 2f).coerceIn(0f, usable) / usable * max).roundToInt())
-                }
-            }
-        }
-    ) {
+    }) {
         val length = if (vertical) size.height else size.width
         val cross = if (vertical) size.width else size.height
         val thumb = (length * length / (length + max)).coerceIn(24.dp.toPx().coerceAtMost(length), length)

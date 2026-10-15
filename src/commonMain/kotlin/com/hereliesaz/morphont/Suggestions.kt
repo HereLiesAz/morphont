@@ -27,16 +27,53 @@ class Suggestion(val label: String, val detail: String? = null, val apply: (AppS
 
 // ---------------------------------------------------------------- geometry
 
-private fun signedArea(pts: List<Pt>): Float {
-    var a = 0f
-    for (i in pts.indices) {
-        val p = pts[i]; val q = pts[(i + 1) % pts.size]
-        a += p.x * q.y - q.x * p.y
+/**
+ * Approximate the actual Bézier ink boundary, not its control polygon.
+ * Eight samples per segment are sufficient for suggestions and ray-casts;
+ * editing and export still use the original exact controls.
+ */
+private fun sampledContour(contour: ContourData): List<Pt> {
+    val pts = contour.points
+    val nodes = pts.indices.filter { pts[it].onCurve }
+    if (nodes.size < 2) return nodes.map { pts[it] }
+    val out = mutableListOf<Pt>()
+    for (i in nodes.indices) {
+        val a = nodes[i]
+        val b = nodes[(i + 1) % nodes.size]
+        val c1 = outArmIndex(pts, a)?.let { pts[it] }
+        val c2 = inArmIndex(pts, b)?.let { pts[it] }
+        val p = pts[a]
+        val q = pts[b]
+        for (step in 0 until 8) {
+            val t = step / 8f
+            val u = 1f - t
+            val x: Float
+            val y: Float
+            if (c1 != null && c2 != null) {
+                x = u*u*u*p.x + 3f*u*u*t*c1.x + 3f*u*t*t*c2.x + t*t*t*q.x
+                y = u*u*u*p.y + 3f*u*u*t*c1.y + 3f*u*t*t*c2.y + t*t*t*q.y
+            } else {
+                x = u*p.x + t*q.x
+                y = u*p.y + t*q.y
+            }
+            out.add(Pt(x, y, true))
+        }
     }
-    return a / 2f
+    return out
+}
+
+private fun signedArea(pts: List<Pt>): Float {
+    var area = 0f
+    for (i in pts.indices) {
+        val p = pts[i]
+        val q = pts[(i + 1) % pts.size]
+        area += p.x * q.y - q.x * p.y
+    }
+    return area / 2f
 }
 
 private fun inside(x: Float, y: Float, pts: List<Pt>): Boolean {
+    if (pts.isEmpty()) return false
     var c = false
     var j = pts.size - 1
     for (i in pts.indices) {
@@ -47,49 +84,63 @@ private fun inside(x: Float, y: Float, pts: List<Pt>): Boolean {
     return c
 }
 
-/** True when contour [ci] bounds filled area from outside (even nesting depth), false for a counter. */
 private fun isOuter(contours: List<ContourData>, ci: Int): Boolean {
-    val p = contours[ci].points.firstOrNull() ?: return true
+    val outline = sampledContour(contours[ci])
+    val first = outline.firstOrNull() ?: return true
     var depth = 0
-    contours.forEachIndexed { j, c -> if (j != ci && c.points.size >= 3 && inside(p.x, p.y, c.points)) depth++ }
+    contours.forEachIndexed { j, c ->
+        if (j != ci) {
+            val boundary = sampledContour(c)
+            if (boundary.size >= 3 && inside(first.x, first.y, boundary)) depth++
+        }
+    }
     return depth % 2 == 0
 }
 
 /**
- * Point-preserving outline offset: every point moves along its corner's
- * bisector, away from the filled side by [dx]/[dy] (negative thins). Same
- * points, same order -- the result interpolates with its source.
+ * Move each node along its contour bisector, carrying both handles by the
+ * same displacement. Smooth control pairs stay collinear and mirrored,
+ * unlike independently offsetting all points of the control polygon.
  */
 fun offsetOutline(contours: List<ContourData>, dx: Float, dy: Float): MutableList<ContourData> =
     contours.mapIndexed { ci, c ->
         val pts = c.points
-        if (pts.size < 3) return@mapIndexed c.deepCopy()
-        // Outward-of-polygon normal is (ey, -ex) for a counter-clockwise polygon; flip for clockwise,
-        // and flip again for a counter so "outward" always means away from the ink.
-        var sign = if (signedArea(pts) > 0f) 1f else -1f
+        val nodes = pts.indices.filter { pts[it].onCurve }
+        if (nodes.size < 3) return@mapIndexed c.deepCopy()
+        var sign = if (signedArea(sampledContour(c)) > 0f) 1f else -1f
         if (!isOuter(contours, ci)) sign = -sign
-        ContourData(pts.indices.map { i ->
-            val p = pts[i]; val a = pts[(i - 1 + pts.size) % pts.size]; val b = pts[(i + 1) % pts.size]
-            fun n(x0: Float, y0: Float, x1: Float, y1: Float): Pair<Float, Float> {
-                val ex = x1 - x0; val ey = y1 - y0; val l = hypot(ex, ey).takeIf { it > 1e-4f } ?: return 0f to 0f
-                return ey / l * sign to -ex / l * sign
+        val shifts = mutableMapOf<Int, Pair<Float, Float>>()
+        nodes.forEachIndexed { i, index ->
+            val p = pts[index]
+            val a = pts[nodes[(i - 1 + nodes.size) % nodes.size]]
+            val b = pts[nodes[(i + 1) % nodes.size]]
+            fun normal(x0: Float, y0: Float, x1: Float, y1: Float): Pair<Float, Float> {
+                val ex = x1 - x0; val ey = y1 - y0
+                val len = hypot(ex, ey).takeIf { it > 1e-4f } ?: return 0f to 0f
+                return ey / len * sign to -ex / len * sign
             }
-            val (n1x, n1y) = n(a.x, a.y, p.x, p.y)
-            val (n2x, n2y) = n(p.x, p.y, b.x, b.y)
+            val (n1x, n1y) = normal(a.x, a.y, p.x, p.y)
+            val (n2x, n2y) = normal(p.x, p.y, b.x, b.y)
             var nx = n1x + n2x; var ny = n1y + n2y
-            val l = hypot(nx, ny)
-            if (l < 1e-4f) { nx = n1x; ny = n1y } else { nx /= l; ny /= l }
-            // Miter so straight stems move by exactly the offset; capped on sharp corners.
+            val len = hypot(nx, ny)
+            if (len < 1e-4f) { nx = n1x; ny = n1y }
+            else { nx /= len; ny /= len }
             val miter = 1f / max(0.4f, nx * n1x + ny * n1y)
-            Pt(p.x + nx * miter * dx, p.y + ny * miter * dy, p.onCurve, p.smooth)
+            shifts[index] = nx * miter * dx to ny * miter * dy
+        }
+        ContourData(pts.mapIndexed { index, p ->
+            val owner = if (p.onCurve) index else armOwner(pts, index)
+            val (sx, sy) = shifts[owner] ?: (0f to 0f)
+            Pt(p.x + sx, p.y + sy, p.onCurve, p.smooth)
         }.toMutableList())
     }.toMutableList()
 
-/** Ink runs crossed by the horizontal line y, as (left, right) pairs, from the control polygons. */
+/** Ink spans at y from sampled outline segments, not the Bézier control polygon. */
 fun inkRuns(contours: List<ContourData>, y: Float): List<Pair<Float, Float>> {
     val xs = mutableListOf<Float>()
-    for (c in contours) {
-        val pts = c.points
+    for (contour in contours) {
+        val pts = sampledContour(contour)
+        if (pts.size < 3) continue
         for (i in pts.indices) {
             val a = pts[i]; val b = pts[(i + 1) % pts.size]
             if ((a.y > y) != (b.y > y)) xs.add(a.x + (y - a.y) / (b.y - a.y) * (b.x - a.x))
@@ -210,10 +261,12 @@ private fun cleanup(app: AppState): List<Suggestion> {
     // Duplicates: a node on top of the node before it (a zero-length line) -- in every anchor of the scope.
     val dupes = mutableSetOf<PointKey>()
     g.contours.forEachIndexed { ci, c ->
-        if (c.points.size > 3) c.points.indices.forEach { pi ->
+        val nodeIndices = c.points.indices.filter { c.points[it].onCurve }
+        if (nodeIndices.size > 3) nodeIndices.forEachIndexed { i, pi ->
+            val previous = nodeIndices[(i - 1 + nodeIndices.size) % nodeIndices.size]
             val ok = glyphs.all { gg ->
-                val pts = gg.contours[ci].points; val p = pts[pi]; val q = pts[(pi - 1 + pts.size) % pts.size]
-                p.onCurve && q.onCurve && hypot(p.x - q.x, p.y - q.y) < 0.5f
+                val pts = gg.contours[ci].points
+                hypot(pts[pi].x - pts[previous].x, pts[pi].y - pts[previous].y) < 0.5f
             }
             if (ok) dupes.add(ci to pi)
         }
@@ -230,7 +283,7 @@ private fun cleanup(app: AppState): List<Suggestion> {
     })
     // Direction: TrueType wants outer contours clockwise, counters counter-clockwise.
     val wrong = g.contours.indices.filter { ci ->
-        val pts = g.contours[ci].points
+        val pts = sampledContour(g.contours[ci])
         pts.size >= 3 && (signedArea(pts) < 0f) != isOuter(g.contours, ci)
     }
     if (wrong.isNotEmpty()) out.add(Suggestion("Fix direction of ${wrong.size} contour${if (wrong.size > 1) "s" else ""}", "outer clockwise") { a ->
@@ -270,13 +323,14 @@ private fun alignment(app: AppState): List<Suggestion> {
     for (vertical in listOf(true, false)) {
         val pairs = mutableListOf<Pair<PointKey, PointKey>>()
         g.contours.forEachIndexed { ci, c ->
-            val n = c.points.size
-            c.points.forEachIndexed { pi, p ->
-                val q = c.points[(pi + 1) % n]
-                if (!p.onCurve || !q.onCurve) return@forEachIndexed
+            val nodes = c.points.indices.filter { c.points[it].onCurve }
+            nodes.forEachIndexed { ordinal, pi ->
+                val next = nodes[(ordinal + 1) % nodes.size]
+                val p = c.points[pi]
+                val q = c.points[next]
                 val off = if (vertical) abs(p.x - q.x) else abs(p.y - q.y)
                 val len = if (vertical) abs(p.y - q.y) else abs(p.x - q.x)
-                if (off in 0.01f..slack && len > minLen) pairs.add((ci to pi) to (ci to (pi + 1) % n))
+                if (off in 0.01f..slack && len > minLen) pairs.add((ci to pi) to (ci to next))
             }
         }
         if (pairs.isNotEmpty()) out.add(Suggestion("Straighten ${pairs.size} ${if (vertical) "near-vertical" else "near-horizontal"} line${if (pairs.size > 1) "s" else ""}") { a ->

@@ -67,20 +67,23 @@ fun DesktopApp() {
             }
 
             fun importFont() = DesktopStorage.pickBytes("Import a TrueType font", listOf(".ttf"), { bytes ->
-                try {
-                    val result = buildFamilyFromVariableFont(bytes)
-                    DesktopStorage.saveGlyphs(result.glyphs)
-                    app.glyphNames = DesktopStorage.listGlyphNames()
-                    result.glyphs.keys.sorted().firstOrNull()?.let { open(it) }
-                    val skipped = result.skippedCharacters
-                    val warning = if (skipped.isEmpty()) "" else
-                        " Skipped ${skipped.size} invalid glyph(s): " +
-                            skipped.take(2).joinToString("; ") { (cp, reason) ->
-                                "U+${cp.toString(16).uppercase()} ($"+"reason)"
-                            }
-                    app.setStatus("Imported ${result.glyphs.size} character(s) from the TrueType font.$"+"warning")
-                } catch (e: Exception) {
-                    app.setStatus("Import failed: ${e.message}", true)
+                scope.launch {
+                    try {
+                        app.setStatus("Importing TrueType font…")
+                        val result = withContext(Dispatchers.Default) { buildFamilyFromVariableFont(bytes) }
+                        val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs) }
+                        val inserted = result.glyphs.keys.filterNot { it in collisions }
+                        app.glyphNames = DesktopStorage.listGlyphNames()
+                        inserted.firstOrNull()?.let(::open)
+                        val warnings = listOfNotNull(
+                            result.skippedCharacters.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
+                            collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
+                        )
+                        app.setStatus("Imported ${inserted.size} TrueType glyph(s)." +
+                            if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}.")
+                    } catch (e: Exception) {
+                        app.setStatus("Import failed: ${e.message}", true)
+                    }
                 }
             }, { app.setStatus(it, true) })
 
@@ -88,14 +91,17 @@ fun DesktopApp() {
                 scope.launch {
                     try {
                         app.setStatus("Importing UFO…")
-                        val result = withContext(Dispatchers.IO) {
-                            importUfoFile(file).also { DesktopStorage.saveGlyphs(it.glyphs) }
-                        }
+                        val result = withContext(Dispatchers.IO) { importUfoFile(file) }
+                        val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs) }
+                        val inserted = result.glyphs.keys.filterNot { it in collisions }
                         app.glyphNames = DesktopStorage.listGlyphNames()
-                        result.glyphs.keys.firstOrNull()?.let { open(it) }
-                        val note = if (result.skipped.isEmpty()) "" else
-                            " Skipped ${result.skipped.size}: ${result.skipped.take(3).joinToString("; ")}"
-                        app.setStatus("Imported ${result.glyphs.size} UFO glyphs.$note")
+                        inserted.firstOrNull()?.let(::open)
+                        val warnings = listOfNotNull(
+                            result.skipped.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
+                            collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
+                        )
+                        app.setStatus("Imported ${inserted.size} UFO glyph(s)." +
+                            if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}.")
                     } catch (e: Exception) {
                         app.setStatus("UFO import failed: ${e.message}", true)
                     }
@@ -105,6 +111,7 @@ fun DesktopApp() {
             fun importProject() = DesktopStorage.pickText("Open a Morphont project", { text ->
                 try {
                     val names = DesktopStorage.importProjectText(text)
+                    app.beginBulkImport()
                     app.glyphNames = names
                     if (names.isEmpty()) { app.clearEditor(); app.setStatus("Loaded an empty project.") }
                     else { open(names.first()); app.setStatus("Loaded project (${names.size} glyph(s)).") }
@@ -124,7 +131,9 @@ fun DesktopApp() {
                         "Import UFO (.ufo / .ufoz)" to { importUfo() },
                         "Open a project (.json)" to { importProject() },
                         "Save the whole project" to {
-                            DesktopStorage.saveText("Save project", "morphont-project.json", DesktopStorage.exportProjectText(),
+                            DesktopStorage.saveText("Save project", "morphont-project.json", DesktopStorage.exportProjectText(
+                                app.currentGlyphName?.let { it to app.toGlyph() },
+                            ),
                                 { app.setStatus("Project saved.") }, { app.setStatus(it, true) })
                         },
                         "Export this glyph (.json)" to {
@@ -149,16 +158,32 @@ fun DesktopApp() {
                 var saveJob: Job? = null
                 var pendingName: String? = null
                 var pendingGlyph: Glyph? = null
-                snapshotFlow { app.currentGlyphName to app.toGlyph() }.collect { (name, glyph) ->
-                    if (name != pendingName) {
-                        val n = pendingName; val g = pendingGlyph
-                        if (n != null && g != null) { saveJob?.cancel(); DesktopStorage.saveGlyph(n, g) }
+                var pendingEpoch = app.autosaveEpoch
+                snapshotFlow { Triple(app.autosaveEpoch, app.currentGlyphName, app.toGlyph()) }
+                    .collect { (epoch, name, glyph) ->
+                        if (epoch != pendingEpoch) {
+                            saveJob?.cancel()
+                            pendingName = null
+                            pendingGlyph = null
+                        } else if (name != pendingName) {
+                            val oldName = pendingName
+                            val oldGlyph = pendingGlyph
+                            if (oldName != null && oldGlyph != null) {
+                                saveJob?.cancel()
+                                DesktopStorage.saveGlyph(oldName, oldGlyph)
+                            }
+                        }
+                        pendingEpoch = epoch
+                        pendingName = name
+                        pendingGlyph = glyph
+                        if (name == null) return@collect
+                        saveJob?.cancel()
+                        saveJob = launch {
+                            delay(AUTOSAVE_DEBOUNCE_MS)
+                            if (epoch == app.autosaveEpoch) DesktopStorage.saveGlyph(name, glyph)
+                        }
                     }
-                    pendingName = name; pendingGlyph = glyph
-                    if (name == null) return@collect
-                    saveJob?.cancel()
-                    saveJob = launch { delay(AUTOSAVE_DEBOUNCE_MS); DesktopStorage.saveGlyph(name, glyph) }
-                }
+                
             }
 
             Box(Modifier.fillMaxSize().focusRequester(focus).focusable().editorKeys(app)) {

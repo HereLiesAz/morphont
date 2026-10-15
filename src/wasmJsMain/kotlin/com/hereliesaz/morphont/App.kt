@@ -54,6 +54,7 @@ private fun openFirstAvailableGlyph(app: AppState, names: List<String>): OpenGly
 private fun importProjectIntoApp(app: AppState) {
     Storage.importProject(
         onLoaded = { names ->
+            app.beginBulkImport()
             app.glyphNames = names
             when (openFirstAvailableGlyph(app, names)) {
                 OpenGlyphOutcome.OPENED -> app.setStatus("Loaded project (${names.size} glyph(s)); opened ${names.first()}.")
@@ -79,21 +80,23 @@ private fun importVariableFontIntoApp(app: AppState) {
         onLoaded = { bytes ->
             try {
                 val result = buildFamilyFromVariableFont(bytes)
-                Storage.saveGlyphs(result.glyphs)
+                val collisions = Storage.saveNewGlyphs(result.glyphs)
                 app.glyphNames = Storage.listGlyphNames()
 
-                val firstImportedName = result.glyphs.keys.sorted().firstOrNull()
+                val inserted = result.glyphs.keys.filterNot { it in collisions }.sorted()
+                val firstImportedName = inserted.firstOrNull()
                 if (firstImportedName != null) {
                     result.glyphs[firstImportedName]?.let { app.loadGlyph(firstImportedName, it) }
                 }
 
-                val skippedNote = if (result.skippedCharacters.isEmpty()) "" else
-                    " Skipped: " + result.skippedCharacters.joinToString { (cp, reason) ->
-                        "U+${cp.toString(16)} ($reason)"
-                    }
+                val warnings = listOfNotNull(
+                    result.skippedCharacters.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
+                    collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
+                )
+                val skippedNote = if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}."
                 val openedNote = if (firstImportedName == null) "" else " Opened $firstImportedName."
                 app.setStatus(
-                    "Imported ${result.glyphs.size} character(s) from the TrueType font.$openedNote$skippedNote",
+                    "Imported ${inserted.size} character(s) from the TrueType font.$openedNote$skippedNote",
                 )
             } catch (e: Exception) {
                 app.setStatus("Import failed: ${e.message}", isError = true)
@@ -118,7 +121,9 @@ fun App() {
                     fileActions = listOf(
                         "Import a TrueType font (.ttf)" to { importVariableFontIntoApp(app) },
                         "Open a project (.json)" to { importProjectIntoApp(app) },
-                        "Save the whole project" to { Storage.exportProject() },
+                        "Save the whole project" to {
+                            Storage.exportProject(app.currentGlyphName?.let { it to app.toGlyph() })
+                        },
                         "Export this glyph (.json)" to {
                             val name = app.currentGlyphName
                             if (name != null) Storage.exportGlyph(name, app.toGlyph())
@@ -153,9 +158,14 @@ fun App() {
                 var saveJob: Job? = null
                 var pendingName: String? = null
                 var pendingGlyph: Glyph? = null
-                snapshotFlow { app.currentGlyphName to app.toGlyph() }
-                    .collect { (name, glyph) ->
-                        if (name != pendingName) {
+                var pendingEpoch = app.autosaveEpoch
+                snapshotFlow { Triple(app.autosaveEpoch, app.currentGlyphName, app.toGlyph()) }
+                    .collect { (epoch, name, glyph) ->
+                        if (epoch != pendingEpoch) {
+                            saveJob?.cancel()
+                            pendingName = null
+                            pendingGlyph = null
+                        } else if (name != pendingName) {
                             val outgoingName = pendingName
                             val outgoingGlyph = pendingGlyph
                             if (outgoingName != null && outgoingGlyph != null) {
@@ -163,13 +173,14 @@ fun App() {
                                 Storage.saveGlyph(outgoingName, outgoingGlyph)
                             }
                         }
+                        pendingEpoch = epoch
                         pendingName = name
                         pendingGlyph = glyph
                         if (name == null) return@collect
                         saveJob?.cancel()
                         saveJob = launch {
                             delay(AUTOSAVE_DEBOUNCE_MS)
-                            Storage.saveGlyph(name, glyph)
+                            if (epoch == app.autosaveEpoch) Storage.saveGlyph(name, glyph)
                         }
                     }
             }

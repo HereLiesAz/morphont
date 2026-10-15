@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -210,18 +211,24 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
                 )
             }
         }
-        Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 10.dp).fillMaxWidth().floating(30).height(60.dp).padding(horizontal = 6.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        val dockScroll = rememberScrollState()
+        Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp).floating(30)) {
+            Row(
+                Modifier.fillMaxWidth().height(64.dp).horizontalScroll(dockScroll)
+                    .padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
             IconAction(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode, size = 44)
             IconAction(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
             IconAction(MIcons.Nodes, "Show or hide node tools", { app.showNodeTools = !app.showNodeTools }, selected = app.showNodeTools, size = 42)
             IconAction(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+            IconAction(MIcons.ResetView, "Reset zoom and pan", { app.view.resetView() }, size = 42)
             IconAction(MIcons.Guides, "Guides", { sheet = Sheet.GUIDES }, size = 48)
             IconAction(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = 48)
             IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 48, enabled = app.activeGhost == null)
+            }
+            Scrollbar(dockScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
         }
     }
     val s = sheet
@@ -306,8 +313,13 @@ private fun WideEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit)
 private fun GlyphTabs(app: AppState, host: EditorHost, openBrowser: () -> Unit, modifier: Modifier) {
     val names = remember(app.currentGlyphName, app.glyphNames) { host.listGlyphNames() }
     val index = names.indexOf(app.currentGlyphName).coerceAtLeast(0)
-    val shown = names.drop(index) + names.take(index)
+    val shown = names
     val scroll = rememberScrollState()
+    androidx.compose.runtime.LaunchedEffect(app.currentGlyphName, names, scroll.maxValue) {
+        // Keep glyph ordering stable. Bring the active tile into view instead
+        // of rotating the whole list on each selection.
+        if (names.isNotEmpty()) scroll.animateScrollTo((index * 45).coerceAtMost(scroll.maxValue))
+    }
     val scope = rememberCoroutineScope()
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         IconAction(MIcons.ChevronLeft, "Scroll glyphs left",
@@ -351,6 +363,7 @@ private fun ZoomControl(view: ViewSettings) {
     var editing by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
     val inputFocus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
     androidx.compose.runtime.LaunchedEffect(editing) {
         if (editing) inputFocus.requestFocus()
     }
@@ -358,6 +371,7 @@ private fun ZoomControl(view: ViewSettings) {
         val next = input.trim().removeSuffix("%").trim().toFloatOrNull()
         if (next != null && next.isFinite()) view.zoom = (next / 100f).coerceIn(0.1f, 40f)
         editing = false
+        focusManager.clearFocus()
     }
     if (editing) {
         OutlinedTextField(
