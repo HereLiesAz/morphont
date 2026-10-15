@@ -100,19 +100,19 @@ so anchors can then be reshaped without adding or removing points.
 ## Editing tools
 
 - **Nodes and arms.** Outlines are cubic Béziers edited the PostScript /
-  Photoshop way: each node has up to two arms (handles), and between two
-  nodes sit either no arms (a straight line) or two (a curve) -- the point
-  right after a node is its out-arm, the one right before it its in-arm.
+  Photoshop way: every editable node has an in-arm and an out-arm.
+  Straight segments have collinear controls at one-third and two-thirds
+  of the edge, preserving the line while making both handles available.
+  The point after a node is its out-arm; the one before it is its in-arm.
   A **smooth** node (drawn as a circle) keeps its arms mirrored: dragging
   one swings the other through the node at the same angle and length. A
   **corner** node (drawn as a square) leaves them independent. Alt-click a
   node, or long-press it on a touchscreen, to switch it between smooth and
   corner. Arm ends are small
-  diamonds. Moving a node carries its arms. The selection pill's curve
-  button makes the selected segments curves (arms at 1/3 and 2/3, so
-  nothing moves) or straight again, and its corner/smooth button flips
-  node type -- going smooth re-aligns the two arms on the average of their
-  directions, each at the average of their lengths. Deleting a node joins
+  diamonds. Moving a node carries its arms. The single corner/smooth
+  action flips node type: going smooth re-aligns the two arms on the
+  average of their directions, each at the average of their lengths.
+  Deleting a node joins
   its neighbours with their own outer arms; deleting an arm retracts it
   onto its node.
 - **Pen.** Tap places a corner node; press and drag places a smooth node
@@ -137,10 +137,18 @@ so anchors can then be reshaped without adding or removing points.
   `+`/`-`/`0` for zoom.
 - **Touch proxy.** On touch input, a selection grows a pad ~76dp below it
   (above, near the bottom edge), joined by a dashed tether. Dragging the pad
-  moves the selection 1:1 -- the finger never covers the nodes it moves.
-  The selection pill's Move / Scale / Turn switch changes what the pad does:
+  moves the selection 1:1 without snapping -- the finger never covers the
+  nodes it moves. A single node always moves; the selection pill's
+  Move / Scale / Turn switch works for multiple selected points:
   Scale grows the selection as you drag up, Turn rotates it as you drag
   sideways.
+- **Simplify.** The slider ranks node removals by worst geometric drift
+  across compatible anchors. There is no protected three-node minimum: the
+  far end deliberately collapses entire contours, even to empty. Applying
+  the preview is one undoable edit.
+- **TrueType import.** Both static and variable `.ttf` files are accepted.
+  Static font outlines populate every anchor identically; variable fonts
+  sample their supported axis extremes.
 - **Transform box.** Two or more selected points get a dashed box whose
   handles sit just outside the points: corner squares scale (about the
   opposite corner), the knob above rotates. The selection pill adds flip

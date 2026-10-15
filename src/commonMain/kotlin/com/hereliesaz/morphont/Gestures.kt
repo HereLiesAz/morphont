@@ -13,6 +13,7 @@ import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isAltPressed
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.max
@@ -56,6 +57,10 @@ class CanvasFrame(
     /** Transform box around a multi-point selection (handles sit just outside the points). */
     val selectionHandles: GhostHandles? = null,
 )
+
+/** Single-point selections must always move, even if Scale/Turn was previously active. */
+fun effectivePadMode(configured: PadMode, selectionSize: Int): PadMode =
+    if (selectionSize < 2) PadMode.MOVE else configured
 
 /** Canvas-space handles of the active ghost's transform box. */
 data class GhostHandles(
@@ -166,8 +171,9 @@ suspend fun PointerInputScope.handleAnchorGestures(
         if (proxy != null && (startPos - proxy).getDistance() <= f.proxyRadiusPx * 1.3f) {
             onPointHit()
             val keys = target.selection.toList()
-            when (app.padMode) {
-                PadMode.MOVE -> dragSelection(f, down.id, target, keys, startPos, slop = 0.5f, feedback)
+            val padMode = effectivePadMode(app.padMode, keys.size)
+            when (padMode) {
+                PadMode.MOVE -> dragSelection(f, down.id, target, keys, startPos, slop = 0.5f, feedback, snapEnabled = false)
                 else -> {
                     // Scale: drag up to grow, down to shrink. Turn: drag sideways, ~0.5° per dp.
                     val b = boundsOfSelection(target.glyph, target.selection) ?: return@awaitEachGesture
@@ -176,7 +182,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
                     followOrPinch(f, down.id, 0.5f) { pos, _ ->
                         if (!pushed) { target.pushHistory(); pushed = true }
                         val d = pos - startPos
-                        val t = if (app.padMode == PadMode.SCALE) {
+                        val t = if (padMode == PadMode.SCALE) {
                             val k = kotlin.math.exp(-d.y / (160f * f.density))
                             scalingAbout(k, k, b.cx, b.cy)
                         } else rotationAbout(-d.x / f.density * 0.5f, b.cx, b.cy)
@@ -275,6 +281,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 return@awaitEachGesture
             }
             // Touch: holding a node still for the long-press timeout does the same.
+            var movedDuringHold = false
             if (hitNode && down.type == PointerType.Touch) {
                 val early = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
                     var end: HoldEnd? = null
@@ -295,11 +302,11 @@ suspend fun PointerInputScope.handleAnchorGestures(
                         return@awaitEachGesture
                     }
                     HoldEnd.RELEASED -> return@awaitEachGesture
-                    HoldEnd.MOVED -> Unit
+                    HoldEnd.MOVED -> movedDuringHold = true
                 }
             }
             val keys = target.selection.toList()
-            dragSelection(f, down.id, target, keys, startPos, f.dragStartSlopPx, feedback, primary = hitKey)
+            dragSelection(f, down.id, target, keys, startPos, if (movedDuringHold) 0.5f else f.dragStartSlopPx, feedback, primary = hitKey)
             return@awaitEachGesture
         }
 
@@ -369,6 +376,7 @@ private suspend fun AwaitPointerEventScope.dragSelection(
     slop: Float,
     feedback: CanvasFeedback,
     primary: PointKey? = null,
+    snapEnabled: Boolean = true,
 ) {
     if (keys.isEmpty()) return
     val origGlyph = target.glyph.deepCopy()
@@ -379,7 +387,7 @@ private suspend fun AwaitPointerEventScope.dragSelection(
         val b = boundsOf(origPts)!!
         listOf(b.minX, b.cx, b.maxX) to listOf(b.minY, b.cy, b.maxY)
     }
-    val targets = if (f.app.view.snap) snapTargetsFor(f, target, keys.toSet()) else null
+    val targets = if (snapEnabled && f.app.view.snap) snapTargetsFor(f, target, keys.toSet()) else null
     var pushed = false
     followOrPinch(f, downId, slop) { pos, _ ->
         if (!pushed) { target.pushHistory(); pushed = true }

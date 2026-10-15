@@ -460,7 +460,7 @@ class VariableFont private constructor(
         /**
          * Parses a TrueType font. [requireVariable] false also accepts a
          * static font (no `fvar`), which then simply has no axes -- enough
-         * for drawing reference ghosts, not for a family import.
+         * for reference ghosts and for family imports with identical anchors.
          */
         fun parse(bytes: ByteArray, requireVariable: Boolean = true): VariableFont {
             val r = Reader(bytes)

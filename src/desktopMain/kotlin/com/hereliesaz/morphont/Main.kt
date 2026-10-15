@@ -62,13 +62,13 @@ fun DesktopApp() {
                 return false
             }
 
-            fun importFont() = DesktopStorage.pickBytes("Import a variable font", listOf(".ttf"), { bytes ->
+            fun importFont() = DesktopStorage.pickBytes("Import a TrueType font", listOf(".ttf"), { bytes ->
                 try {
                     val result = buildFamilyFromVariableFont(bytes)
                     DesktopStorage.saveGlyphs(result.glyphs)
                     app.glyphNames = DesktopStorage.listGlyphNames()
                     result.glyphs.keys.sorted().firstOrNull()?.let { open(it) }
-                    app.setStatus("Imported ${result.glyphs.size} character(s) from the variable font.")
+                    app.setStatus("Imported ${result.glyphs.size} character(s) from the TrueType font.")
                 } catch (e: Exception) {
                     app.setStatus("Import failed: ${e.message}", true)
                 }
@@ -92,7 +92,7 @@ fun DesktopApp() {
                     createGlyph = { createGlyph(it) },
                     listGlyphNames = { DesktopStorage.listGlyphNames().also { app.glyphNames = it } },
                     fileActions = listOf(
-                        "Import a variable font (.ttf)" to { importFont() },
+                        "Import a TrueType font (.ttf)" to { importFont() },
                         "Open a project (.json)" to { importProject() },
                         "Save the whole project" to {
                             DesktopStorage.saveText("Save project", "morphont-project.json", DesktopStorage.exportProjectText(),
@@ -135,7 +135,7 @@ fun DesktopApp() {
             Box(Modifier.fillMaxSize().focusRequester(focus).focusable().editorKeys(app)) {
                 if (app.currentGlyphName == null) {
                     WelcomeScreen(app, host, actions = listOf(
-                        "Import a variable font" to { importFont() },
+                        "Import a TrueType font" to { importFont() },
                         "Open a Morphont project" to { importProject() },
                     ))
                 } else {

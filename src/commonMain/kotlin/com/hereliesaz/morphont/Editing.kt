@@ -254,7 +254,8 @@ private fun segDistance(px: Float, py: Float, ax: Float, ay: Float, bx: Float, b
  * outline least in the anchor where it hurts most (distance from the node, or
  * either of its arms, to the chord between its surviving neighbour nodes). Only nodes are removed --
  * their arms go with them (see [withoutPoints]) -- and contours keep at least
- * three nodes. The topology is taken from the first glyph; callers must pass
+ * no protected minimum: the last stages can collapse or erase a contour when
+ * deliberately over-simplifying. The topology is taken from the first glyph; callers must pass
  * only mutually compatible glyphs.
  */
 fun reductionOrder(glyphs: List<GlyphCorner>): List<Removal> {
@@ -262,7 +263,7 @@ fun reductionOrder(glyphs: List<GlyphCorner>): List<Removal> {
     val out = mutableListOf<Removal>()
     ref.contours.forEachIndexed { ci, contour ->
         val alive = contour.points.indices.filter { contour.points[it].onCurve }.toMutableList()
-        while (alive.size > 3) {
+        while (alive.isNotEmpty()) {
             var bestIdx = -1
             var bestCost = Float.POSITIVE_INFINITY
             for (k in alive.indices) {

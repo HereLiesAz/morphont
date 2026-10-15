@@ -63,6 +63,35 @@ fun oppositeArm(pts: List<Pt>, j: Int): Int? {
 /** Photoshop's symmetric mirror: the arm opposite ([ax], [ay]) through node ([nx], [ny]) -- same line, same length. */
 fun mirrorArm(nx: Float, ny: Float, ax: Float, ay: Float): Pair<Float, Float> = (2f * nx - ax) to (2f * ny - ay)
 
+/**
+ * Makes every straight segment a collinear cubic without changing its outline.
+ * Every editable node therefore has two handles, even next to straight edges.
+ * Curved controls remain unchanged; saved input is never mutated.
+ */
+fun completeNodeHandles(c: ContourData): ContourData {
+    if (c.points.isEmpty() || !isValidCubicContour(c)) return c.deepCopy()
+    val pts = c.points
+    val out = mutableListOf<Pt>()
+    for (s in segmentsOf(pts)) {
+        val a = pts[s.from]
+        val b = pts[s.to]
+        out.add(a.copy2())
+        val arms = s.arms
+        if (arms != null) {
+            out.add(arms.first.copy2())
+            out.add(arms.second.copy2())
+        } else {
+            out.add(Pt(a.x + (b.x - a.x) / 3f, a.y + (b.y - a.y) / 3f, false))
+            out.add(Pt(b.x - (b.x - a.x) / 3f, b.y - (b.y - a.y) / 3f, false))
+        }
+    }
+    return ContourData(out)
+}
+
+/** Normalizes all editable contours, keeping their visible geometry. */
+fun completeNodeHandles(g: GlyphCorner): GlyphCorner =
+    GlyphCorner(g.width, g.contours.map(::completeNodeHandles).toMutableList())
+
 /** [keys] plus the arms of every node among them, so a selected node always moves with its arms. */
 fun withArms(g: GlyphCorner, keys: Collection<PointKey>): Set<PointKey> {
     val out = keys.toMutableSet()

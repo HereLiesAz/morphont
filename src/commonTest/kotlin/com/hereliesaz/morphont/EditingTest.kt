@@ -47,7 +47,7 @@ class EditingTest {
         val st = AnchorState(g)
         st.pasteContours(clip)
         assertEquals(3, st.glyph.contours.size)
-        assertEquals(4, st.selection.size)
+        assertEquals(12, st.selection.size)
     }
 
     @Test
@@ -61,8 +61,10 @@ class EditingTest {
         assertEquals(0f, order.first().error)
         val reduced = withoutPoints(g(0f), setOf(order.first().key))
         assertEquals(4, reduced.contours[0].points.size)
-        // Never below three points per contour.
-        assertEquals(2, order.size)
+        // Oversimplify every node away when deliberately requested.
+        assertEquals(5, order.size)
+        val erased = withoutPoints(g(0f), order.map { it.key }.toSet())
+        assertTrue(erased.contours.single().points.isEmpty())
     }
 
     @Test

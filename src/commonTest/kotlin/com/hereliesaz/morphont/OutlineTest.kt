@@ -120,6 +120,28 @@ class OutlineTest {
     }
 
     @Test
+    fun everyEditableNodeHasTwoHandlesIncludingStraightCorners() {
+        val square = ContourData(mutableListOf(
+            on(0f, 0f), on(0f, 90f), on(90f, 90f), on(90f, 0f),
+        ))
+        val st = AnchorState(GlyphCorner(500f, mutableListOf(square)))
+        val pts = st.glyph.contours.single().points
+        assertEquals(12, pts.size)
+        assertTrue(isValidCubicContour(st.glyph.contours.single()))
+        for (i in listOf(0, 3, 6, 9)) {
+            assertTrue(inArmIndex(pts, i) != null)
+            assertTrue(outArmIndex(pts, i) != null)
+        }
+        assertPt(0f, 30f, pts[1])
+        assertPt(0f, 60f, pts[2])
+        val dragged = dragPoints(st.glyph, setOf(0 to 3), 10f, 5f).contours[0].points
+        assertPt(10f, 95f, dragged[3])
+        assertPt(10f, 65f, dragged[2])
+        assertPt(40f, 95f, dragged[4])
+        assertPt(0f, 0f, dragged[0])
+    }
+
+    @Test
     fun lineCurveToggleKeepsTheContourValid() {
         val sq = GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(on(0f, 0f), on(0f, 90f), on(90f, 90f), on(90f, 0f)))))
         val (curved, sel) = toggleCurveSelection(sq, setOf(0 to 1, 0 to 2))

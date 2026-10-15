@@ -9,6 +9,14 @@ class ProxyPadTest {
     private val canvas = Size(400f, 800f)
 
     @Test
+    fun singleNodeAlwaysMovesRegardlessOfStalePadMode() {
+        assertEquals(PadMode.MOVE, effectivePadMode(PadMode.SCALE, 1))
+        assertEquals(PadMode.MOVE, effectivePadMode(PadMode.ROTATE, 1))
+        assertEquals(PadMode.SCALE, effectivePadMode(PadMode.SCALE, 2))
+        assertEquals(PadMode.ROTATE, effectivePadMode(PadMode.ROTATE, 3))
+    }
+
+    @Test
     fun padSitsBelowTheSelectionWhenThereIsRoom() {
         val pad = proxyPadCenter(200f, 300f, 400f, canvas, density = 1f)
         assertEquals(476f, pad.y)

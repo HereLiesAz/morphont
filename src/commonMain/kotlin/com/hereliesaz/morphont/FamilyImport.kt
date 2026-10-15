@@ -1,7 +1,7 @@
 package com.hereliesaz.morphont
 
 /**
- * Builds a whole roster of glyphs from ONE variable TTF: for every
+ * Builds a whole roster of glyphs from a static or variable TrueType font: for every
  * character it defines, extract that character's outline at every point
  * [Axis.ALL] defines in the font's own design space -- each axis's own
  * lo/hi extremes at every other axis's default, and regular at every
@@ -31,13 +31,12 @@ private fun axisCoordsFor(anchorName: String, fontAxes: List<AxisInfo>): Map<Str
 }
 
 fun buildFamilyFromVariableFont(bytes: ByteArray): FamilyImportResult {
-    val font = VariableFont.parse(bytes)
-    require(Axis.ALL.any { axis -> font.axes.any { it.tag == axis.tag } }) {
-        "This font doesn't define any axis Morphont currently supports (" +
-            Axis.ALL.joinToString { it.tag } + ") -- can't derive any anchor from it."
-    }
+    val font = VariableFont.parse(bytes, requireVariable = false)
+    // Static TTFs fill every anchor with their default outline. Fonts whose
+    // variable axes are unsupported likewise retain their default geometry.
 
     val coordsPerAnchor = ANCHORS.associateWith { axisCoordsFor(it, font.axes) }
+    val defaultOnly = font.axes.none { info -> Axis.ALL.any { it.tag == info.tag } }
     val glyphs = LinkedHashMap<String, Glyph>()
     val skipped = mutableListOf<Pair<Int, String>>()
 
@@ -48,11 +47,15 @@ fun buildFamilyFromVariableFont(bytes: ByteArray): FamilyImportResult {
         }
         val corners = LinkedHashMap<String, GlyphCorner>()
         val width = font.advanceWidth(codepoint) ?: 0f
-        var ok = true
-        for (anchor in ANCHORS) {
-            val outline = font.outlineAt(codepoint, coordsPerAnchor.getValue(anchor))
+        // A static font needs just one evaluation per codepoint, not one for
+        // each of Morphont's many axis anchors. Copy points to keep anchors
+        // independently editable even when their initial coordinates match.
+        val sharedOutline = if (defaultOnly) font.outlineAt(codepoint, emptyMap()) else null
+        var ok = !defaultOnly || sharedOutline != null
+        if (ok) for (anchor in ANCHORS) {
+            val outline = if (defaultOnly) sharedOutline else font.outlineAt(codepoint, coordsPerAnchor.getValue(anchor))
             if (outline == null) { ok = false; break }
-            corners[anchor] = GlyphCorner(width, outline.toMutableList())
+            corners[anchor] = GlyphCorner(width, outline.map { it.deepCopy() }.toMutableList())
         }
         if (!ok) {
             skipped.add(codepoint to "composite glyph nested too deeply or uses an unsupported component transform")

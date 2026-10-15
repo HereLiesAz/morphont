@@ -93,7 +93,7 @@ private fun importVariableFontIntoApp(app: AppState) {
                     }
                 val openedNote = if (firstImportedName == null) "" else " Opened $firstImportedName."
                 app.setStatus(
-                    "Imported ${result.glyphs.size} character(s) from the variable font.$openedNote$skippedNote",
+                    "Imported ${result.glyphs.size} character(s) from the TrueType font.$openedNote$skippedNote",
                 )
             } catch (e: Exception) {
                 app.setStatus("Import failed: ${e.message}", isError = true)
@@ -116,7 +116,7 @@ fun App() {
                     createGlyph = { name -> createGlyph(app, name) },
                     listGlyphNames = { Storage.listGlyphNames().also { app.glyphNames = it } },
                     fileActions = listOf(
-                        "Import a variable font (.ttf)" to { importVariableFontIntoApp(app) },
+                        "Import a TrueType font (.ttf)" to { importVariableFontIntoApp(app) },
                         "Open a project (.json)" to { importProjectIntoApp(app) },
                         "Save the whole project" to { Storage.exportProject() },
                         "Export this glyph (.json)" to {
@@ -192,7 +192,7 @@ fun App() {
                         app,
                         host,
                         actions = listOf(
-                            "Import a variable font" to { importVariableFontIntoApp(app) },
+                            "Import a TrueType font" to { importVariableFontIntoApp(app) },
                             "Open a Morphont project" to { importProjectIntoApp(app) },
                         ),
                     )

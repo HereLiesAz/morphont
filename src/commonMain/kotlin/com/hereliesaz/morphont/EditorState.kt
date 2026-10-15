@@ -18,13 +18,16 @@ typealias PointKey = Pair<Int, Int>
  * recomputed from an `orig` snapshot on every mousemove.
  */
 class AnchorState(initial: GlyphCorner) {
-    var glyph by mutableStateOf(initial)
-        private set
+    private var glyphState by mutableStateOf(completeNodeHandles(initial))
+
+    var glyph: GlyphCorner
+        get() = glyphState
+        private set(value) { glyphState = completeNodeHandles(value) }
 
     var selection by mutableStateOf<Set<PointKey>>(emptySet())
     var drawingContourIndex by mutableStateOf<Int?>(null)
 
-    private val history: SnapshotStateList<GlyphCorner> = SnapshotStateList<GlyphCorner>().apply { add(initial.deepCopy()) }
+    private val history: SnapshotStateList<GlyphCorner> = SnapshotStateList<GlyphCorner>().apply { add(glyph.deepCopy()) }
 
     fun replaceGlyph(new: GlyphCorner) {
         glyph = new
@@ -56,7 +59,7 @@ class AnchorState(initial: GlyphCorner) {
         selection = emptySet()
         drawingContourIndex = null
         history.clear()
-        history.add(new.deepCopy())
+        history.add(glyph.deepCopy())
     }
 
     /**
@@ -165,7 +168,7 @@ class AnchorState(initial: GlyphCorner) {
         val first = updated.contours.size
         contours.forEach { updated.contours.add(it.deepCopy()) }
         glyph = updated
-        selection = (first until updated.contours.size).flatMap { ci -> updated.contours[ci].points.indices.map { ci to it } }.toSet()
+        selection = (first until glyph.contours.size).flatMap { ci -> glyph.contours[ci].points.indices.map { ci to it } }.toSet()
     }
 
     /** Removes every contour touched by the selection (the clipboard's unit -- see [contoursForClipboard]). */
@@ -616,7 +619,8 @@ class AppState {
         val removed = r.removed
         if (removed.isNotEmpty()) for (name in r.anchorNames) {
             val st = anchors.getValue(name)
-            st.replaceWithHistory(withoutPoints(st.glyph, removed))
+            val reduced = withoutPoints(st.glyph, removed)
+            st.replaceWithHistory(GlyphCorner(reduced.width, reduced.contours.filter { it.points.isNotEmpty() }.toMutableList()))
         }
         val scope = if (r.anchorNames.size > 1) "every anchor" else (ANCHOR_LABELS[r.anchorNames.first()] ?: r.anchorNames.first())
         setStatus("Removed ${removed.size} point(s) from $scope.")

@@ -113,7 +113,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 files.openTtf(
                     { bytes ->
                         importingFont = true
-                        app.setStatus("Importing variable font…")
+                        app.setStatus("Importing TrueType font…")
                         scope.launch {
                             try {
                                 val result = withContext(Dispatchers.Default) {
@@ -133,7 +133,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                                     }
                                 val openedNote = if (firstImportedName == null) "" else " Opened $firstImportedName."
                                 app.setStatus(
-                                    "Imported ${result.glyphs.size} character(s) from the variable font.$openedNote$skippedNote",
+                                    "Imported ${result.glyphs.size} character(s) from the TrueType font.$openedNote$skippedNote",
                                 )
                             } catch (e: Exception) {
                                 app.setStatus("Import failed: ${e.message}", true)
@@ -153,7 +153,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                     createGlyph = { createGlyphNamed(it) },
                     listGlyphNames = { storage.listGlyphNames().also { app.glyphNames = it } },
                     fileActions = listOf(
-                        "Import a variable font (.ttf)" to { importVariableFontIntoApp() },
+                        "Import a TrueType font (.ttf)" to { importVariableFontIntoApp() },
                         "Open a project (.json)" to { importProjectIntoApp() },
                         "Export the whole project" to {
                             scope.launch {
@@ -283,7 +283,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                         app,
                         host,
                         actions = listOf(
-                            (if (importingFont) "Importing variable font…" else "Import a variable font") to { importVariableFontIntoApp() },
+                            (if (importingFont) "Importing TrueType font…" else "Import a TrueType font") to { importVariableFontIntoApp() },
                             "Open a Morphont project" to { importProjectIntoApp() },
                         ),
                     )

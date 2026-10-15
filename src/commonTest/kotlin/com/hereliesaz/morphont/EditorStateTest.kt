@@ -10,10 +10,10 @@ class EditorStateTest {
         state.startNewContour()
         state.addDrawPoint(1f, 1f)
         state.addDrawPoint(2f, 2f)
-        assertEquals(2, state.glyph.contours[0].points.size)
+        assertEquals(6, state.glyph.contours[0].points.size)
 
         state.undo()
-        assertEquals(1, state.glyph.contours[0].points.size)
+        assertEquals(3, state.glyph.contours[0].points.size)
         assertEquals(1f, state.glyph.contours[0].points[0].x)
 
         state.undo()
@@ -46,7 +46,7 @@ class EditorStateTest {
         app.copyActiveToOthers()
 
         val copied = app.anchors.getValue(target).glyph
-        assertEquals(1, copied.contours[0].points.size)
+        assertEquals(3, copied.contours[0].points.size)
         assertEquals(5f, copied.contours[0].points[0].x)
 
         app.anchors.getValue(target).undo()
