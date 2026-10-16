@@ -103,10 +103,11 @@ object Storage {
             try {
                 val loaded = opened.transaction(GLYPH_STORE) {
                     objectStore(GLYPH_STORE).getAll()
-                }.toList().associate { raw ->
+                }.toList().mapNotNull { raw ->
                     val record = raw as StoredGlyph
-                    record.name to ProjectCodec.decodeGlyph(record.json)
-                }.toMutableMap()
+                    // One undecodable record must not disable persistence for every other glyph.
+                    runCatching { record.name to ProjectCodec.decodeGlyph(record.json) }.getOrNull()
+                }.toMap().toMutableMap()
 
                 if (loaded.isEmpty()) {
                     val legacy = readLegacyProject()
