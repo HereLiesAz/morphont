@@ -98,6 +98,19 @@ class TrueTypeImportTest {
     }
 
     @Test
+    fun repeatedOrDescendingContourEndpointsAreRejected() {
+        // Glyph A's first contour ends at point 2 in the fixture. Claim two
+        // contours but leave the second endpoint at zero: [2, 0] is invalid.
+        val bytes = fixture()
+        bytes[285] = 2
+        val font = VariableFont.parse(bytes, requireVariable = false)
+        val error = assertFailsWith<IllegalArgumentException> {
+            font.outlineAt(65, emptyMap())
+        }
+        assertTrue(error.message.orEmpty().contains("endpoints are not increasing"))
+    }
+
+    @Test
     fun readerChecksTheLastByteAndGlyphSubranges() {
         val r = Reader(byteArrayOf(10, 20, 30, 40))
         assertEquals(40, r.u8(3))
