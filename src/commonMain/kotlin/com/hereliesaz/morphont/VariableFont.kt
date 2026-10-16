@@ -67,7 +67,11 @@ data class AxisInfo(val tag: String, val min: Float, val default: Float, val max
 /** Raw, unvaried (default) glyph data: flat point arrays plus contour boundaries, before grouping into contours or applying any gvar delta. */
 private data class RawSimpleGlyph(val xs: IntArray, val ys: IntArray, val onCurve: BooleanArray, val endPtsOfContours: IntArray)
 
-private data class CompositeComponent(val glyphId: Int, val dx: Float, val dy: Float)
+/** [xx]/[xy]/[yx]/[yy] are the 2x2 transform (identity by default): x' = xx*x + yx*y + dx, y' = xy*x + yy*y + dy. */
+private data class CompositeComponent(
+    val glyphId: Int, val dx: Float, val dy: Float,
+    val xx: Float = 1f, val xy: Float = 0f, val yx: Float = 0f, val yy: Float = 1f,
+)
 
 private const val MAX_COMPOSITE_DEPTH = 1
 
@@ -150,7 +154,7 @@ class VariableFont private constructor(
         for (comp in components) {
             val sub = outlineForGlyph(comp.glyphId, normalizedCoords, depth + 1) ?: return null
             for (c in sub) {
-                merged.add(ContourData(c.points.map { Pt(it.x + comp.dx, it.y + comp.dy, it.onCurve, it.smooth) }.toMutableList()))
+                merged.add(ContourData(c.points.map { Pt(comp.xx * it.x + comp.yx * it.y + comp.dx, comp.xy * it.x + comp.yy * it.y + comp.dy, it.onCurve, it.smooth) }.toMutableList()))
             }
         }
         return merged
@@ -255,8 +259,15 @@ class VariableFont private constructor(
                 else -> 0
             }
             check(p, transformSize)
+            fun f2dot14(at: Int) = r.i16(at) / 16384f
+            var xx = 1f; var xy = 0f; var yx = 0f; var yy = 1f
+            when (transformSize) {
+                2 -> { xx = f2dot14(p); yy = xx }
+                4 -> { xx = f2dot14(p); yy = f2dot14(p + 2) }
+                8 -> { xx = f2dot14(p); xy = f2dot14(p + 2); yx = f2dot14(p + 4); yy = f2dot14(p + 6) }
+            }
             p += transformSize
-            components.add(CompositeComponent(componentGlyphId, dx, dy))
+            components.add(CompositeComponent(componentGlyphId, dx, dy, xx, xy, yx, yy))
             more = flags and 0x0020 != 0
         }
         compositeCache[glyphId] = components
@@ -338,7 +349,7 @@ class VariableFont private constructor(
                 if (p == a || p == b) continue
                 val oA = orig[a].toFloat(); val oB = orig[b].toFloat(); val oP = orig[p].toFloat()
                 delta[p] = when {
-                    oA == oB -> delta[a]
+                    oA == oB -> if (delta[a] == delta[b]) delta[a] else 0f // equal reference coordinates: spec/fontTools give 0 unless the deltas agree
                     oP <= min(oA, oB) -> if (oA < oB) delta[a] else delta[b]
                     oP >= max(oA, oB) -> if (oA < oB) delta[b] else delta[a]
                     else -> {
