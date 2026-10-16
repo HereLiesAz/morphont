@@ -123,6 +123,13 @@ fun proxyPadCenter(
 }
 
 /**
+ * The circle plus a 30% safety margin is one exclusive move hit region.
+ * This is checked before panning, transform boxes, guides and node picking.
+ */
+internal fun hitsNodeMoveCircle(position: Offset, center: Offset?, radius: Float): Boolean =
+    center != null && (position - center).getDistance() <= radius * 1.3f
+
+/**
  * Pointer handling shared by wasm and Android, in priority order: wheel zoom,
  * two-finger pinch/pan, the touch proxy pad, the active ghost's transform
  * box, rulers (drag out a guide), contour drawing, points, existing guides,
@@ -160,6 +167,27 @@ suspend fun PointerInputScope.handleAnchorGestures(
         val startPos = down.position
         down.consume()
 
+        // The cross-circle is exclusively a node mover. Reserve its full
+        // visible radius plus a generous margin before *all* other handlers,
+        // including mouse panning, transform boxes, guides and node hit tests.
+        // Once captured, it cannot switch actions during the drag.
+        val proxy = f.proxyCenter
+        if (hitsNodeMoveCircle(startPos, proxy, f.proxyRadiusPx)) {
+            val selected = f.app.editTarget(f.anchorName)
+            val nodes = selected.selectedNodes().toList()
+            if (nodes.isNotEmpty()) {
+                onPointHit()
+                dragSelection(
+                    f, down.id, selected, nodes, startPos,
+                    slop = 0.5f, feedback = feedback, snapEnabled = false,
+                    allowPinch = false,
+                )
+            } else {
+                followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
+            }
+            return@awaitEachGesture
+        }
+
         // Middle/right mouse drag pans regardless of the current tool. It must
         // run before the read-only reduction and all selection hit tests.
         if (down.type == PointerType.Mouse &&
@@ -182,32 +210,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
         val ghost = app.activeGhost
         val target = app.editTarget(f.anchorName)
 
-        // Touch proxy: moving the selection from a pad offset away from it.
-        val proxy = f.proxyCenter
-        if (proxy != null && (startPos - proxy).getDistance() <= f.proxyRadiusPx * 1.3f) {
-            onPointHit()
-            val keys = if (app.nodeMoveMode) target.selectedNodes().toList() else target.selection.toList()
-            val padMode = if (app.nodeMoveMode) PadMode.MOVE else effectivePadMode(app.padMode, keys.size)
-            when (padMode) {
-                PadMode.MOVE -> dragSelection(f, down.id, target, keys, startPos, slop = 0.5f, feedback, snapEnabled = false)
-                else -> {
-                    // Scale: drag up to grow, down to shrink. Turn: drag sideways, ~0.5° per dp.
-                    val b = boundsOfSelection(target.glyph, target.selection) ?: return@awaitEachGesture
-                    val orig = target.glyph.deepCopy()
-                    var pushed = false
-                    followOrPinch(f, down.id, 0.5f) { pos, _ ->
-                        if (!pushed) { target.pushHistory(); pushed = true }
-                        val d = pos - startPos
-                        val t = if (padMode == PadMode.SCALE) {
-                            val k = kotlin.math.exp(-d.y / (160f * f.density))
-                            scalingAbout(k, k, b.cx, b.cy)
-                        } else rotationAbout(-d.x / f.density * 0.5f, b.cx, b.cy)
-                        target.replaceGlyph(transformPoints(orig, keys, t))
-                    }
-                }
-            }
-            return@awaitEachGesture
-        }
+        // Cross-circle input was already captured before all other tools.
 
         // Selection transform box: corner squares scale, the knob rotates.
         val sh = f.selectionHandles
@@ -412,6 +415,7 @@ private suspend fun AwaitPointerEventScope.dragSelection(
     feedback: CanvasFeedback,
     primary: PointKey? = null,
     snapEnabled: Boolean = true,
+    allowPinch: Boolean = true,
 ) {
     if (keys.isEmpty()) return
     val origGlyph = target.glyph.deepCopy()
@@ -424,7 +428,7 @@ private suspend fun AwaitPointerEventScope.dragSelection(
     }
     val targets = if (snapEnabled && f.app.view.snap) snapTargetsFor(f, target, keys.toSet()) else null
     var pushed = false
-    followOrPinch(f, downId, slop) { pos, _ ->
+    followOrPinch(f, downId, slop, allowPinch = allowPinch) { pos, _ ->
         if (!pushed) { target.pushHistory(); pushed = true }
         val delta = pos - startPos
         var dx = delta.x / f.mapper.scale
@@ -495,6 +499,7 @@ private suspend fun AwaitPointerEventScope.followOrPinch(
     f: CanvasFrame,
     downId: PointerId,
     slop: Float,
+    allowPinch: Boolean = true,
     onMove: (Offset, PointerInputChange) -> Unit,
 ): Boolean {
     var start: Offset? = null
@@ -502,7 +507,7 @@ private suspend fun AwaitPointerEventScope.followOrPinch(
     while (true) {
         val ev = awaitPointerEvent()
         val pressed = ev.changes.filter { it.pressed }
-        if (!committed && pressed.size >= 2) {
+        if (allowPinch && !committed && pressed.size >= 2) {
             ev.changes.forEach { it.consume() }
             pinch(f)
             return false

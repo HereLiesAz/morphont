@@ -104,7 +104,10 @@ fun AnchorCanvas(
     val vbFor = { z: Float, px: Float, py: Float -> editorViewBox(metrics, advance, z, px, py) }
     val vb = vbFor(view.zoom, view.panX, view.panY)
 
-    val showProxy = isTouchSurface && target.selection.isNotEmpty() &&
+    // The cross-circle can be enabled on every platform, but defaults to
+    // touch-only until the user chooses otherwise. A selected Bézier handle
+    // always resolves to its owning on-curve node when the circle is used.
+    val showProxy = app.nodeMoveCircleEnabled && target.selectedNodes().isNotEmpty() &&
         target.drawingContourIndex == null && app.reduction == null && !(ghost != null && app.ghostTransformMode)
 
     fun frame(): CanvasFrame? {

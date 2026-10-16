@@ -59,6 +59,7 @@ object MIcons {
     val RotateRight = icon("rotR", listOf("M20 4v5h-5", "M19.5 9A8 8 0 1 0 18 17"))
     val Nodes = icon("nodes", listOf("M4 18 10 6l10 6", circle(4f, 18f, 1.8f), circle(10f, 6f, 1.8f), circle(20f, 12f, 1.8f)))
     val Move = icon("move", listOf("M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"))
+    val FontGrid = icon("fontGrid", listOf("M3 3h8v8H3z", "M13 3h8v8h-8z", "M3 13h8v8H3z", "M13 13h8v8h-8z"))
     val SelectAll = icon("selectAll", listOf("M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4", "M9 9h6v6H9z"))
     val ResetView = icon("resetView", listOf("M20 9V4h-5", "M20 4a8 8 0 1 0 2 12", "M12 8v4l3 2"))
     @Deprecated("Use ResetView")
