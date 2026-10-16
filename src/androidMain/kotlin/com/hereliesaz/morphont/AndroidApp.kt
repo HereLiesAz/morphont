@@ -46,7 +46,14 @@ private enum class OpenGlyphOutcome { OPENED, EMPTY, UNREADABLE }
 fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
     MorphontTheme {
         ConveySystem {
-            val app = remember { AppState().apply { glyphLookup = { storage.loadGlyph(it) } } }
+            // Android starts in touch-first mode; a hardware mouse or stylus
+            // can still change the default until Move circle is explicitly set.
+            val app = remember {
+                AppState().apply {
+                    glyphLookup = { storage.loadGlyph(it) }
+                    touchInput = true
+                }
+            }
             val keyboardFocus = remember { FocusRequester() }
             val scope = rememberCoroutineScope()
             val haptics = LocalHapticFeedback.current

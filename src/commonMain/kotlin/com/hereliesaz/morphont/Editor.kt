@@ -84,11 +84,13 @@ private enum class Sheet { GUIDES, GHOSTS, PREVIEW }
 @Composable
 fun EditorScreen(app: AppState, host: EditorHost, modifier: Modifier = Modifier) {
     var browserOpen by remember { mutableStateOf(false) }
+    var fontOverviewOpen by remember { mutableStateOf(false) }
     BoxWithConstraints(modifier.fillMaxSize().background(Mono.ground).statusBarsPadding().navigationBarsPadding()) {
-        if (maxWidth < COMPACT_BREAKPOINT) CompactEditor(app, host) { browserOpen = true }
-        else WideEditor(app, host) { browserOpen = true }
+        if (maxWidth < COMPACT_BREAKPOINT) CompactEditor(app, host, { browserOpen = true }, { fontOverviewOpen = true })
+        else WideEditor(app, host, { browserOpen = true }, { fontOverviewOpen = true })
     }
     if (browserOpen) GlyphBrowser(app, host) { browserOpen = false }
+    if (fontOverviewOpen) FontOverview(app, host) { fontOverviewOpen = false }
 }
 
 private fun nodeCount(app: AppState) = app.anchors.getValue(app.activeAnchor).glyph.contours.sumOf { c -> c.points.count { it.onCurve } }
@@ -162,20 +164,24 @@ private fun rememberSuggestions(app: AppState): List<Suggestion> {
 }
 
 private fun selectTool(app: AppState) {
-    app.nodeMoveMode = false
-    app.showNodeTools = true
-    val t = app.editTarget(app.activeAnchor)
-    if (t.drawingContourIndex != null) t.finishContour()
+    app.resumeGlyphSelection()
 }
 
 private fun moveNodeTool(app: AppState) {
-    selectTool(app)
+    // Ghost node editing remains supported; placement and simplify modes
+    // instead return to editable glyph nodes.
+    if (app.activeGhost == null || app.ghostTransformMode || app.reduction != null) {
+        app.resumeGlyphSelection()
+    } else {
+        app.commandTarget.drawingContourIndex?.let { app.commandTarget.finishContour() }
+    }
     app.nodeMoveMode = true
 }
 
 private fun penTool(app: AppState) {
     // While a ghost is being placed there's nothing to draw on; the glyph itself is off-limits.
     if (app.activeGhost != null && app.ghostTransformMode) return
+    if (app.reduction != null) app.resumeGlyphSelection()
     app.nodeMoveMode = false
     val t = app.editTarget(app.activeAnchor)
     if (t.drawingContourIndex == null) t.startNewContour()
@@ -185,7 +191,10 @@ private fun penTool(app: AppState) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit) {
+private fun CompactEditor(
+    app: AppState, host: EditorHost, openBrowser: () -> Unit,
+    openFontOverview: () -> Unit,
+) {
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     val suggestions = rememberSuggestions(app)
     // Starting a ghost edit closes the sheet so the canvas is in view.
@@ -219,11 +228,12 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-            IconAction(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode, size = 44)
-            IconAction(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+            IconAction(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.activeGhost == null && app.reduction == null, size = 44)
+            IconAction(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
             IconAction(MIcons.Nodes, "Show or hide node tools", { app.showNodeTools = !app.showNodeTools }, selected = app.showNodeTools, size = 42)
             IconAction(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
             IconAction(MIcons.ResetView, "Reset zoom and pan", { app.view.resetView() }, size = 42)
+            IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = 42)
             IconAction(MIcons.Guides, "Guides", { sheet = Sheet.GUIDES }, size = 48)
             IconAction(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = 48)
             IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 48, enabled = app.activeGhost == null)
@@ -259,7 +269,10 @@ private fun CompactEditor(app: AppState, host: EditorHost, openBrowser: () -> Un
 // ----------------------------------------------------------------- desktop
 
 @Composable
-private fun WideEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit) {
+private fun WideEditor(
+    app: AppState, host: EditorHost, openBrowser: () -> Unit,
+    openFontOverview: () -> Unit,
+) {
     val suggestions = rememberSuggestions(app)
     val drawing = app.editTarget(app.activeAnchor).drawingContourIndex != null
     Column(Modifier.fillMaxSize()) {
@@ -274,14 +287,15 @@ private fun WideEditor(app: AppState, host: EditorHost, openBrowser: () -> Unit)
             }
             GlyphTabs(app, host, openBrowser, Modifier.weight(1f))
             ZoomControl(app.view)
+            IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = 40)
             IconAction(MIcons.Undo, "Undo", { app.undo() }, size = 40)
             MonoButton(onClick = openBrowser, selected = true) { Text("Glyphs & file", fontSize = 13.sp) }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
         Row(Modifier.weight(1f).fillMaxWidth()) {
             Column(Modifier.width(60.dp).fillMaxHeight().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconAction(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode, size = 42)
-                IconAction(MIcons.Move, "Move node (M)", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+                IconAction(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.activeGhost == null && app.reduction == null, size = 42)
+                IconAction(MIcons.Move, "Move node (M)", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
                 IconAction(MIcons.Nodes, "Show or hide node tools", { app.showNodeTools = !app.showNodeTools }, selected = app.showNodeTools, size = 42)
                 IconAction(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
                 IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 42, enabled = app.activeGhost == null)

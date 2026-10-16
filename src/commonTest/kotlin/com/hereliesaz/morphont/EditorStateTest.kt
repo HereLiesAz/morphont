@@ -50,6 +50,82 @@ class EditorStateTest {
         }
     }
 
+    /**
+     * Reproduces the visually inactive glyph: a ghost is active in placement
+     * mode, so canvas gestures are intentionally routed away from glyph nodes.
+     * Select must return to the glyph in one action, preserving its geometry.
+     */
+    @Test
+    fun selectRecoversFromGhostPlacementWithoutDeletingArtwork() {
+        val app = AppState()
+        val outline = GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
+            Pt(0f, 0f, true), Pt(0f, 100f, true),
+            Pt(100f, 100f, true), Pt(100f, 0f, true),
+        ))))
+        app.loadGlyph("A", Glyph(corners = mutableMapOf("regular" to outline)))
+        val anchor = app.anchors.getValue("regular")
+        app.addGhost("reference", outline.contours)
+        val layer = app.ghosts.single()
+        app.editGhost(layer.id)
+        app.nodeMoveMode = true
+        app.showNodeTools = false
+        app.view.zoom = 2.5f
+        assertEquals(layer.state, app.editTarget("regular"))
+        assertEquals(true, app.ghostTransformMode)
+
+        app.resumeGlyphSelection()
+
+        assertEquals(null, app.activeGhost)
+        assertEquals(anchor, app.editTarget("regular"))
+        assertEquals(false, app.nodeMoveMode)
+        assertEquals(true, app.showNodeTools)
+        assertEquals(2.5f, app.view.zoom)
+        assertEquals(1, app.ghosts.size) // Exit editing; do not delete the reference.
+        assertEquals(4, anchor.glyph.contours.single().points.count { it.onCurve })
+        val mapper = SpaceMapper(ViewBox(-50f, -50f, 200f, 200f), androidx.compose.ui.geometry.Size(200f, 200f))
+        assertEquals(0 to 0, hitTestPoint(anchor.glyph, mapper, mapper.toCanvas(0f, 0f), 8f, nodeOnly = true))
+    }
+
+    @Test
+    fun selectCancelsSimplificationInsteadOfKeepingCanvasReadOnly() {
+        val app = AppState()
+        app.loadGlyph("A", Glyph(corners = mutableMapOf(
+            "regular" to GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
+                Pt(0f, 0f, true), Pt(0f, 100f, true), Pt(50f, 120f, true),
+                Pt(100f, 100f, true), Pt(100f, 0f, true),
+            )))),
+        )))
+        app.startReduction()
+        val reduction = requireNotNull(app.reduction)
+        reduction.removeCount = 1
+
+        app.resumeGlyphSelection()
+
+        assertEquals(null, app.reduction)
+        assertEquals(5, app.anchors.getValue("regular").glyph.contours.single().points.count { it.onCurve })
+        assertEquals(null, app.activeGhost)
+    }
+
+    @Test
+    fun selectEndsPenModeOnHiddenAnchorsAndRestoresPointerTools() {
+        val app = AppState()
+        val regular = app.anchors.getValue("regular")
+        val weight = app.anchors.getValue(Axis.WEIGHT.lo)
+        regular.startNewContour()
+        regular.addDrawPoint(20f, 30f)
+        weight.startNewContour()
+        app.activeAnchor = "regular"
+        app.showNodeTools = false
+
+        app.resumeGlyphSelection()
+
+        assertEquals(null, regular.drawingContourIndex)
+        assertEquals(null, weight.drawingContourIndex)
+        assertEquals(1, regular.glyph.contours.single().points.count { it.onCurve })
+        assertEquals(0, weight.glyph.contours.size)
+        assertEquals(true, app.showNodeTools)
+    }
+
     @Test
     fun undoRevertsOnlyTheMostRecentEdit() {
         val state = AnchorState(GlyphCorner())
