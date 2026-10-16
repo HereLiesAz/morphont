@@ -399,10 +399,10 @@ fun reductionOrder(glyphs: List<GlyphCorner>): List<Removal> {
  * contour valid (see [deleteFromContour]). Contours are never dropped here, so
  * the result's contour indices still match [glyph]'s.
  */
-fun withoutPoints(glyph: GlyphCorner, removed: Set<PointKey>): GlyphCorner =
+fun withoutPoints(glyph: GlyphCorner, removed: Set<PointKey>, mergeIntoPrevious: Boolean = false): GlyphCorner =
     GlyphCorner(
         glyph.width,
         glyph.contours.mapIndexed { ci, c ->
-            deleteFromContour(c, c.points.indices.filter { (ci to it) in removed && c.points[it].onCurve }.toSet())
+            deleteFromContour(c, c.points.indices.filter { (ci to it) in removed && c.points[it].onCurve }.toSet(), mergeIntoPrevious = mergeIntoPrevious)
         }.toMutableList(),
     )

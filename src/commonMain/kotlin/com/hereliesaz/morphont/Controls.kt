@@ -696,7 +696,12 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
     val mod = e.isCtrlPressed || e.isMetaPressed
     val t = app.commandTarget
     val step = if (e.isShiftPressed) 10f else 1f
+    // Simplify preview and ghost Place mode: node-level commands would act on nodes the user can't see.
+    val locked = app.nodeEditsLocked
     when {
+        locked && (mod && (e.key == Key.C || e.key == Key.X || e.key == Key.V || e.key == Key.A) ||
+            e.key == Key.Delete || e.key == Key.Backspace || e.key == Key.DirectionLeft || e.key == Key.DirectionRight ||
+            e.key == Key.DirectionUp || e.key == Key.DirectionDown) -> Unit
         mod && e.key == Key.C -> app.copySelection()
         mod && e.key == Key.X -> app.cutSelection()
         mod && e.key == Key.V -> app.paste()
@@ -710,7 +715,7 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
             else -> t.selection = emptySet()
         }
         e.key == Key.P -> {
-            if (app.activeGhost == null || !app.ghostTransformMode) {
+            if (!app.nodeEditsLocked) {
                 app.nodeMoveMode = false
                 if (t.drawingContourIndex == null) t.startNewContour()
             }
@@ -720,7 +725,7 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
             app.nodeMoveMode = false
         }
         e.key == Key.M -> {
-            if (app.activeGhost == null || !app.ghostTransformMode) {
+            if (!app.nodeEditsLocked) {
                 if (t.drawingContourIndex != null) t.finishContour()
                 app.nodeMoveMode = true
             }

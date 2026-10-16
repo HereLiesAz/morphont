@@ -210,17 +210,24 @@ private fun fromSegments(pts: List<Pt>, segs: List<Seg>): Pair<ContourData, Map<
  * its own node, and a segment left with neither becomes straight. Returns
  * an empty contour when no node survives.
  */
-fun deleteFromContour(c: ContourData, nodes: Set<Int>, arms: Set<Int> = emptySet()): ContourData {
+fun deleteFromContour(c: ContourData, nodes: Set<Int>, arms: Set<Int> = emptySet(), mergeIntoPrevious: Boolean = false): ContourData {
     val pts = c.points
     val alive = pts.indices.filter { pts[it].onCurve && it !in nodes }
     if (alive.isEmpty()) return ContourData()
+    val onCurve = pts.indices.filter { pts[it].onCurve }
     val segs = alive.mapIndexed { k, a ->
         val b = alive[(k + 1) % alive.size]
-        val out = outArmIndex(pts, a)?.takeIf { it !in arms }?.let { pts[it] }
+        // Merging duplicates: a removed node sits on [a], so the curve leaving the pair is the removed node's out-arm.
+        var outFrom = a
+        if (mergeIntoPrevious) {
+            var oi = (onCurve.indexOf(a) + 1) % onCurve.size
+            while (onCurve[oi] in nodes && onCurve[oi] != a) { outFrom = onCurve[oi]; oi = (oi + 1) % onCurve.size }
+        }
+        val out = outArmIndex(pts, outFrom)?.takeIf { it !in arms }?.let { pts[it] }
         val inn = inArmIndex(pts, b)?.takeIf { it !in arms }?.let { pts[it] }
         val pair = when {
             out == null && inn == null -> null
-            else -> (out ?: pts[a].copy2().also { it.onCurve = false; it.smooth = false }) to
+            else -> (out ?: pts[outFrom].copy2().also { it.onCurve = false; it.smooth = false }) to
                 (inn ?: pts[b].copy2().also { it.onCurve = false; it.smooth = false })
         }
         Seg(a, b, pair)

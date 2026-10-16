@@ -175,7 +175,7 @@ private fun moveNodeTool(app: AppState) {
 
 private fun penTool(app: AppState) {
     // While a ghost is being placed there's nothing to draw on; the glyph itself is off-limits.
-    if (app.activeGhost != null && app.ghostTransformMode) return
+    if (app.nodeEditsLocked) return
     app.nodeMoveMode = false
     val t = app.editTarget(app.activeAnchor)
     if (t.drawingContourIndex == null) t.startNewContour()

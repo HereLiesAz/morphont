@@ -272,7 +272,7 @@ private fun cleanup(app: AppState): List<Suggestion> {
         }
     }
     if (dupes.isNotEmpty()) out.add(Suggestion("Merge ${dupes.size} duplicate point${if (dupes.size > 1) "s" else ""}", scopeLabel(scope)) { a ->
-        scope.forEach { n -> a.anchors.getValue(n).let { it.replaceWithHistory(withoutPoints(it.glyph, dupes)) } }
+        scope.forEach { n -> a.anchors.getValue(n).let { it.replaceWithHistory(withoutPoints(it.glyph, dupes, mergeIntoPrevious = true)) } }
         a.setStatus("Merged ${dupes.size} duplicate point(s).")
     })
     // Redundant: points whose removal changes nothing (zero drift).
@@ -282,15 +282,17 @@ private fun cleanup(app: AppState): List<Suggestion> {
         a.setStatus("Removed ${redundant.size} point(s) that added no shape.")
     })
     // Direction: TrueType wants outer contours clockwise, counters counter-clockwise.
-    val wrong = g.contours.indices.filter { ci ->
-        val pts = sampledContour(g.contours[ci])
-        pts.size >= 3 && (signedArea(pts) < 0f) != isOuter(g.contours, ci)
+    fun wrongDirection(gl: GlyphCorner) = gl.contours.indices.filter { ci ->
+        val pts = sampledContour(gl.contours[ci])
+        pts.size >= 3 && (signedArea(pts) < 0f) != isOuter(gl.contours, ci)
     }
+    val wrong = wrongDirection(g)
     if (wrong.isNotEmpty()) out.add(Suggestion("Fix direction of ${wrong.size} contour${if (wrong.size > 1) "s" else ""}", "outer clockwise") { a ->
         scope.forEach { n ->
             val st = a.anchors.getValue(n)
             val ng = st.glyph.deepCopy()
-            for (ci in wrong) ng.contours[ci] = ContourData(ng.contours[ci].points.reversed().toMutableList())
+            // Each anchor is judged on its own outline, not the active anchor's verdict.
+            for (ci in wrongDirection(st.glyph)) ng.contours[ci] = ContourData(ng.contours[ci].points.reversed().toMutableList())
             st.replaceWithHistory(ng)
         }
         a.setStatus("Reversed ${wrong.size} contour(s).")

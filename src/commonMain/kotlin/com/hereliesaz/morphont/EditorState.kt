@@ -30,6 +30,8 @@ class AnchorState(initial: GlyphCorner) {
     private val history: SnapshotStateList<GlyphCorner> = SnapshotStateList<GlyphCorner>().apply { add(glyph.deepCopy()) }
     /** AppState registers this so undo spans geometry, guides and layer actions. */
     var onHistoryPush: (() -> Unit)? = null
+    /** AppState registers this to forget the oldest ([oldest] = true) or newest undo action when history drops an entry. */
+    var onHistoryDrop: ((oldest: Boolean) -> Unit)? = null
 
     fun replaceGlyph(new: GlyphCorner) {
         glyph = new
@@ -38,8 +40,11 @@ class AnchorState(initial: GlyphCorner) {
     /** Records the state to return to on the next [undo]. Call before mutating [glyph]. */
     fun pushHistory() {
         history.add(glyph.deepCopy())
-        if (history.size > 80) history.removeAt(0)
         onHistoryPush?.invoke()
+        if (history.size > 80) {
+            history.removeAt(0)
+            onHistoryDrop?.invoke(true)
+        }
     }
 
     /** Pops the most recently pushed pre-edit state and makes it current. */
@@ -47,6 +52,8 @@ class AnchorState(initial: GlyphCorner) {
         if (history.size <= 1) return
         glyph = history.removeAt(history.lastIndex).deepCopy()
         selection = emptySet()
+        // The contour being drawn may not exist in the restored state.
+        drawingContourIndex = null
     }
 
     /** Replaces [glyph] as one undoable edit: pushes the current state first, same as any other edit. */
@@ -93,7 +100,10 @@ class AnchorState(initial: GlyphCorner) {
             updated.contours.removeAt(ci)
             glyph = updated
             // Starting and cancelling an empty contour is not a new edit.
-            if (history.size > 1) history.removeAt(history.lastIndex)
+            if (history.size > 1) {
+                history.removeAt(history.lastIndex)
+                onHistoryDrop?.invoke(false)
+            }
         }
         drawingContourIndex = null
         selection = emptySet()
@@ -102,6 +112,7 @@ class AnchorState(initial: GlyphCorner) {
     /** Pen tap: appends a corner node to the contour being drawn (see [appendDrawNode]). */
     fun addDrawPoint(x: Float, y: Float) {
         val ci = drawingContourIndex ?: return
+        if (ci !in glyph.contours.indices) { drawingContourIndex = null; return }
         pushHistory()
         val updated = glyph.deepCopy()
         updated.contours[ci] = appendDrawNode(updated.contours[ci], x, y)
@@ -250,13 +261,17 @@ class GhostLayer(
     val state = AnchorState(GlyphCorner(0f, contours.map { it.deepCopy() }.toMutableList()))
     private val matrixHistory = mutableListOf<Affine>()
     var onMatrixHistoryPush: (() -> Unit)? = null
+    var onMatrixDrop: (() -> Unit)? = null
 
     val isLinked: Boolean get() = sourceGlyph != null
 
     fun pushMatrixHistory() {
         matrixHistory.add(matrix)
-        if (matrixHistory.size > 80) matrixHistory.removeAt(0)
         onMatrixHistoryPush?.invoke()
+        if (matrixHistory.size > 80) {
+            matrixHistory.removeAt(0)
+            onMatrixDrop?.invoke()
+        }
     }
 
     fun undoMatrix(): Boolean {
@@ -265,11 +280,16 @@ class GhostLayer(
         return true
     }
 
-    /** Folds [matrix] into the owned contours (static ghosts only) so nodes edit exactly what's drawn. */
-    fun bake() {
-        if (isLinked || matrix == IDENTITY_MATRIX) return
-        state.replaceWithHistory(GlyphCorner(0f, applyAffine(state.glyph.contours, matrix).map { it.deepCopy() }.toMutableList()))
+    /**
+     * Folds the placement into the owned contours (static ghosts only) so nodes edit exactly what's drawn.
+     * A ghost set [beside] the glyph is drawn shifted by [advance], so that shift is baked in too.
+     */
+    fun bake(advance: Float = 0f) {
+        if (isLinked || (matrix == IDENTITY_MATRIX && !beside)) return
+        val placed = if (beside) compose(translation(advance, 0f), matrix) else matrix
+        state.replaceWithHistory(GlyphCorner(0f, applyAffine(state.glyph.contours, placed).map { it.deepCopy() }.toMutableList()))
         matrix = IDENTITY_MATRIX
+        beside = false
         matrixHistory.clear()
     }
 
@@ -325,7 +345,8 @@ class ReductionSession(val anchorNames: List<String>, val order: List<Removal>, 
 /** Overall application state: every axis's anchors, preview and UI selections. */
 class AppState {
     val anchors: Map<String, AnchorState> = ANCHORS.associateWith { AnchorState(GlyphCorner()) }
-    private val undoActions = mutableListOf<() -> Unit>()
+    private class UndoEntry(val owner: Any?, val action: () -> Unit)
+    private val undoActions = mutableListOf<UndoEntry>()
     private var recording = true
     /** Increment before bulk imports so pending autosaves cannot overwrite newly imported records. */
     var autosaveEpoch by mutableStateOf(0)
@@ -333,19 +354,28 @@ class AppState {
 
     init {
         anchors.values.forEach { state ->
-            state.onHistoryPush = { recordUndo { state.undo() } }
+            state.onHistoryPush = { recordUndo(state) { state.undo() } }
+            state.onHistoryDrop = { oldest -> dropUndo(state, oldest) }
         }
     }
 
-    private fun recordUndo(action: () -> Unit) {
+    private fun recordUndo(owner: Any? = null, action: () -> Unit) {
         if (!recording) return
-        undoActions.add(action)
+        undoActions.add(UndoEntry(owner, action))
         if (undoActions.size > 150) undoActions.removeAt(0)
     }
 
+    /** Forgets the oldest or newest undo action owned by [owner] when its own history dropped the matching entry. */
+    private fun dropUndo(owner: Any, oldest: Boolean) {
+        val i = if (oldest) undoActions.indexOfFirst { it.owner === owner } else undoActions.indexOfLast { it.owner === owner }
+        if (i >= 0) undoActions.removeAt(i)
+    }
+
     private fun attachGhost(g: GhostLayer) {
-        g.state.onHistoryPush = { recordUndo { g.state.undo() } }
-        g.onMatrixHistoryPush = { recordUndo { g.undoMatrix() } }
+        g.state.onHistoryPush = { recordUndo(g.state) { g.state.undo() } }
+        g.state.onHistoryDrop = { oldest -> dropUndo(g.state, oldest) }
+        g.onMatrixHistoryPush = { recordUndo(g) { g.undoMatrix() } }
+        g.onMatrixDrop = { dropUndo(g, true) }
     }
 
     private fun groupUndo(block: () -> Unit, undo: () -> Unit) {
@@ -492,13 +522,17 @@ class AppState {
     fun visibleGhostContours(anchorName: String, skipId: Int? = null): List<List<ContourData>> =
         if (!view.showGhosts) emptyList() else ghosts.filter { it.visible && it.id != skipId }.map { ghostContours(it, anchorName) }
 
-    /** Undo for whatever the user is acting on: a ghost's placement, a ghost's nodes, or the active anchor. */
+    /** Undo the most recent edit anywhere: one chronological stack across every anchor, ghost and guide action. */
     fun undo() {
         if (undoActions.isEmpty()) {
             setStatus("Nothing to undo.")
             return
         }
-        val action = undoActions.removeAt(undoActions.lastIndex)
+        if (reduction != null) {
+            setStatus("Apply or cancel Simplify before undoing.", true)
+            return
+        }
+        val action = undoActions.removeAt(undoActions.lastIndex).action
         val previous = recording
         recording = false
         try { action() } finally { recording = previous }
@@ -524,7 +558,7 @@ class AppState {
                 if (g.isLinked) {
                     g.detach(ghostContours(g, activeAnchor))
                     setStatus("Node editing detached \"${g.label}\"; Undo restores its live link.")
-                } else g.bake()
+                } else g.bake(anchors.getValue(activeAnchor).glyph.width)
             } finally {
                 recording = true
             }
@@ -534,6 +568,12 @@ class AppState {
 
     /** The edit target for menu/keyboard commands: the active ghost, else the active anchor. */
     val commandTarget: AnchorState get() = editTarget(activeAnchor)
+
+    /**
+     * True while node-level edits must not run: a Simplify preview is open (its removal keys refer to
+     * the current nodes) or a ghost is in Place mode (its nodes aren't shown, so they can't be acted on).
+     */
+    val nodeEditsLocked: Boolean get() = reduction != null || (activeGhost != null && ghostTransformMode)
 
     fun setStatus(msg: String, isError: Boolean = false) {
         status = msg
@@ -596,7 +636,7 @@ class AppState {
 
     /** Copies the active anchor's outline into every other anchor, seeding matching topology. */
     fun copyActiveToOthers() {
-        if (activeGhost != null) return // never touch the glyph while a ghost is being edited
+        if (activeGhost != null || reduction != null) return // never touch the glyph while a ghost is being edited or a Simplify preview is open
         val src = anchors.getValue(activeAnchor)
         val targets = ANCHORS.filter { it != activeAnchor }.map { anchors.getValue(it) }
         val count = targets.size
@@ -610,6 +650,7 @@ class AppState {
     // ------------------------------------------------------------ clipboard
 
     fun copySelection() {
+        if (nodeEditsLocked) return
         val t = commandTarget
         val contours = contoursForClipboard(t.glyph, t.selection)
         if (contours.isEmpty()) { setStatus("Nothing to copy.", true); return }
@@ -618,6 +659,7 @@ class AppState {
     }
 
     fun cutSelection() {
+        if (nodeEditsLocked) return
         val t = commandTarget
         if (t.selection.isEmpty()) { setStatus("Select points to cut; every contour they touch is cut whole.", true); return }
         copySelection()
@@ -625,6 +667,7 @@ class AppState {
     }
 
     fun paste() {
+        if (nodeEditsLocked) return
         val clip = clipboard ?: run { setStatus("Clipboard is empty.", true); return }
         commandTarget.pasteContours(clip)
         setStatus("Pasted ${clip.size} contour(s) in place. Point counts changed: re-copy to other anchors to keep them compatible.")
