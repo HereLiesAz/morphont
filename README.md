@@ -189,7 +189,8 @@ so anchors can then be reshaped without adding or removing points.
   global preview. A reference glyph imported from a variable TTF retains
   its source masters inside the project, so axis changes survive reopening
   without the original font file. Static references have no invented
-  variation axes. All changes remain undoable.
+  variation axes. The Ghosts panel's action rows scroll horizontally with
+  visible scrollbars on small screens. All changes remain undoable.
 - **Node Move (M).** The dedicated move tool selects on-curve nodes only.
   Even grabbing a nearby handle moves its owning node and both handles rather
   than reshaping a control point. Select (V) always exits read-only simplify,

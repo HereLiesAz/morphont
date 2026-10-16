@@ -436,24 +436,36 @@ fun GhostsSection(app: AppState, host: EditorHost) {
         if (app.ghosts.isEmpty()) Text("Lay a shape, another glyph, or a character from any font over this one to compare.", fontSize = 13.sp, color = Mono.inkDim)
         for (g in app.ghosts) {
             val active = g.id == app.activeGhostId
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (active) Mono.panelHeader else Color.Transparent)
-                    .padding(start = 10.dp, end = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(if (active) Mono.panelHeader else Color.Transparent)
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
             ) {
-                Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-                    Text(g.label, fontSize = 14.sp, color = if (g.visible) Mono.ink else Mono.inkDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (g.isLinked) Text("follows every axis", fontSize = 11.sp, color = Mono.inkDim)
+                Text(g.label, fontSize = 14.sp, color = if (g.visible) Mono.ink else Mono.inkDim,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (g.isLinked) Text("Variable source · independent axes", fontSize = 11.sp, color = Mono.inkDim)
+                val rowScroll = rememberScrollState()
+                Box(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rowScroll).padding(bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Segmented(listOf("Over", "Beside"), if (g.beside) 1 else 0) { g.beside = it == 1 }
+                        if (g.isLinked) IconAction(
+                            MIcons.Guides, "Ghost weight, width and axes",
+                            { ghostAxisId = g.id }, size = 36,
+                        )
+                        IconAction(MIcons.Pen, if (active) "Done editing ghost" else "Edit ghost",
+                            { if (active) app.activeGhostId = null else app.editGhost(g.id) },
+                            selected = active, size = 36)
+                        IconAction(if (g.visible) MIcons.Eye else MIcons.EyeOff,
+                            if (g.visible) "Hide" else "Show", { g.visible = !g.visible }, size = 36)
+                        IconAction(MIcons.Delete, "Remove ghost", { app.removeGhost(g.id) }, size = 36)
+                    }
+                    Scrollbar(rowScroll, false,
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
                 }
-                Segmented(listOf("Over", "Beside"), if (g.beside) 1 else 0) { g.beside = it == 1 }
-                if (g.isLinked) IconAction(
-                    MIcons.Guides, "Ghost weight, width and axes",
-                    { ghostAxisId = g.id }, size = 36,
-                )
-                IconAction(MIcons.Pen, if (active) "Done editing ghost" else "Edit ghost", { if (active) app.activeGhostId = null else app.editGhost(g.id) }, selected = active, size = 36)
-                IconAction(if (g.visible) MIcons.Eye else MIcons.EyeOff, if (g.visible) "Hide" else "Show", { g.visible = !g.visible }, size = 36)
-                IconAction(MIcons.Delete, "Remove ghost", { app.removeGhost(g.id) }, size = 36)
             }
         }
     }
