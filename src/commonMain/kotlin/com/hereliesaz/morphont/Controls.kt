@@ -170,12 +170,6 @@ fun SelectionPill(app: AppState, modifier: Modifier = Modifier) {
                     IconAction(MIcons.RotateLeft, "Rotate 15° left", { t.rotateSelected(15f) }, size = 40)
                     IconAction(MIcons.RotateRight, "Rotate 15° right", { t.rotateSelected(-15f) }, size = 40)
                 }
-                if (app.touchInput && t.selection.size >= 2 && !app.nodeMoveMode) {
-                    // What the touch pad does: move, scale or turn the selection.
-                    Box(Modifier.padding(horizontal = 4.dp)) {
-                        Segmented(listOf("Move", "Scale", "Turn"), app.padMode.ordinal) { app.padMode = PadMode.entries[it] }
-                    }
-                }
                 Box(Modifier.width(1.dp).height(20.dp).background(Mono.border))
                 IconAction(MIcons.Delete, "Delete", { t.deleteSelected() }, size = 40)
                 val b = boundsOfSelection(t.glyph, t.selection)
@@ -191,6 +185,7 @@ fun SelectionPill(app: AppState, modifier: Modifier = Modifier) {
 @Composable
 fun GhostBar(app: AppState, modifier: Modifier = Modifier) {
     val g = app.activeGhost ?: return
+    var axesOpen by remember(g.id) { mutableStateOf(false) }
     val ghostScroll = rememberScrollState()
     Box(modifier.widthIn(max = 520.dp).floating()) {
         Row(
@@ -206,10 +201,12 @@ fun GhostBar(app: AppState, modifier: Modifier = Modifier) {
         IconAction(MIcons.FlipV, "Flip vertically", { app.flipActiveGhost(false) }, size = 40)
         IconAction(MIcons.RotateLeft, "Rotate 15° left", { app.rotateActiveGhost(15f) }, size = 40)
         IconAction(MIcons.RotateRight, "Rotate 15° right", { app.rotateActiveGhost(-15f) }, size = 40)
+        if (g.isLinked) IconAction(MIcons.Guides, "Ghost weight, width and axes", { axesOpen = true }, size = 40)
         IconAction(MIcons.Check, "Done", { app.activeGhostId = null }, size = 40, selected = true)
         }
         Scrollbar(ghostScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
     }
+    if (axesOpen && g.isLinked) GhostAxesDialog(app, g) { axesOpen = false }
 }
 
 /** The node-reduction slider, floating while a simplify preview is open. */
@@ -418,6 +415,7 @@ fun GhostsSection(app: AppState, host: EditorHost) {
     var addOpen by remember { mutableStateOf(false) }
     var glyphPicker by remember { mutableStateOf(false) }
     var fontPicker by remember { mutableStateOf(false) }
+    var ghostAxisId by remember { mutableStateOf<Int?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SectionHead("Ghosts") {
             Box {
@@ -438,25 +436,70 @@ fun GhostsSection(app: AppState, host: EditorHost) {
         if (app.ghosts.isEmpty()) Text("Lay a shape, another glyph, or a character from any font over this one to compare.", fontSize = 13.sp, color = Mono.inkDim)
         for (g in app.ghosts) {
             val active = g.id == app.activeGhostId
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (active) Mono.panelHeader else Color.Transparent)
-                    .padding(start = 10.dp, end = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(if (active) Mono.panelHeader else Color.Transparent)
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
             ) {
-                Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-                    Text(g.label, fontSize = 14.sp, color = if (g.visible) Mono.ink else Mono.inkDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (g.isLinked) Text("follows every axis", fontSize = 11.sp, color = Mono.inkDim)
+                Text(g.label, fontSize = 14.sp, color = if (g.visible) Mono.ink else Mono.inkDim,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (g.isLinked) Text("Variable source · independent axes", fontSize = 11.sp, color = Mono.inkDim)
+                val rowScroll = rememberScrollState()
+                Box(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rowScroll).padding(bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Segmented(listOf("Over", "Beside"), if (g.beside) 1 else 0) { g.beside = it == 1 }
+                        if (g.isLinked) IconAction(
+                            MIcons.Guides, "Ghost weight, width and axes",
+                            { ghostAxisId = g.id }, size = 36,
+                        )
+                        IconAction(MIcons.Pen, if (active) "Done editing ghost" else "Edit ghost",
+                            { if (active) app.activeGhostId = null else app.editGhost(g.id) },
+                            selected = active, size = 36)
+                        IconAction(if (g.visible) MIcons.Eye else MIcons.EyeOff,
+                            if (g.visible) "Hide" else "Show", { g.visible = !g.visible }, size = 36)
+                        IconAction(MIcons.Delete, "Remove ghost", { app.removeGhost(g.id) }, size = 36)
+                    }
+                    Scrollbar(rowScroll, false,
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
                 }
-                Segmented(listOf("Over", "Beside"), if (g.beside) 1 else 0) { g.beside = it == 1 }
-                IconAction(MIcons.Pen, if (active) "Done editing ghost" else "Edit ghost", { if (active) app.activeGhostId = null else app.editGhost(g.id) }, selected = active, size = 36)
-                IconAction(if (g.visible) MIcons.Eye else MIcons.EyeOff, if (g.visible) "Hide" else "Show", { g.visible = !g.visible }, size = 36)
-                IconAction(MIcons.Delete, "Remove ghost", { app.removeGhost(g.id) }, size = 36)
             }
         }
     }
     if (glyphPicker) ProjectGlyphPicker(app, host) { glyphPicker = false }
     if (fontPicker) FontCharacterPicker(app, host) { fontPicker = false }
+    val ghost = app.ghosts.firstOrNull { it.id == ghostAxisId }
+    if (ghost != null) GhostAxesDialog(app, ghost) { ghostAxisId = null }
+}
+
+/** One axis picker shared by the Ghosts panel and the active ghost's bar. */
+@Composable
+private fun GhostAxesDialog(app: AppState, ghost: GhostLayer, onDismiss: () -> Unit) {
+    MonoDialog("Ghost axes: ${ghost.label}", onDismiss, actions = {
+        MonoButton(onClick = { ghost.axisOverrides.keys.toList().forEach { tag ->
+            Axis.ALL.firstOrNull { it.tag == tag }?.let { app.setGhostAxis(ghost.id, it, null) }
+        } }) { Text("Follow glyph axes", fontSize = 12.sp) }
+    }) {
+        Text("These values affect this ghost only. Untouched axes follow the working glyph's selected anchor and preview.",
+            fontSize = 12.sp, color = Mono.inkDim)
+        for (axis in Axis.ALL) {
+            if (ghost.referenceCorners.isNotEmpty() && axis.tag !in ghost.supportedAxes) continue
+            val value = ghost.axisOverrides[axis.tag] ?: 0.5f
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(axis.label, color = Mono.ink, fontSize = 13.sp, modifier = Modifier.width(94.dp))
+                androidx.compose.material3.Slider(
+                    value = value, onValueChange = { app.setGhostAxis(ghost.id, axis, it) },
+                    valueRange = 0f..1f, modifier = Modifier.weight(1f),
+                )
+                IconAction(MIcons.Close, "Follow ${axis.label}", {
+                    app.setGhostAxis(ghost.id, axis, null)
+                }, size = 28, enabled = ghost.axisOverrides.containsKey(axis.tag))
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -473,6 +516,9 @@ fun GuidesSection(app: AppState) {
             Chip("Guides", v.showGuides) { v.showGuides = !v.showGuides }
             Chip("Measure", v.showMeasure) { v.showMeasure = !v.showMeasure }
             Chip("Ghosts", v.showGhosts) { v.showGhosts = !v.showGhosts }
+            Chip("Move circle", app.nodeMoveCircleEnabled) {
+                app.setNodeMoveCircleEnabled(!app.nodeMoveCircleEnabled)
+            }
             Chip(if (v.showGrid) "Grid ${v.gridStep.toInt()}" else "Grid", v.showGrid) {
                 // Off → 50 → 25 → 10 → 100 → off.
                 val cycle = listOf(50f, 25f, 10f, 100f)
@@ -652,13 +698,13 @@ private fun FontCharacterPicker(app: AppState, host: EditorHost, onDismiss: () -
         MonoButton(onClick = {
             val font = fontName?.let { app.referenceFonts[it] }
             if (font == null) { error = "Load a font first."; return@MonoButton }
-            val scale = app.metrics.unitsPerEm / font.unitsPerEm.toFloat().coerceAtLeast(1f)
-            val defaults = font.axes.associate { it.tag to it.default }
             var added = 0
             for (ch in chars) {
-                val outline = font.outlineAt(ch.code, defaults) ?: continue
-                app.addGhost("$ch · $fontName", applyAffine(outline, scalingAbout(scale, scale, 0f, 0f)))
-                added++
+                try {
+                    if (app.addFontGhost(fontName ?: "Font", font, ch.code)) added++
+                } catch (e: Exception) {
+                    error = "Could not read ${ch}: ${e.message}"
+                }
             }
             if (added == 0) error = "That font has none of those characters." else onDismiss()
         }, selected = true) { Text("Add") }
@@ -680,7 +726,7 @@ private fun FontCharacterPicker(app: AppState, host: EditorHost, onDismiss: () -
             }
         }
         MonoField(chars, { chars = it.take(8) }, "Characters", Modifier.fillMaxWidth(), big = true)
-        Text("Each character becomes its own ghost, scaled to this project's units per em.", fontSize = 12.sp, color = Mono.inkDim)
+        Text("Each character becomes an independently adjustable ghost; weight, width and other source axes are preserved with the project.", fontSize = 12.sp, color = Mono.inkDim)
         error?.let { Text(it, color = Mono.error, fontSize = 13.sp) }
     }
 }

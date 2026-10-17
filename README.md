@@ -135,13 +135,15 @@ so anchors can then be reshaped without adding or removing points.
   glyphs. Pasting changes point counts, so re-copy to the other anchors to
   keep interpolation alive. Also: Delete, Esc, arrow-key nudges (Shift = 10),
   `+`/`-`/`0` for zoom.
-- **Touch proxy.** On touch input, a selection grows a pad ~76dp below it
-  (above, near the bottom edge), joined by a dashed tether. Dragging the pad
-  moves the selection 1:1 without snapping -- the finger never covers the
-  nodes it moves. A single node always moves; the selection pill's
-  Move / Scale / Turn switch works for multiple selected points:
-  Scale grows the selection as you drag up, Turn rotates it as you drag
-  sideways.
+- **Node move circle.** Selecting a node (or one of its curve handles)
+  offers a cross-circle ~76dp away from the selection. **Guides → Move circle**
+  toggles it in every platform layout; the default follows pointer type
+  (on for touch, off for mouse/stylus) until the user chooses explicitly.
+  The complete circle and 30% margin are reserved exclusively for moving
+  selected on-curve nodes and their two handles. It cannot activate scale,
+  rotate, point selection, guides, panning, snapping or pinch navigation.
+  A selected handle resolves to its owning node when dragging the circle.
+  The circle is hidden during pen drawing, ghost placement and simplify.
 - **Simplify.** The slider compares the true cubic Bézier spans and all
   incoming/outgoing handles, for both sharp corners and mirrored smooth nodes,
   against the curve formed by removing a node. It recalculates after every
@@ -168,14 +170,34 @@ so anchors can then be reshaped without adding or removing points.
   left/right glyph-strip buttons. The inspector, glyph pickers, welcome
   page, overflowing phone tool dock and modal dialogs scroll when needed.
   Scrollbars use one shared pointer recognizer for tap/drag. Middle- or
-  right-mouse dragging pans the canvas (including during simplify); the
-  wheel zooms. Actual pointer hardware determines touch-proxy behavior,
-  not touch-target scale. Desktop zoom percentage is editable (Enter to
-  confirm) or draggable (10–4000%). Reset View (0) resets pan and zoom.
+  right-mouse dragging pans empty canvas space (including during simplify);
+  a gesture beginning on the cross-circle moves only its node even with a
+  secondary mouse button. The wheel zooms. Desktop zoom percentage is
+  editable (Enter to confirm) or draggable (10–4000%). Reset View (0)
+  resets pan and zoom.
+- **Font overview.** In the phone's scrollable dock or desktop header,
+  open the full-screen **Font** grid to inspect all glyphs as real
+  interpolated outlines. Its shared Weight, Width and other axis sliders
+  adjust **every glyph's preview together**. Tap a tile for an enlarged
+  instance dialog with independent sliders. **Apply instance to all** copies
+  that glyph's preview axes to the entire grid; **Edit glyph** opens the
+  existing node editor. These controls are non-destructive previews:
+  changing instances does not overwrite any stored anchor geometry.
+- **Independent ghost axes.** Ghosts linked to another project glyph can
+  override Weight, Width and the other axes using the Ghosts panel's
+  axis button. Unset axes continue following the selected anchor and
+  global preview. A reference glyph imported from a variable TTF retains
+  its source masters inside the project, so axis changes survive reopening
+  without the original font file. Static references have no invented
+  variation axes. The Ghosts panel's action rows scroll horizontally with
+  visible scrollbars on small screens. All changes remain undoable.
 - **Node Move (M).** The dedicated move tool selects on-curve nodes only.
   Even grabbing a nearby handle moves its owning node and both handles rather
-  than reshaping a control point. Select (V) returns to normal point/handle
-  editing; Pen (P) starts drawing. Desktop arrow keys always nudge whole nodes,
+  than reshaping a control point. Select (V) always exits read-only simplify,
+  ghost editing/placement and pen drawing so the actual glyph becomes editable
+  again; the original geometry and current zoom remain intact. Move Node (M)
+  similarly restores an editable glyph when those modes block selection.
+  Pen (P) starts drawing. Desktop arrow keys always nudge whole nodes,
   including when just a handle is selected. Trash or Delete removes the full
   node with its handles when the selected target is either node or handle.
 - **TrueType import.** Both static and variable `.ttf` files are accepted.
@@ -287,7 +309,9 @@ so anchors can then be reshaped without adding or removing points.
 
 ## Project layout
 
-- `Model.kt` -- the glyph data model (points, contours, corners)
+- `Model.kt` -- glyph data model, serializable per-ghost axis overrides and embedded variable-font reference masters
+- `FontOverview.kt` -- lazy font-wide glyph grid, independent enlarged glyph dialogs, and shared or local variable-axis preview sliders
+- `commonTest/FontOverviewTest.kt` -- touch-default circle preference, global versus per-glyph previews, independent ghost axes and project round-trip
 - `Interpolation.kt` -- the interpolation math (additive per-axis forced-Bezier), independent of any UI
 - `Geometry.kt` -- font-space <-> canvas-space mapping, outline path building
 - `Hit.kt` / `Gestures.kt` -- point hit-testing and pointer-gesture handling (zoom/pinch, touch proxy, ghost placement, rulers/guides, draw, drag with snapping, rubber-band)

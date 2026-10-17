@@ -176,7 +176,7 @@ class VariableFont private constructor(
         var p = glyfPos + 10
         check(p, numContours * 2 + 2)
         val endPtsOfContours = IntArray(numContours) { i -> r.u16(p + i * 2) }
-        require(endPtsOfContours.zipWithNext().all { (a, b) -> b > a }) {
+        require(endPtsOfContours.indices.all { i -> i == 0 || endPtsOfContours[i] > endPtsOfContours[i - 1] }) {
             "Glyph ${glyphId}: contour endpoints are not increasing"
         }
         p += numContours * 2
@@ -667,7 +667,7 @@ class VariableFont private constructor(
                     }
                     dataArrayOffset + delta.toInt()
                 }
-                require(glyphVariationDataOffsets.zipWithNext().all { (a, b) -> b >= a }) {
+                require(glyphVariationDataOffsets.indices.all { i -> i == 0 || glyphVariationDataOffsets[i] >= glyphVariationDataOffsets[i - 1] }) {
                     "gvar glyph offsets are not sorted"
                 }
             }

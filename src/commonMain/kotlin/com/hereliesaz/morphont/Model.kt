@@ -135,14 +135,15 @@ data class Guide(val vertical: Boolean, val pos: Float)
 /**
  * A ghosted reference outline drawn behind every anchor for comparison.
  *
- * A static ghost (a primitive shape, or a character from a reference font)
- * owns its [contours]. A linked ghost names [sourceGlyph] in this project
- * instead and is drawn live: each anchor panel shows that glyph's own same
- * anchor, and the Preview shows it interpolated at the same slider values,
- * so the reference always carries the working character's weight, width,
- * and every other axis. [matrix] (`a b c d e f`, mapping `x' = a*x + c*y + e`,
- * `y' = b*x + d*y + f`) places either kind; static ghosts bake it into their
- * contours before node editing, linked ones detach into static ones first.
+ * Static shapes own [contours]. A linked project ghost names [sourceGlyph],
+ * while an imported variable-font ghost embeds its source masters in
+ * [referenceCorners], so the source font file need not remain available.
+ * [axisOverrides] changes that ghost's Weight/Width/etc. independently;
+ * unspecified axes continue following the current anchor or Preview.
+ * [supportedAxes] restricts imported references to axes actually present
+ * in the source font. [matrix] (`a b c d e f`, mapping `x' = a*x + c*y + e`,
+ * `y' = b*x + d*y + f`) places any kind. Linked ghosts detach to editable
+ * static geometry only when the user explicitly enters Nodes mode.
  */
 @Serializable
 data class GhostData(
@@ -153,6 +154,12 @@ data class GhostData(
     val matrix: List<Float> = IDENTITY_MATRIX,
     /** Drawn beside the working glyph (shifted by its advance) instead of over it. Overlay is the default. */
     val beside: Boolean = false,
+    /** Per-ghost 0..1 overrides; absent values follow the active preview/anchor. */
+    val axisOverrides: Map<String, Float> = emptyMap(),
+    /** Optional embedded source masters for a character ghost imported from a variable TTF. */
+    val referenceCorners: Map<String, GlyphCorner> = emptyMap(),
+    /** Axes the source actually supports; empty for ordinary static references. */
+    val supportedAxes: List<String> = emptyList(),
 )
 
 val IDENTITY_MATRIX = listOf(1f, 0f, 0f, 1f, 0f, 0f)

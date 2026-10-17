@@ -252,8 +252,14 @@ class GhostLayer(
     sourceGlyph: String? = null,
     matrix: Affine = IDENTITY_MATRIX,
     beside: Boolean = false,
+    initialAxisOverrides: Map<String, Float> = emptyMap(),
+    referenceCorners: Map<String, GlyphCorner> = emptyMap(),
+    supportedAxes: List<String> = emptyList(),
 ) {
     var label by mutableStateOf(label)
+    val axisOverrides = mutableStateMapOf<String, Float>().apply { putAll(initialAxisOverrides) }
+    var referenceCorners by mutableStateOf(referenceCorners)
+    var supportedAxes by mutableStateOf(supportedAxes)
     var beside by mutableStateOf(beside)
     var visible by mutableStateOf(visible)
     var sourceGlyph by mutableStateOf(sourceGlyph)
@@ -263,7 +269,7 @@ class GhostLayer(
     var onMatrixHistoryPush: (() -> Unit)? = null
     var onMatrixDrop: (() -> Unit)? = null
 
-    val isLinked: Boolean get() = sourceGlyph != null
+    val isLinked: Boolean get() = sourceGlyph != null || referenceCorners.isNotEmpty()
 
     fun pushMatrixHistory() {
         matrixHistory.add(matrix)
@@ -296,13 +302,20 @@ class GhostLayer(
     /** Turns a linked ghost into a static one holding [contours] (already placed), e.g. before node editing. */
     fun detach(contours: List<ContourData>) {
         sourceGlyph = null
+        referenceCorners = emptyMap()
+        supportedAxes = emptyList()
+        axisOverrides.clear()
         beside = false
         matrix = IDENTITY_MATRIX
         matrixHistory.clear()
         state.loadFresh(GlyphCorner(0f, contours.map { it.deepCopy() }.toMutableList()))
     }
 
-    fun toData() = GhostData(label, if (isLinked) emptyList() else state.glyph.contours.map { it.deepCopy() }, visible, sourceGlyph, matrix, beside)
+    fun toData() = GhostData(
+        label, if (isLinked) emptyList() else state.glyph.contours.map { it.deepCopy() },
+        visible, sourceGlyph, matrix, beside, axisOverrides.toMap(),
+        referenceCorners, supportedAxes,
+    )
 }
 
 /** What dragging the touch proxy pad does to the selection. */
@@ -386,6 +399,7 @@ class AppState {
 
     fun beginBulkImport() {
         autosaveEpoch++
+        glyphPreviewValues.clear()
     }
 
     fun clearGuides() {
@@ -419,6 +433,35 @@ class AppState {
     /** 0..1 position per axis tag, for the read-only Preview panel. Starts at Regular (0.5) everywhere. */
     val previewValues = mutableStateMapOf<String, Float>().apply {
         Axis.ALL.forEach { put(it.tag, 0.5f) }
+    }
+
+    /** Non-destructive font overview: all glyphs preview the same instance. */
+    val fontPreviewValues = mutableStateMapOf<String, Float>().apply {
+        Axis.ALL.forEach { put(it.tag, 0.5f) }
+    }
+    /** Optional local instance previews, independent of the font-wide setting. */
+    val glyphPreviewValues = mutableStateMapOf<String, Map<String, Float>>()
+
+    fun fontValuesFor(name: String): Map<String, Float> =
+        glyphPreviewValues[name] ?: fontPreviewValues.toMap()
+
+    fun setFontPreviewAxis(tag: String, value: Float) {
+        if (Axis.ALL.none { it.tag == tag }) return
+        fontPreviewValues[tag] = value.coerceIn(0f, 1f)
+        glyphPreviewValues.clear()
+    }
+
+    fun setGlyphPreviewAxis(name: String, tag: String, value: Float) {
+        if (Axis.ALL.none { it.tag == tag }) return
+        val updated = fontValuesFor(name).toMutableMap()
+        updated[tag] = value.coerceIn(0f, 1f)
+        glyphPreviewValues[name] = updated
+    }
+
+    fun applyGlyphPreviewToAll(name: String) {
+        val values = fontValuesFor(name).toMap()
+        glyphPreviewValues.clear()
+        fontPreviewValues.putAll(values)
     }
 
     /**
@@ -465,8 +508,16 @@ class AppState {
     /** Whether the suggested-edits row is expanded (it's behind a button, not always on screen). */
     var showSuggestions by mutableStateOf(false)
 
-    /** Whether the most recent pointer was a finger: drives the touch proxy handle. */
+    /** Last pointer device, used only for the default cross-circle preference. */
     var touchInput by mutableStateOf(false)
+
+    /** Null follows pointer type: enabled for touch, disabled for mouse/stylus. */
+    var nodeMoveCircleOverride by mutableStateOf<Boolean?>(null)
+    val nodeMoveCircleEnabled: Boolean get() = nodeMoveCircleOverride ?: touchInput
+
+    fun setNodeMoveCircleEnabled(enabled: Boolean) {
+        nodeMoveCircleOverride = enabled
+    }
 
     /** In-app clipboard: whole contours, shared across anchors, ghosts and glyphs. */
     var clipboard by mutableStateOf<List<ContourData>?>(null)
@@ -499,10 +550,24 @@ class AppState {
      */
     fun ghostContours(g: GhostLayer, anchorName: String): List<ContourData> {
         val placed = placement(g, anchors.getValue(anchorName).glyph.width)
-        val src = g.sourceGlyph ?: return applyAffine(g.state.glyph.contours, placed)
-        val corners = sourceCorners(src) ?: return emptyList()
-        val corner = corners[anchorName] ?: corners["regular"] ?: return emptyList()
-        return applyAffine(corner.contours, placed)
+        val corners = when {
+            g.referenceCorners.isNotEmpty() -> g.referenceCorners
+            g.sourceGlyph != null -> sourceCorners(g.sourceGlyph!!) ?: return emptyList()
+            else -> return applyAffine(g.state.glyph.contours, placed)
+        }
+        val result = if (g.axisOverrides.isEmpty() || compatibilityIssue(corners) != null) {
+            corners[anchorName] ?: corners["regular"] ?: return emptyList()
+        } else {
+            val values = Axis.ALL.associate { axis ->
+                axis.tag to when (anchorName) {
+                    axis.lo -> 0f
+                    axis.hi -> 1f
+                    else -> 0.5f
+                }
+            }.toMutableMap().also { it.putAll(g.axisOverrides) }
+            interpolateGlyph(corners, values)
+        }
+        return applyAffine(result.contours, placed)
     }
 
     /** The ghost's matrix, shifted past the working glyph's advance when it's set to sit beside rather than over it. */
@@ -512,9 +577,14 @@ class AppState {
     /** The ghost as drawn in the Preview: a linked ghost interpolated at the same slider values as the working glyph. */
     fun ghostPreviewContours(g: GhostLayer, advance: Float): List<ContourData> {
         val placed = placement(g, advance)
-        val src = g.sourceGlyph ?: return applyAffine(g.state.glyph.contours, placed)
-        val corners = sourceCorners(src) ?: return emptyList()
-        val inst = if (compatibilityIssue(corners) == null) interpolateGlyph(corners, previewValues) else corners["regular"] ?: return emptyList()
+        val corners = when {
+            g.referenceCorners.isNotEmpty() -> g.referenceCorners
+            g.sourceGlyph != null -> sourceCorners(g.sourceGlyph!!) ?: return emptyList()
+            else -> return applyAffine(g.state.glyph.contours, placed)
+        }
+        val values = previewValues.toMutableMap().also { it.putAll(g.axisOverrides) }
+        val inst = if (compatibilityIssue(corners) == null) interpolateGlyph(corners, values)
+            else corners["regular"] ?: return emptyList()
         return applyAffine(inst.contours, placed)
     }
 
@@ -545,6 +615,10 @@ class AppState {
             val original = g.toData()
             recordUndo {
                 g.sourceGlyph = original.sourceGlyph
+                g.referenceCorners = original.referenceCorners
+                g.supportedAxes = original.supportedAxes
+                g.axisOverrides.clear()
+                g.axisOverrides.putAll(original.axisOverrides)
                 g.beside = original.beside
                 g.matrix = original.matrix
                 g.state.loadFresh(GlyphCorner(0f, original.contours.map { it.deepCopy() }.toMutableList()))
@@ -564,6 +638,21 @@ class AppState {
             }
         }
         ghostTransformMode = !nodes
+    }
+
+    /**
+     * Select is always an exit from modes which intentionally block normal
+     * node hit-testing. It finishes a drawn contour without applying a
+     * simplify preview, deleting a ghost or resetting the canvas view.
+     */
+    fun resumeGlyphSelection() {
+        for (state in anchors.values) if (state.drawingContourIndex != null) state.finishContour()
+        for (ghost in ghosts) if (ghost.state.drawingContourIndex != null) ghost.state.finishContour()
+        reduction = null
+        activeGhostId = null
+        ghostTransformMode = true
+        nodeMoveMode = false
+        showNodeTools = true
     }
 
     /** The edit target for menu/keyboard commands: the active ghost, else the active anchor. */
@@ -596,7 +685,11 @@ class AppState {
         ghosts.clear()
         linkedGlyphs.clear()
         glyph.ghosts.forEach {
-            val layer = GhostLayer(nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph, it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside)
+            val layer = GhostLayer(
+                nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph,
+                it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside,
+                it.axisOverrides, it.referenceCorners, it.supportedAxes,
+            )
             attachGhost(layer)
             ghosts.add(layer)
             it.sourceGlyph?.let { src -> cacheLinked(src) }
@@ -711,6 +804,51 @@ class AppState {
         activeGhostId = id
         ghostTransformMode = true
         reduction = null
+    }
+
+    /** A linked reference can vary independently of the glyph being edited. */
+    fun setGhostAxis(id: Int, axis: Axis, value: Float?) {
+        val ghost = ghosts.firstOrNull { it.id == id } ?: return
+        if (!ghost.isLinked) return
+        if (ghost.referenceCorners.isNotEmpty() && axis.tag !in ghost.supportedAxes) return
+        val old = ghost.axisOverrides[axis.tag]
+        val next = value?.coerceIn(0f, 1f)
+        if (old == next) return
+        recordUndo {
+            if (old == null) ghost.axisOverrides.remove(axis.tag) else ghost.axisOverrides[axis.tag] = old
+        }
+        if (next == null) ghost.axisOverrides.remove(axis.tag) else ghost.axisOverrides[axis.tag] = next
+    }
+
+    /**
+     * Snapshot source masters so a variable-font ghost remains adjustable
+     * after the source file is closed or the project is reopened.
+     */
+    fun addFontGhost(fontName: String, font: VariableFont, codepoint: Int): Boolean {
+        val scale = metrics.unitsPerEm / font.unitsPerEm.toFloat().coerceAtLeast(1f)
+        val defaults = font.axes.associate { it.tag to it.default }
+        val advance = (font.advanceWidth(codepoint) ?: return false) * scale
+        val corners = linkedMapOf<String, GlyphCorner>()
+        for (anchor in ANCHORS) {
+            val axis = Axis.ALL.firstOrNull { anchor == it.lo || anchor == it.hi }
+            val coords = defaults.toMutableMap()
+            if (axis != null) font.axes.firstOrNull { it.tag == axis.tag }?.let { info ->
+                coords[axis.tag] = if (anchor == axis.lo) info.min else info.max
+            }
+            val outline = font.outlineAt(codepoint, coords) ?: return false
+            val transformed = applyAffine(outline, scalingAbout(scale, scale, 0f, 0f))
+            corners[anchor] = GlyphCorner(advance, transformed.map { it.deepCopy() }.toMutableList())
+        }
+        val label = if (codepoint <= 0xFFFF) codepoint.toChar().toString()
+            else "U+${codepoint.toString(16).uppercase()}"
+        val layer = GhostLayer(
+            nextGhostId++, "$label · $fontName", emptyList(),
+            referenceCorners = corners, supportedAxes = font.axes.map { it.tag },
+        )
+        attachGhost(layer)
+        ghosts.add(layer)
+        recordUndo { ghosts.remove(layer); if (activeGhostId == layer.id) activeGhostId = null }
+        return true
     }
 
     fun removeGhost(id: Int) {
