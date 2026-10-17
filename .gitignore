@@ -4,3 +4,7 @@ build/
 *.iml
 .idea/
 local.properties
+
+# Local signing keys
+*.jks
+*.keystore

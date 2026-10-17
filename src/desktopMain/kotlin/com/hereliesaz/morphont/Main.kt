@@ -131,10 +131,12 @@ fun DesktopApp() {
                         "Import UFO (.ufo / .ufoz)" to { importUfo() },
                         "Open a project (.json)" to { importProject() },
                         "Save the whole project" to {
+                            var skippedAny = false
                             DesktopStorage.saveText("Save project", "morphont-project.json", DesktopStorage.exportProjectText(
                                 app.currentGlyphName?.let { it to app.toGlyph() },
+                                onSkipped = { skipped -> skippedAny = true; app.setStatus("Skipped unreadable glyph file(s): ${skipped.joinToString()}.", true) },
                             ),
-                                { app.setStatus("Project saved.") }, { app.setStatus(it, true) })
+                                { if (!skippedAny) app.setStatus("Project saved.") }, { app.setStatus(it, true) })
                         },
                         "Export this glyph (.json)" to {
                             val name = app.currentGlyphName

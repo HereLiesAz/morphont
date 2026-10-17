@@ -11,10 +11,29 @@ import java.net.URLEncoder
 /**
  * URLEncoder intentionally leaves '*' unescaped. That character cannot be
  * used in a Windows filename; nor can bare DOS device names, even with .json.
- * Encode only the necessary cases so existing stored glyph filenames remain
- * readable without migration or renaming.
+ * Windows and macOS file systems are case-insensitive by default, so "A" and
+ * "a" would share one file: ASCII capitals are percent-escaped too, which
+ * keeps every name distinct after case folding. [migrateLegacyGlyphFileNames]
+ * renames files written under the older scheme.
  */
 internal fun desktopGlyphFileName(name: String): String {
+    val legacy = desktopLegacyGlyphFileName(name)
+    val encoded = legacy.removeSuffix(".json")
+    val folded = StringBuilder()
+    var i = 0
+    while (i < encoded.length) {
+        val c = encoded[i]
+        when {
+            c == '%' -> { folded.append(encoded, i, i + 3); i += 3 }
+            c in 'A'..'Z' -> { folded.append('%').append(c.code.toString(16).uppercase()); i++ }
+            else -> { folded.append(c); i++ }
+        }
+    }
+    return folded.toString() + ".json"
+}
+
+/** The filename scheme used before capitals were escaped; kept so unmigrated files stay loadable. */
+internal fun desktopLegacyGlyphFileName(name: String): String {
     require(name.isNotEmpty()) { "Glyph name must not be empty" }
     var encoded = URLEncoder.encode(name, Charsets.UTF_8).replace("*", "%2A")
     val base = encoded.substringBefore('.').uppercase()
@@ -23,6 +42,26 @@ internal fun desktopGlyphFileName(name: String): String {
         encoded = "%" + encoded[0].code.toString(16).padStart(2, '0').uppercase() + encoded.drop(1)
     }
     return encoded + ".json"
+}
+
+/** The file to read for [name]: the current name, else the legacy one while its migration has not succeeded. */
+internal fun resolveGlyphFile(directory: File, name: String): File {
+    val current = File(directory, desktopGlyphFileName(name))
+    if (current.exists()) return current
+    val legacy = File(directory, desktopLegacyGlyphFileName(name))
+    return if (legacy.exists()) legacy else current
+}
+
+/** Renames glyph files saved before capitals were escaped to their current names (never overwriting). */
+internal fun migrateLegacyGlyphFileNames(directory: File) {
+    for (file in directory.listFiles().orEmpty()) {
+        val name = desktopGlyphName(file.name) ?: continue
+        val canonical = runCatching { desktopGlyphFileName(name) }.getOrNull() ?: continue
+        if (canonical == file.name) continue
+        val target = File(directory, canonical)
+        if (target.exists()) continue
+        runCatching { Files.move(file.toPath(), target.toPath()) }
+    }
 }
 
 internal fun desktopGlyphName(fileName: String): String? =
@@ -72,6 +111,17 @@ internal fun recoverProjectDirectory(base: File, glyphs: File) {
     if (backup != null) Files.move(backup.toPath(), glyphs.toPath())
 }
 
+/** Splits [names] into the glyphs [load] could read and the names of those it could not. */
+internal fun readableGlyphs(names: List<String>, load: (String) -> Glyph?): Pair<MutableMap<String, Glyph>, List<String>> {
+    val readable = mutableMapOf<String, Glyph>()
+    val skipped = mutableListOf<String>()
+    for (name in names) {
+        val glyph = load(name)
+        if (glyph == null) skipped.add(name) else readable[name] = glyph
+    }
+    return readable to skipped
+}
+
 /** Merge the active working glyph into an export without writing it to storage. */
 internal fun projectForExport(saved: Map<String, Glyph>, unsaved: Pair<String, Glyph>?): Map<String, Glyph> =
     saved.toMutableMap().apply {
@@ -98,17 +148,21 @@ object DesktopStorage {
         // directory renames of a project import.
         recoverProjectDirectory(base, glyphs)
         glyphs.apply { mkdirs() }
+        migrateLegacyGlyphFileNames(glyphs)
+        glyphs
     }
 
     private fun fileFor(name: String) = File(dir, desktopGlyphFileName(name))
 
+    private fun readableFileFor(name: String) = resolveGlyphFile(dir, name)
+
     private fun nameOf(file: File): String? = desktopGlyphName(file.name)
 
-    fun listGlyphNames(): List<String> = dir.listFiles().orEmpty().mapNotNull { nameOf(it) }.sorted()
+    fun listGlyphNames(): List<String> = dir.listFiles().orEmpty().mapNotNull { nameOf(it) }.distinct().sorted()
 
-    fun glyphExists(name: String) = fileFor(name).exists()
+    fun glyphExists(name: String) = readableFileFor(name).exists()
 
-    fun loadGlyph(name: String): Glyph? = runCatching { ProjectCodec.decodeGlyph(fileFor(name).readText()) }.getOrNull()
+    fun loadGlyph(name: String): Glyph? = runCatching { ProjectCodec.decodeGlyph(readableFileFor(name).readText()) }.getOrNull()
 
     fun saveGlyph(name: String, glyph: Glyph) {
         val target = fileFor(name)
@@ -137,10 +191,13 @@ object DesktopStorage {
         return collisions
     }
 
-    fun exportProjectText(unsaved: Pair<String, Glyph>? = null): String {
-        val project = listGlyphNames().associateWith { name ->
-            loadGlyph(name) ?: error("Cannot export unreadable glyph: $name")
-        }.toMutableMap()
+    /**
+     * One damaged glyph file must not block the whole-project backup: unreadable glyphs
+     * are left out of the export and reported through [onSkipped].
+     */
+    fun exportProjectText(unsaved: Pair<String, Glyph>? = null, onSkipped: (List<String>) -> Unit = {}): String {
+        val (project, skipped) = readableGlyphs(listGlyphNames(), ::loadGlyph)
+        if (skipped.isNotEmpty()) onSkipped(skipped)
         return ProjectCodec.encodeProject(projectForExport(project, unsaved))
     }
 

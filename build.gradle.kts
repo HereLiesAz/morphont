@@ -12,7 +12,10 @@ plugins {
 }
 
 group = "com.hereliesaz.morphont"
-version = "0.4.3"
+// Same source as the installers and the Android fallback: version.properties (major.minor.patch).
+version = java.util.Properties().apply {
+    rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}.let { p -> listOf("versionMajor", "versionMinor", "versionPatch").joinToString(".") { p.getProperty(it, "0").trim() } }
 
 repositories {
     google()

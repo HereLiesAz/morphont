@@ -165,7 +165,7 @@ fun Modifier.floating(radius: Int = 22): Modifier = this
     .background(Mono.panel)
     .border(1.dp, Mono.border, RoundedCornerShape(radius.dp))
 
-/** Circular icon button with a 44dp touch target; [selected] fills it with ink. */
+/** Circular icon button, 44dp by default (callers pass 40-48); [selected] fills it with ink. */
 @Composable
 fun IconAction(
     icon: ImageVector,

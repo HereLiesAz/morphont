@@ -22,8 +22,9 @@ class UfoImportTest {
             assertEquals(name, desktopGlyphName(file))
         }
         assertEquals("%2A.json", desktopGlyphFileName("*"))
-        assertEquals("%252A.json", desktopGlyphFileName("%2A"))
-        assertEquals("A.json", desktopGlyphFileName("A")) // existing saves remain readable
+        assertEquals("%252%41.json", desktopGlyphFileName("%2A")) // literal "%2A"; its capital is escaped too
+        assertEquals("%41.json", desktopGlyphFileName("A")) // capitals are escaped so "A" and "a" never share a file
+        assertEquals("a.json", desktopGlyphFileName("a"))
     }
 
     private val plistHeader = """<?xml version="1.0" encoding="UTF-8"?>

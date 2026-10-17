@@ -109,7 +109,7 @@ so anchors can then be reshaped without adding or removing points.
   **corner** node (drawn as a square) leaves them independent. Alt-click a
   node, or long-press it on a touchscreen, to switch it between smooth and
   corner. Arm ends are small
-  diamonds. Moving a node carries its arms. The single corner/smooth
+  Xs. Moving a node carries its arms. The single corner/smooth
   action flips node type: going smooth re-aligns the two arms on the
   average of their directions, each at the average of their lengths.
   Deleting a node joins
@@ -127,8 +127,8 @@ so anchors can then be reshaped without adding or removing points.
   arms already leave it in opposite directions (within about 2 degrees)
   also comes in smooth.
   Saves carry `"outlineFormat": 2` so they are never converted twice.
-- **Clipboard.** Copy / Cut / Paste / Select all, from each panel's toolbar,
-  the Edit menu, or Ctrl/Cmd + C/X/V/A. The unit is whole contours (a glyph
+- **Clipboard.** Copy / Cut / Paste / Select all, from the selection pill,
+  or Ctrl/Cmd + C/X/V/A. The unit is whole contours (a glyph
   contour is always closed): every contour the selection touches is taken,
   or the whole outline when nothing is selected. Paste lands in place and
   selects what it pasted; the clipboard survives switching anchors and
@@ -230,8 +230,10 @@ so anchors can then be reshaped without adding or removing points.
   Morphont's existing glyph-project format. Android/web UFO import is not
   yet available; their TTF import remains unchanged.
 - **Desktop glyph filenames.** Forbidden Windows characters (notably `*`)
-  and reserved DOS device names are reversibly escaped on disk. Existing
-  URL-encoded glyph files stay readable. Individual saves have unique
+  and reserved DOS device names are reversibly escaped on disk, and so are
+  ASCII capitals, so `A` and `a` stay distinct files on case-insensitive
+  Windows/macOS volumes. Files saved under the older scheme (plain `A.json`)
+  are renamed on first launch. Individual saves have unique
   temporary files and atomic replacement where supported. Project imports
   stage all glyph files and restore the previous directory if installation
   fails. Project exports include the currently edited glyph even before
@@ -273,14 +275,16 @@ so anchors can then be reshaped without adding or removing points.
   its **Edit** button in
   the Ghosts panel; while it lasts the ghost draws solid and the working
   glyph as a bare outline, and the glyph is locked -- gestures, the
-  selection pill, keys, Undo, Copy to anchors, Simplify and suggestions all
-  apply to the ghost or are disabled. Never both at once. Ghosts, guides and metrics save with the glyph.
-- **Simplify.** Edit → Simplify shows a slider that removes nodes (each
-  with its arms) cheapest-first (distance from each node, or either of its
-  arms, to the chord of its neighbouring nodes),
-  with the original as a red hairline under the reduced fill and the worst
-  drift in font units. When every anchor is compatible, the same points go
-  from all of them, so interpolation survives. Apply or Cancel.
+  selection pill, keys, Copy to anchors, Simplify and suggestions all
+  apply to the ghost or are disabled. Never both at once. While a ghost is only
+  being placed (Place mode), its nodes are hidden, so node commands (delete,
+  nudge, cut, paste, select all) do nothing. Undo is one chronological stack
+  across all anchors, ghosts and guides: it reverts whatever was done last, even
+  on an anchor that is not on screen. Ghosts, guides and metrics save with the glyph.
+- **Simplify preview is read-only.** While the Simplify card is open the glyph
+  cannot be edited: node keys, cut/paste, Undo and the pen are ignored until
+  you Apply or Cancel. The original outline shows as a white dashed line under
+  the reduced fill (see **Simplify** above for the ranking).
 
 - **Suggested edits.** The sparkle button (header on phones, tool rail on
   wide screens) shows how many edits apply right now; tap it to expand a
