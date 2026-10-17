@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
  * by (10, 20); C (gid 3) applies a full 2x2 matrix (90 degree turn) and the same offset.
  */
 class CompositeGlyphTest {
-    private fun fixture(offsetFlags: Int = 0): ByteArray {
+    private fun fixture(offsetFlags: Int = 0, bOffset: Pair<Int, Int> = 10 to 20): ByteArray {
         val glyf = 68
         val tables = listOf(
             Triple("head", 54, 0), Triple("maxp", 6, 0), Triple("hhea", 36, 0),
@@ -43,7 +43,7 @@ class CompositeGlyphTest {
         b[g + 17] = 100; b[g + 18] = 100; b[g + 19] = 100
         // B: composite of A, words + xy + scale (0.5 = 0x2000), offset (10, 20).
         val gb = g + 20
-        u16(gb, 0xFFFF); u16(gb + 10, 0x000B); u16(gb + 12, 1); u16(gb + 14, 10); u16(gb + 16, 20); u16(gb + 18, 0x2000)
+        u16(gb, 0xFFFF); u16(gb + 10, 0x000B or offsetFlags); u16(gb + 12, 1); u16(gb + 14, bOffset.first); u16(gb + 16, bOffset.second); u16(gb + 18, 0x2000)
         // C: composite of A, words + xy + 2x2 (xx=0, xy=1, yx=-1, yy=0), offset (10, 20).
         val gc = g + 40
         u16(gc, 0xFFFF); u16(gc + 10, 0x0083 or offsetFlags); u16(gc + 12, 1); u16(gc + 14, 10); u16(gc + 16, 20)
@@ -57,8 +57,8 @@ class CompositeGlyphTest {
         return b
     }
 
-    private fun nodes(name: String, offsetFlags: Int = 0): Set<Pair<Float, Float>> {
-        val result = buildFamilyFromVariableFont(fixture(offsetFlags))
+    private fun nodes(name: String, offsetFlags: Int = 0, bOffset: Pair<Int, Int> = 10 to 20): Set<Pair<Float, Float>> {
+        val result = buildFamilyFromVariableFont(fixture(offsetFlags, bOffset))
         return result.glyphs.getValue(name).corners.getValue("regular").contours.single()
             .points.filter { it.onCurve }.map { it.x to it.y }.toSet()
     }
@@ -79,5 +79,12 @@ class CompositeGlyphTest {
         // Offset (10, 20) through the 90 degree matrix becomes (-20, 10); unscaled (default) stays (10, 20).
         assertEquals(setOf(-20f to 110f, -120f to 110f, -120f to 10f), nodes("C", offsetFlags = 0x0800))
         assertEquals(setOf(10f to 120f, -90f to 120f, -90f to 20f), nodes("C", offsetFlags = 0x1000))
+    }
+
+    @Test
+    fun roundXyToGridRoundsTheScaledOffset() {
+        // B halves its offset (11, 21) to (5.5, 10.5): fractional unless ROUND_XY_TO_GRID rounds it to (6, 11).
+        assertEquals(setOf(55.5f to 10.5f, 55.5f to 60.5f, 5.5f to 60.5f), nodes("B", 0x0800, 11 to 21))
+        assertEquals(setOf(56f to 11f, 56f to 61f, 6f to 61f), nodes("B", 0x0800 or 0x0004, 11 to 21))
     }
 }

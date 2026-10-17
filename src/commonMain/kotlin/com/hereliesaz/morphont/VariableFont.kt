@@ -271,6 +271,7 @@ class VariableFont private constructor(
             if (flags and 0x0800 != 0 && flags and 0x1000 == 0) {
                 val sx = xx * dx + yx * dy; val sy = xy * dx + yy * dy
                 dx = sx; dy = sy
+                if (flags and 0x0004 != 0) { dx = kotlin.math.floor(dx + 0.5f); dy = kotlin.math.floor(dy + 0.5f) } // ROUND_XY_TO_GRID
             }
             components.add(CompositeComponent(componentGlyphId, dx, dy, xx, xy, yx, yy))
             more = flags and 0x0020 != 0
