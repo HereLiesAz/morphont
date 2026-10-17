@@ -363,7 +363,8 @@ class ReductionSession(val anchorNames: List<String>, val order: List<Removal>, 
 /** Overall application state: every axis's anchors, preview and UI selections. */
 class AppState {
     val anchors: Map<String, AnchorState> = ANCHORS.associateWith { AnchorState(GlyphCorner()) }
-    private class UndoEntry(val owner: Any?, val action: () -> Unit)
+    /** [owners] are the objects whose private history holds one snapshot for this entry (several for a grouped edit). */
+    private class UndoEntry(val owners: MutableList<Any>, val action: () -> Unit)
     private val undoActions = mutableListOf<UndoEntry>()
     private var recording = true
     /** Increment before bulk imports so pending autosaves cannot overwrite newly imported records. */
@@ -377,12 +378,14 @@ class AppState {
         }
     }
 
-    private fun recordUndo(owner: Any? = null, action: () -> Unit) {
+    private fun recordUndo(owner: Any? = null, action: () -> Unit) = recordUndo(listOfNotNull(owner), action)
+
+    private fun recordUndo(owners: List<Any>, action: () -> Unit) {
         if (!recording) return
-        undoActions.add(UndoEntry(owner, action))
+        undoActions.add(UndoEntry(owners.toMutableList(), action))
         if (undoActions.size > 150) {
             // Keep the owner's private history in step with the evicted global entry.
-            when (val evicted = undoActions.removeAt(0).owner) {
+            for (evicted in undoActions.removeAt(0).owners) when (evicted) {
                 is AnchorState -> evicted.forgetOldestHistory()
                 is GhostLayer -> evicted.forgetOldestMatrixHistory()
             }
@@ -391,8 +394,11 @@ class AppState {
 
     /** Forgets the oldest or newest undo action owned by [owner] when its own history dropped the matching entry. */
     private fun dropUndo(owner: Any, oldest: Boolean) {
-        val i = if (oldest) undoActions.indexOfFirst { it.owner === owner } else undoActions.indexOfLast { it.owner === owner }
-        if (i >= 0) undoActions.removeAt(i)
+        val i = if (oldest) undoActions.indexOfFirst { e -> e.owners.any { it === owner } } else undoActions.indexOfLast { e -> e.owners.any { it === owner } }
+        if (i < 0) return
+        // A grouped entry stays (its other owners still hold snapshots); this owner's share is gone.
+        undoActions[i].owners.removeAll { it === owner }
+        if (undoActions[i].owners.isEmpty()) undoActions.removeAt(i)
     }
 
     private fun attachGhost(g: GhostLayer) {
@@ -402,10 +408,10 @@ class AppState {
         g.onMatrixDrop = { dropUndo(g, true) }
     }
 
-    private fun groupUndo(block: () -> Unit, undo: () -> Unit) {
+    private fun groupUndo(owners: List<Any>, block: () -> Unit, undo: () -> Unit) {
         recording = false
         try { block() } finally { recording = true }
-        recordUndo(undo)
+        recordUndo(owners, undo)
     }
 
     fun beginBulkImport() {
@@ -745,6 +751,7 @@ class AppState {
         val targets = ANCHORS.filter { it != activeAnchor }.map { anchors.getValue(it) }
         val count = targets.size
         groupUndo(
+            owners = targets,
             block = { targets.forEach { it.replaceWithHistory(src.glyph.deepCopy()) } },
             undo = { targets.forEach { it.undo() } },
         )
@@ -925,6 +932,7 @@ class AppState {
         if (removed.isNotEmpty()) {
             val targets = r.anchorNames.map { anchors.getValue(it) }
             groupUndo(
+                owners = targets,
                 block = {
                     for (st in targets) {
                         val reduced = withoutPoints(st.glyph, removed)

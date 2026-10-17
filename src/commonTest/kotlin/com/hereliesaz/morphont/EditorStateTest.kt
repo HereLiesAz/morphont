@@ -241,4 +241,19 @@ class EditorStateTest {
         assertEquals(1, state.glyph.contours.size)
         assertEquals(5f, state.glyph.contours[0].points[0].x)
     }
+
+    @Test
+    fun groupedUndoSurvivesATargetHistoryHittingItsCap() {
+        val app = AppState()
+        val src = app.anchors.getValue(app.activeAnchor)
+        src.replaceGlyph(GlyphCorner(0f, mutableListOf(ContourData(mutableListOf(Pt(1f, 1f, true))))))
+        app.copyActiveToOthers()
+        val target = app.anchors.getValue(ANCHORS.first { it != app.activeAnchor })
+        val other = app.anchors.getValue(ANCHORS.last { it != app.activeAnchor && app.anchors.getValue(it) !== target })
+        repeat(80) { target.pushHistory() } // pushes the target's copy step out of its private history
+        repeat(79) { app.undo() }
+        assertEquals(1, other.glyph.contours.size) // the grouped step must not have been consumed early
+        app.undo()
+        assertEquals(0, other.glyph.contours.size)
+    }
 }
