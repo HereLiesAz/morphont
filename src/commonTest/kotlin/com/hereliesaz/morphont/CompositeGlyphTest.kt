@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
  * by (10, 20); C (gid 3) applies a full 2x2 matrix (90 degree turn) and the same offset.
  */
 class CompositeGlyphTest {
-    private fun fixture(): ByteArray {
+    private fun fixture(offsetFlags: Int = 0): ByteArray {
         val glyf = 68
         val tables = listOf(
             Triple("head", 54, 0), Triple("maxp", 6, 0), Triple("hhea", 36, 0),
@@ -46,7 +46,7 @@ class CompositeGlyphTest {
         u16(gb, 0xFFFF); u16(gb + 10, 0x000B); u16(gb + 12, 1); u16(gb + 14, 10); u16(gb + 16, 20); u16(gb + 18, 0x2000)
         // C: composite of A, words + xy + 2x2 (xx=0, xy=1, yx=-1, yy=0), offset (10, 20).
         val gc = g + 40
-        u16(gc, 0xFFFF); u16(gc + 10, 0x0083); u16(gc + 12, 1); u16(gc + 14, 10); u16(gc + 16, 20)
+        u16(gc, 0xFFFF); u16(gc + 10, 0x0083 or offsetFlags); u16(gc + 12, 1); u16(gc + 14, 10); u16(gc + 16, 20)
         u16(gc + 18, 0); u16(gc + 20, 0x4000); u16(gc + 22, 0xC000); u16(gc + 24, 0)
         // cmap format 4: A..C -> gid 1..3 via delta -64.
         u16(cmap, 0); u16(cmap + 2, 1); u16(cmap + 4, 3); u16(cmap + 6, 1); u32(cmap + 8, 12)
@@ -57,8 +57,8 @@ class CompositeGlyphTest {
         return b
     }
 
-    private fun nodes(name: String): Set<Pair<Float, Float>> {
-        val result = buildFamilyFromVariableFont(fixture())
+    private fun nodes(name: String, offsetFlags: Int = 0): Set<Pair<Float, Float>> {
+        val result = buildFamilyFromVariableFont(fixture(offsetFlags))
         return result.glyphs.getValue(name).corners.getValue("regular").contours.single()
             .points.filter { it.onCurve }.map { it.x to it.y }.toSet()
     }
@@ -72,5 +72,12 @@ class CompositeGlyphTest {
     @Test
     fun twoByTwoComponentMatrixIsApplied() {
         assertEquals(setOf(10f to 120f, -90f to 120f, -90f to 20f), nodes("C"))
+    }
+
+    @Test
+    fun scaledComponentOffsetIsTransformedByTheMatrix() {
+        // Offset (10, 20) through the 90 degree matrix becomes (-20, 10); unscaled (default) stays (10, 20).
+        assertEquals(setOf(-20f to 110f, -120f to 110f, -120f to 10f), nodes("C", offsetFlags = 0x0800))
+        assertEquals(setOf(10f to 120f, -90f to 120f, -90f to 20f), nodes("C", offsetFlags = 0x1000))
     }
 }

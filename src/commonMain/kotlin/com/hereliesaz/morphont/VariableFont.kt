@@ -267,6 +267,11 @@ class VariableFont private constructor(
                 8 -> { xx = f2dot14(p); xy = f2dot14(p + 2); yx = f2dot14(p + 4); yy = f2dot14(p + 6) }
             }
             p += transformSize
+            // Unless SCALED_COMPONENT_OFFSET (0x0800) is set (UNSCALED, 0x1000, is the default), the offset is not transformed.
+            if (flags and 0x0800 != 0 && flags and 0x1000 == 0) {
+                val sx = xx * dx + yx * dy; val sy = xy * dx + yy * dy
+                dx = sx; dy = sy
+            }
             components.add(CompositeComponent(componentGlyphId, dx, dy, xx, xy, yx, yy))
             more = flags and 0x0020 != 0
         }
