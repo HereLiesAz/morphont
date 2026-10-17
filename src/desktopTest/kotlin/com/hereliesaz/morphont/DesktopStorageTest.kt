@@ -99,6 +99,17 @@ class DesktopStorageTest {
     }
 
     @Test
+    fun unmigratedLegacyFileIsStillResolved() {
+        val root = Files.createTempDirectory("morphont-resolve-test-")
+        try {
+            Files.writeString(root.resolve("A.json"), "legacy")
+            assertEquals("A.json", resolveGlyphFile(root.toFile(), "A").name)
+            Files.writeString(root.resolve(desktopGlyphFileName("A")), "new")
+            assertEquals(desktopGlyphFileName("A"), resolveGlyphFile(root.toFile(), "A").name)
+        } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test
     fun unreadableGlyphIsSkippedNotFatalForExport() {
         val good = Glyph()
         val (readable, skipped) = readableGlyphs(listOf("ok", "broken")) { if (it == "ok") good else null }

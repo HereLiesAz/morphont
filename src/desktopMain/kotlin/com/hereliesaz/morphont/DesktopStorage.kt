@@ -17,13 +17,8 @@ import java.net.URLEncoder
  * renames files written under the older scheme.
  */
 internal fun desktopGlyphFileName(name: String): String {
-    require(name.isNotEmpty()) { "Glyph name must not be empty" }
-    var encoded = URLEncoder.encode(name, Charsets.UTF_8).replace("*", "%2A")
-    val base = encoded.substringBefore('.').uppercase()
-    if (base in setOf("CON", "PRN", "AUX", "NUL") ||
-        Regex("^(COM[1-9]|LPT[1-9])$").matches(base)) {
-        encoded = "%" + encoded[0].code.toString(16).padStart(2, '0').uppercase() + encoded.drop(1)
-    }
+    val legacy = desktopLegacyGlyphFileName(name)
+    val encoded = legacy.removeSuffix(".json")
     val folded = StringBuilder()
     var i = 0
     while (i < encoded.length) {
@@ -35,6 +30,26 @@ internal fun desktopGlyphFileName(name: String): String {
         }
     }
     return folded.toString() + ".json"
+}
+
+/** The filename scheme used before capitals were escaped; kept so unmigrated files stay loadable. */
+internal fun desktopLegacyGlyphFileName(name: String): String {
+    require(name.isNotEmpty()) { "Glyph name must not be empty" }
+    var encoded = URLEncoder.encode(name, Charsets.UTF_8).replace("*", "%2A")
+    val base = encoded.substringBefore('.').uppercase()
+    if (base in setOf("CON", "PRN", "AUX", "NUL") ||
+        Regex("^(COM[1-9]|LPT[1-9])$").matches(base)) {
+        encoded = "%" + encoded[0].code.toString(16).padStart(2, '0').uppercase() + encoded.drop(1)
+    }
+    return encoded + ".json"
+}
+
+/** The file to read for [name]: the current name, else the legacy one while its migration has not succeeded. */
+internal fun resolveGlyphFile(directory: File, name: String): File {
+    val current = File(directory, desktopGlyphFileName(name))
+    if (current.exists()) return current
+    val legacy = File(directory, desktopLegacyGlyphFileName(name))
+    return if (legacy.exists()) legacy else current
 }
 
 /** Renames glyph files saved before capitals were escaped to their current names (never overwriting). */
@@ -139,13 +154,15 @@ object DesktopStorage {
 
     private fun fileFor(name: String) = File(dir, desktopGlyphFileName(name))
 
+    private fun readableFileFor(name: String) = resolveGlyphFile(dir, name)
+
     private fun nameOf(file: File): String? = desktopGlyphName(file.name)
 
-    fun listGlyphNames(): List<String> = dir.listFiles().orEmpty().mapNotNull { nameOf(it) }.sorted()
+    fun listGlyphNames(): List<String> = dir.listFiles().orEmpty().mapNotNull { nameOf(it) }.distinct().sorted()
 
-    fun glyphExists(name: String) = fileFor(name).exists()
+    fun glyphExists(name: String) = readableFileFor(name).exists()
 
-    fun loadGlyph(name: String): Glyph? = runCatching { ProjectCodec.decodeGlyph(fileFor(name).readText()) }.getOrNull()
+    fun loadGlyph(name: String): Glyph? = runCatching { ProjectCodec.decodeGlyph(readableFileFor(name).readText()) }.getOrNull()
 
     fun saveGlyph(name: String, glyph: Glyph) {
         val target = fileFor(name)
