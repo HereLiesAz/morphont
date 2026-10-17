@@ -287,12 +287,12 @@ private fun cleanup(app: AppState): List<Suggestion> {
         pts.size >= 3 && (signedArea(pts) < 0f) != isOuter(gl.contours, ci)
     }
     val wrong = wrongDirection(g)
-    if (wrong.isNotEmpty()) out.add(Suggestion("Fix direction of ${wrong.size} contour${if (wrong.size > 1) "s" else ""}", "outer clockwise") { a ->
+    // Reversing flips the point array, so every anchor must reverse the same contours or index correspondence breaks.
+    if (wrong.isNotEmpty() && glyphs.all { wrongDirection(it) == wrong }) out.add(Suggestion("Fix direction of ${wrong.size} contour${if (wrong.size > 1) "s" else ""}", "outer clockwise") { a ->
         scope.forEach { n ->
             val st = a.anchors.getValue(n)
             val ng = st.glyph.deepCopy()
-            // Each anchor is judged on its own outline, not the active anchor's verdict.
-            for (ci in wrongDirection(st.glyph)) ng.contours[ci] = ContourData(ng.contours[ci].points.reversed().toMutableList())
+            for (ci in wrong) ng.contours[ci] = ContourData(ng.contours[ci].points.reversed().toMutableList())
             st.replaceWithHistory(ng)
         }
         a.setStatus("Reversed ${wrong.size} contour(s).")

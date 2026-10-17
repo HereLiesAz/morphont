@@ -213,6 +213,18 @@ class EditingTest {
     }
 
     @Test
+    fun fixDirectionIsWithheldWhenAnchorsDisagreeAboutAContour() {
+        val app = AppState()
+        val g = Glyph()
+        ANCHORS.forEach { g.corners[it] = GlyphCorner(300f, mutableListOf(square(100f, 0f, 80f))) }
+        // One anchor winds the other way, so reversing per anchor would break point correspondence.
+        val flipped = square(100f, 0f, 80f)
+        g.corners[ANCHORS.last()] = GlyphCorner(300f, mutableListOf(ContourData(flipped.points.reversed().toMutableList())))
+        app.loadGlyph("o", g)
+        assertTrue(suggestionsFor(app).none { it.label.startsWith("Fix direction") })
+    }
+
+    @Test
     fun suggestsSnappingPointsJustOffTheBaseline() {
         val app = AppState()
         val g = Glyph()
