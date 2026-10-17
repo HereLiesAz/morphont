@@ -229,4 +229,16 @@ class EditorStateTest {
         a.undo() // a's private history must have been trimmed too
         assertEquals(1, a.glyph.contours.size)
     }
+
+    @Test
+    fun undoingTheFirstPointKeepsDrawingModeSoTheNextTapAddsAPoint() {
+        val state = AnchorState(GlyphCorner())
+        state.startNewContour()
+        state.addDrawPoint(1f, 1f)
+        state.undo()
+        assertEquals(0, state.drawingContourIndex)
+        state.addDrawPoint(5f, 5f)
+        assertEquals(1, state.glyph.contours.size)
+        assertEquals(5f, state.glyph.contours[0].points[0].x)
+    }
 }

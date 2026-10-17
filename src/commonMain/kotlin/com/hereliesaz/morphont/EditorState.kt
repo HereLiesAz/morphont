@@ -55,8 +55,8 @@ class AnchorState(initial: GlyphCorner) {
         if (history.size <= 1) return
         glyph = history.removeAt(history.lastIndex).deepCopy()
         selection = emptySet()
-        // The contour being drawn may not exist in the restored state.
-        drawingContourIndex = null
+        // Keep drawing if the restored state still has the active contour; otherwise leave drawing mode.
+        if ((drawingContourIndex ?: 0) >= glyph.contours.size) drawingContourIndex = null
     }
 
     /** Replaces [glyph] as one undoable edit: pushes the current state first, same as any other edit. */
