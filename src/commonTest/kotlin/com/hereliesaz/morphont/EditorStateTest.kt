@@ -215,4 +215,18 @@ class EditorStateTest {
         assertEquals(before.contours[0].points.size, restored.contours[0].points.size)
         assertEquals(before.contours[0].points[0].x, restored.contours[0].points[0].x)
     }
+
+    @Test
+    fun globalUndoEvictionTrimsTheOwnersPrivateHistory() {
+        val app = AppState()
+        val a = app.anchors.getValue(ANCHORS[0])
+        val b = app.anchors.getValue(ANCHORS[1])
+        a.pushHistory()
+        a.replaceGlyph(GlyphCorner(0f, mutableListOf(ContourData(mutableListOf(Pt(1f, 1f, true))))))
+        repeat(150) { b.pushHistory() } // 151 global entries: a's only entry is evicted
+        repeat(150) { app.undo() }
+        app.undo() // nothing left globally
+        a.undo() // a's private history must have been trimmed too
+        assertEquals(1, a.glyph.contours.size)
+    }
 }

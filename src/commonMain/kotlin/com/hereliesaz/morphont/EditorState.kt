@@ -47,6 +47,9 @@ class AnchorState(initial: GlyphCorner) {
         }
     }
 
+    /** Drops the oldest undo step without notifying [onHistoryDrop] (the app-level entry is already gone). */
+    fun forgetOldestHistory() { if (history.size > 1) history.removeAt(0) }
+
     /** Pops the most recently pushed pre-edit state and makes it current. */
     fun undo() {
         if (history.size <= 1) return
@@ -280,6 +283,8 @@ class GhostLayer(
         }
     }
 
+    fun forgetOldestMatrixHistory() { if (matrixHistory.isNotEmpty()) matrixHistory.removeAt(0) }
+
     fun undoMatrix(): Boolean {
         if (matrixHistory.isEmpty()) return false
         matrix = matrixHistory.removeAt(matrixHistory.lastIndex)
@@ -375,7 +380,13 @@ class AppState {
     private fun recordUndo(owner: Any? = null, action: () -> Unit) {
         if (!recording) return
         undoActions.add(UndoEntry(owner, action))
-        if (undoActions.size > 150) undoActions.removeAt(0)
+        if (undoActions.size > 150) {
+            // Keep the owner's private history in step with the evicted global entry.
+            when (val evicted = undoActions.removeAt(0).owner) {
+                is AnchorState -> evicted.forgetOldestHistory()
+                is GhostLayer -> evicted.forgetOldestMatrixHistory()
+            }
+        }
     }
 
     /** Forgets the oldest or newest undo action owned by [owner] when its own history dropped the matching entry. */
