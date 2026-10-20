@@ -287,6 +287,15 @@ so anchors can then be reshaped without adding or removing points.
   draws every contour's width/height, each ghost's width, and the
   selection's extent, live -- for comparing the widths of a character's
   parts.
+- **Matching states stay matching.** While Extra Thin, Regular and Extra Black
+  (or any anchors) have the same structure, deleting nodes (Delete/trash, or Cut
+  for whole contours) in any one of them deletes the same nodes from all of
+  them as a single undo step, and the status line says which states changed.
+  Anchors that don't match are left alone, and deleting just a handle never
+  touches the others. Where the states already differ, the **Trim to the fewest
+  nodes** suggestion brings each larger state down to the count (per contour) of
+  the smallest, using the shape-preserving simplifier, as one undo step. It
+  picks nodes in each state independently, so check the result in the preview.
 - **Snapping.** Light: within ~7px a dragged point (or a selection's edges/
   centre) pulls onto metrics, guides, ghost nodes and (more weakly) the grid,
   and lines up -- vertically or horizontally -- with other **nodes** (when

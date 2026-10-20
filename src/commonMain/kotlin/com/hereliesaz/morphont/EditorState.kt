@@ -790,9 +790,91 @@ class AppState {
 
     // ------------------------------------------------------------ clipboard
 
-    /** The trash, with its refusal (if any) shown as a status message. */
+    /**
+     * Anchors whose outline has exactly the open anchor's structure (same contours, points and node
+     * types). Deleting nodes from one of these deletes the same nodes from all of them, so states that
+     * match keep matching. Just the open anchor when it matches nothing, is empty, or a ghost is open.
+     */
+    fun matchingAnchors(): List<String> {
+        if (activeGhost != null) return listOf(activeAnchor)
+        val open = anchors.getValue(activeAnchor).glyph
+        if (open.contours.isEmpty()) return listOf(activeAnchor)
+        val snapshot = cornersSnapshot()
+        return ANCHORS.filter {
+            it == activeAnchor ||
+                (anchors.getValue(it).glyph.contours.isNotEmpty() && compatibilityIssue(snapshot, listOf(activeAnchor, it)) == null)
+        }
+    }
+
+    private fun linkedNote(group: List<String>): String =
+        group.joinToString(", ") { ANCHOR_LABELS[it] ?: it }
+
+    /**
+     * The trash. Nodes selected here are deleted from every anchor that matches this one, as a single undo
+     * step; handles are this anchor's alone (see [AnchorState.deleteSelected]). A refusal is shown as a status.
+     */
     fun trashSelection() {
-        commandTarget.deleteSelected()?.let { setStatus(it, true) }
+        val t = commandTarget
+        val nodes = t.selection.filter { (ci, pi) -> t.glyph.contours.getOrNull(ci)?.points?.getOrNull(pi)?.onCurve == true }.toSet()
+        val group = if (nodes.isEmpty()) listOf(activeAnchor) else matchingAnchors()
+        if (group.size < 2 || t !== anchors.getValue(activeAnchor)) {
+            t.deleteSelected()?.let { setStatus(it, true) }
+            return
+        }
+        val targets = group.map { anchors.getValue(it) }
+        var message: String? = null
+        groupUndo(
+            owners = targets,
+            block = {
+                message = t.deleteSelected()
+                for (st in targets) if (st !== t) st.replaceWithHistory(deleteSelection(st.glyph, nodes))
+            },
+            undo = { targets.forEach { it.undo() } },
+        )
+        setStatus(message ?: "Deleted ${nodes.size} node(s) from ${linkedNote(group)} (they match).")
+    }
+
+    /** The three states of the axis being worked on: its low extreme, Regular, its high extreme. */
+    fun axisTriple(): List<String> {
+        val axis = Axis.ALL.firstOrNull { it.lo == activeAnchor || it.hi == activeAnchor } ?: selectedAxis
+        return listOf(axis.lo, "regular", axis.hi)
+    }
+
+    /**
+     * What it would take to give every drawn state of [axisTriple] only as many nodes (per contour) as the
+     * one with the fewest: for each larger state, the nodes the shape-preserving simplifier would remove,
+     * keyed by anchor. Null when the states already agree, or can't be compared (different contour counts).
+     */
+    fun trimPlan(): Map<String, Set<PointKey>>? {
+        val names = axisTriple().filter { anchors.getValue(it).glyph.contours.isNotEmpty() }
+        if (names.size < 2) return null
+        val glyphs = names.associateWith { anchors.getValue(it).glyph }
+        val contourCount = glyphs.values.map { it.contours.size }.toSet().singleOrNull() ?: return null
+        fun nodes(g: GlyphCorner, ci: Int) = g.contours[ci].points.count { it.onCurve }
+        val orders = glyphs.mapValues { reductionOrder(listOf(it.value)) }
+        val plan = mutableMapOf<String, MutableSet<PointKey>>()
+        for (ci in 0 until contourCount) {
+            val target = maxOf(3, names.minOf { nodes(glyphs.getValue(it), ci) })
+            for (n in names) {
+                val extra = nodes(glyphs.getValue(n), ci) - target
+                if (extra <= 0) continue
+                plan.getOrPut(n) { mutableSetOf() }
+                    .addAll(orders.getValue(n).filter { it.key.first == ci }.take(extra).map { it.key })
+            }
+        }
+        return plan.filterValues { it.isNotEmpty() }.takeIf { it.isNotEmpty() }
+    }
+
+    /** Trims the larger states down to the fewest nodes, each by the simplifier, as one undo step. */
+    fun trimToFewestNodes() {
+        val plan = trimPlan() ?: return
+        val targets = plan.keys.map { anchors.getValue(it) }
+        groupUndo(
+            owners = targets,
+            block = { for ((name, keys) in plan) anchors.getValue(name).let { st -> st.replaceWithHistory(reducedGlyph(st.glyph, keys)) } },
+            undo = { targets.forEach { it.undo() } },
+        )
+        setStatus("Trimmed " + plan.entries.joinToString(", ") { "${ANCHOR_LABELS[it.key] ?: it.key} -${it.value.size}" } + " to match the fewest nodes. Undo puts it back.")
     }
 
     fun copySelection() {
@@ -809,7 +891,22 @@ class AppState {
         val t = commandTarget
         if (t.selection.isEmpty()) { setStatus("Select points to cut; every contour they touch is cut whole.", true); return }
         copySelection()
-        t.deleteTouchedContours()
+        val touched = touchedContours(t.selection)
+        val group = if (touched.isEmpty()) listOf(activeAnchor) else matchingAnchors()
+        if (group.size < 2) { t.deleteTouchedContours(); return }
+        val targets = group.map { anchors.getValue(it) }
+        groupUndo(
+            owners = targets,
+            block = {
+                t.deleteTouchedContours()
+                for (st in targets) if (st !== t) {
+                    val kept = st.glyph.deepCopy().contours.filterIndexed { ci, _ -> ci !in touched }
+                    st.replaceWithHistory(GlyphCorner(st.glyph.width, kept.toMutableList()))
+                }
+            },
+            undo = { targets.forEach { it.undo() } },
+        )
+        setStatus("Cut ${touched.size} contour(s) from ${linkedNote(group)} (they match).")
     }
 
     fun paste() {
