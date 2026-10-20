@@ -5,10 +5,9 @@ import kotlin.test.assertEquals
 
 class EditorStateTest {
     @Test
-    fun measurementsAndNodeActionsAreOnByDefault() {
+    fun measurementsAreOnByDefault() {
         val app = AppState()
         assertEquals(true, app.view.showMeasure)
-        assertEquals(true, app.showNodeTools)
     }
 
     @Test
@@ -68,7 +67,6 @@ class EditorStateTest {
         val layer = app.ghosts.single()
         app.editGhost(layer.id)
         app.nodeMoveMode = true
-        app.showNodeTools = false
         app.view.zoom = 2.5f
         assertEquals(layer.state, app.editTarget("regular"))
         assertEquals(true, app.ghostTransformMode)
@@ -78,7 +76,6 @@ class EditorStateTest {
         assertEquals(null, app.activeGhost)
         assertEquals(anchor, app.editTarget("regular"))
         assertEquals(false, app.nodeMoveMode)
-        assertEquals(true, app.showNodeTools)
         assertEquals(2.5f, app.view.zoom)
         assertEquals(1, app.ghosts.size) // Exit editing; do not delete the reference.
         assertEquals(4, anchor.glyph.contours.single().points.count { it.onCurve })
@@ -115,7 +112,6 @@ class EditorStateTest {
         regular.addDrawPoint(20f, 30f)
         weight.startNewContour()
         app.activeAnchor = "regular"
-        app.showNodeTools = false
 
         app.resumeGlyphSelection()
 
@@ -123,7 +119,6 @@ class EditorStateTest {
         assertEquals(null, weight.drawingContourIndex)
         assertEquals(1, regular.glyph.contours.single().points.count { it.onCurve })
         assertEquals(0, weight.glyph.contours.size)
-        assertEquals(true, app.showNodeTools)
     }
 
     @Test

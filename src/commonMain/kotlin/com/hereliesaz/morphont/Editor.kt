@@ -131,7 +131,6 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
         ) {
             SuggestionsRow(app, suggestions)
             GhostBar(app)
-            SelectionPill(app)
             Toast(app)
         }
         if (hint != null) {
@@ -230,8 +229,8 @@ private fun CompactEditor(
             ) {
             IconAction(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.activeGhost == null && app.reduction == null, size = 44)
             IconAction(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
-            IconAction(MIcons.Nodes, "Show or hide node tools", { app.showNodeTools = !app.showNodeTools }, selected = app.showNodeTools, size = 42)
             IconAction(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+            NodeActions(app, size = 42)
             IconAction(MIcons.ResetView, "Reset zoom and pan", { app.view.resetView() }, size = 42)
             IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = 42)
             IconAction(MIcons.Guides, "Guides", { sheet = Sheet.GUIDES }, size = 48)
@@ -293,11 +292,11 @@ private fun WideEditor(
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
         Row(Modifier.weight(1f).fillMaxWidth()) {
-            Column(Modifier.width(60.dp).fillMaxHeight().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.width(60.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 IconAction(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.activeGhost == null && app.reduction == null, size = 42)
                 IconAction(MIcons.Move, "Move node (M)", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
-                IconAction(MIcons.Nodes, "Show or hide node tools", { app.showNodeTools = !app.showNodeTools }, selected = app.showNodeTools, size = 42)
                 IconAction(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+                NodeActions(app, size = 42)
                 IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 42, enabled = app.activeGhost == null)
                 IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 42, enabled = app.activeGhost == null)
                 SuggestionsButton(app, suggestions, size = 42)

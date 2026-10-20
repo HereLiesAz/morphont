@@ -141,46 +141,30 @@ fun SectionHead(title: String, trailing: @Composable () -> Unit = {}) {
 
 // ------------------------------------------------------- floating overlays
 
-/** Recoverable pointer actions. Selection-dependent controls appear when points are selected. */
+/**
+ * The selection's actions -- copy, cut, paste, delete, smooth/corner, line/curve, select all, flip and
+ * rotate -- as ordinary tools in the tool dock or rail. They are always there, dimmed until they apply,
+ * so the layout never shifts and there is no separate bar to find.
+ */
 @Composable
-fun SelectionPill(app: AppState, modifier: Modifier = Modifier) {
+fun NodeActions(app: AppState, size: Int = 42) {
     val t = app.commandTarget
-    if (app.reduction != null || (app.activeGhost != null && app.ghostTransformMode)) return
-    if (!app.showNodeTools || t.drawingContourIndex != null) return
-    val has = t.selection.isNotEmpty()
-    val nodeScroll = rememberScrollState()
-    Box(modifier.widthIn(max = 520.dp).floating()) {
-        Row(Modifier.height(48.dp).horizontalScroll(nodeScroll).padding(start = 4.dp, end = 4.dp, bottom = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconAction(MIcons.Close, "Hide node tools", { app.showNodeTools = false }, size = 36)
-            if (!has) {
-                IconAction(MIcons.SelectAll, "Select all nodes", { t.selectAll() }, size = 40)
-                Caps("SELECT A NODE", size = 9)
-            }
-            if (has) {
-                IconAction(MIcons.Copy, "Copy", { app.copySelection() }, size = 40)
-                IconAction(MIcons.Cut, "Cut", { app.cutSelection() }, size = 40)
-            }
-            if (app.clipboard != null) IconAction(MIcons.Paste, "Paste", { app.paste() }, size = 40)
-            if (has) {
-                val smooth = t.selectionIsSmooth
-                IconAction(if (smooth) MIcons.Corner else MIcons.Smooth, if (smooth) "Make corner" else "Make smooth", { t.toggleSmoothSelected() }, size = 40)
-                IconAction(MIcons.CurveLine, "Toggle line / curve", { t.toggleCurveSelected() }, size = 40)
-                IconAction(MIcons.SelectAll, "Select all", { t.selectAll() }, size = 40)
-                if (t.selection.size >= 2) {
-                    IconAction(MIcons.FlipH, "Flip horizontally", { t.flipSelected(true) }, size = 40)
-                    IconAction(MIcons.FlipV, "Flip vertically", { t.flipSelected(false) }, size = 40)
-                    IconAction(MIcons.RotateLeft, "Rotate 15° left", { t.rotateSelected(15f) }, size = 40)
-                    IconAction(MIcons.RotateRight, "Rotate 15° right", { t.rotateSelected(-15f) }, size = 40)
-                }
-                Box(Modifier.width(1.dp).height(20.dp).background(Mono.border))
-                IconAction(MIcons.Delete, "Delete", { t.deleteSelected() }, size = 40)
-                val b = boundsOfSelection(t.glyph, t.selection)
-                val dims = if (b != null && t.selection.size > 1) " · ${b.width.toInt()} × ${b.height.toInt()}" else ""
-                Caps("${t.selection.size} sel$dims", size = 10, modifier = Modifier.padding(start = 4.dp, end = 10.dp))
-            }
-        }
-        Scrollbar(nodeScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
-    }
+    // Nodes can't be edited while a Simplify preview is open or a ghost is being placed, or mid-contour.
+    val free = !app.nodeEditsLocked && t.drawingContourIndex == null
+    val has = free && t.selection.isNotEmpty()
+    val several = free && t.selection.size >= 2
+    IconAction(MIcons.Copy, "Copy", { app.copySelection() }, size = size, enabled = has)
+    IconAction(MIcons.Cut, "Cut", { app.cutSelection() }, size = size, enabled = has)
+    IconAction(MIcons.Paste, "Paste", { app.paste() }, size = size, enabled = free && app.clipboard != null)
+    IconAction(MIcons.Delete, "Delete", { t.deleteSelected() }, size = size, enabled = has)
+    val smooth = has && t.selectionIsSmooth
+    IconAction(if (smooth) MIcons.Corner else MIcons.Smooth, if (smooth) "Make corner" else "Make smooth", { t.toggleSmoothSelected() }, size = size, enabled = has)
+    IconAction(MIcons.CurveLine, "Toggle line / curve", { t.toggleCurveSelected() }, size = size, enabled = has)
+    IconAction(MIcons.SelectAll, "Select all", { t.selectAll() }, size = size, enabled = free)
+    IconAction(MIcons.FlipH, "Flip horizontally", { t.flipSelected(true) }, size = size, enabled = several)
+    IconAction(MIcons.FlipV, "Flip vertically", { t.flipSelected(false) }, size = size, enabled = several)
+    IconAction(MIcons.RotateLeft, "Rotate 15° left", { t.rotateSelected(15f) }, size = size, enabled = several)
+    IconAction(MIcons.RotateRight, "Rotate 15° right", { t.rotateSelected(-15f) }, size = size, enabled = several)
 }
 
 /** Placement controls for the ghost being edited. */

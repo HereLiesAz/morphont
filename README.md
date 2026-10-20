@@ -128,7 +128,7 @@ so anchors can then be reshaped without adding or removing points.
   arms already leave it in opposite directions (within about 2 degrees)
   also comes in smooth.
   Saves carry `"outlineFormat": 2` so they are never converted twice.
-- **Clipboard.** Copy / Cut / Paste / Select all, from the selection pill,
+- **Clipboard.** Copy / Cut / Paste / Select all, from the tool dock,
   or Ctrl/Cmd + C/X/V/A. The unit is whole contours (a glyph
   contour is always closed): every contour the selection touches is taken,
   or the whole outline when nothing is selected. Paste lands in place and
@@ -162,10 +162,10 @@ so anchors can then be reshaped without adding or removing points.
   `initial → remaining` count is clamped to the planned number of deletions,
   so moving the slider right cannot increase the count. The preview shows
   the lost geometry before Apply, which remains undoable.
-- **Pointer actions.** The contextual node toolbar remains available even
-  with nothing selected (Select All is offered), and the **Node tools**
-  button in the phone dock or desktop rail restores it after closing. Its
-  overflowing actions have a draggable scrollbar. Selection hit-testing
+- **Pointer actions.** Copy, Cut, Paste, Delete, smooth/corner, line/curve,
+  Select all, flip and rotate are ordinary tools in the phone dock and the
+  desktop rail -- always present, dimmed until they apply (there is no separate
+  node toolbar). Selection hit-testing
   takes priority over overlapping transform handles, so dragging a node
   cannot accidentally start a box scale. The straight/curve toggle checks
   collinear cubic controls (all nodes have handles); converting a line to
@@ -260,7 +260,7 @@ so anchors can then be reshaped without adding or removing points.
   adjustment. The preview remains non-destructive until **Apply**.
 - **Transform box.** Two or more selected points get a dashed box whose
   handles sit just outside the points: corner squares scale (about the
-  opposite corner), the knob above rotates. The selection pill adds flip
+  opposite corner), the knob above rotates. The tool dock adds flip
   ↔/↕ and ±15°. Point order never changes, so anchors stay compatible.
 - **View.** A stable metric-based frame (it no longer refits while you drag),
   shared zoom/pan across panels: mouse wheel or pinch to zoom, two fingers to
@@ -291,7 +291,7 @@ so anchors can then be reshaped without adding or removing points.
   its **Edit** button in
   the Ghosts panel; while it lasts the ghost draws solid and the working
   glyph as a bare outline, and the glyph is locked -- gestures, the
-  selection pill, keys, Copy to anchors, Simplify and suggestions all
+  tool dock, keys, Copy to anchors, Simplify and suggestions all
   apply to the ghost or are disabled. Never both at once. While a ghost is only
   being placed (Place mode), its nodes are hidden, so node commands (delete,
   nudge, cut, paste, select all) do nothing. Undo is one chronological stack
@@ -335,7 +335,7 @@ so anchors can then be reshaped without adding or removing points.
 - `Editing.kt` -- UI-free editing geometry: bounds, affine transforms, ghost shapes, clipboard extraction, snapping, node-reduction order
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)
 - `Editor.kt` -- the shared editor screen (phone and wide layouts) and the welcome screen, used by both shells
-- `AnchorCanvas.kt` / `Panels.kt` / `Controls.kt` -- the canvas renderer, preview/thumbnail canvases, and the floating parts (selection pill, ghost bar, simplify card, axis strip, filmstrip, inspector sections, dialogs, keyboard shortcuts)
+- `AnchorCanvas.kt` / `Panels.kt` / `Controls.kt` -- the canvas renderer, preview/thumbnail canvases, and the floating parts (ghost bar, simplify card, axis strip, filmstrip, inspector sections, dialogs, keyboard shortcuts)
 - `Icons.kt` -- the monoline icon set
 - `Suggestions.kt` -- the suggested-edits engine (outline offset, stem measurement, and each suggestion)
 - `Theme.kt` -- palette and primitives (`MonoButton`, `IconAction`, `Caps`, `floating`, `HairSlider`, draggable `Scrollbar`), built on `HereLiesAz/convey` (see below)
@@ -367,9 +367,8 @@ of the way until needed.
 - **Wide screens (web ≥900dp, tablets):** glyph tabs, a tool rail, an
   **anchor filmstrip** of live thumbnails under the canvas, and an inspector
   column (Preview + sliders, Ghosts, Guides).
-- **Floating, contextual:** the pointer's node-action pill stays recoverable
-  from the tool rail/dock. Actions requiring a selection appear when one
-  exists; the empty-selection state provides Select All. The ghost bar
+- **Floating, contextual:** the node actions live in the tool rail/dock and
+  are dimmed until a selection exists. The ghost bar
   appears only while placing a ghost; the Simplify card only during a
   preview; status appears as a transient toast.
 - **Monochrome.** Hierarchy is carried by brightness: the selected node, the

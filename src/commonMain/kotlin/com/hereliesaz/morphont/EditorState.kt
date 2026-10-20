@@ -524,9 +524,6 @@ class AppState {
     /** Move on-curve nodes with their handles instead of editing individual handles. */
     var nodeMoveMode by mutableStateOf(false)
 
-    /** Restore the pointer's contextual actions at any time from the tool rail/dock. */
-    var showNodeTools by mutableStateOf(true)
-
     /** Whether the suggested-edits row is expanded (it's behind a button, not always on screen). */
     var showSuggestions by mutableStateOf(false)
 
@@ -674,7 +671,6 @@ class AppState {
         activeGhostId = null
         ghostTransformMode = true
         nodeMoveMode = false
-        showNodeTools = true
     }
 
     /** The edit target for menu/keyboard commands: the active ghost, else the active anchor. */
@@ -722,7 +718,6 @@ class AppState {
         reduction = null
         activeAnchor = "regular"
         nodeMoveMode = false
-        showNodeTools = true
         setStatus("Loaded \"$name\".")
     }
 
