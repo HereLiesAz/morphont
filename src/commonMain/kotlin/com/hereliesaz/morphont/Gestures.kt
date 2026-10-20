@@ -205,7 +205,11 @@ suspend fun PointerInputScope.handleAnchorGestures(
         val proxy = f.proxyCenter
         if (hitsNodeMoveCircle(startPos, proxy, f.proxyRadiusPx)) {
             val selected = f.app.editTarget(f.anchorName)
-            val nodes = selected.selectedNodes().toList()
+            // Move exactly what is selected: a picked handle moves by itself (re-mirroring its twin on a
+            // smooth node), a picked node carries its handles.
+            val nodes = selected.selection.filter { (ci, pi) ->
+                selected.glyph.contours.getOrNull(ci)?.points?.getOrNull(pi) != null
+            }
             if (nodes.isNotEmpty()) {
                 // No haptic and no wait: the circle responds from the first touch. While it is dragged it
                 // keeps its spacing from the node instead of re-choosing a spot under the finger.
