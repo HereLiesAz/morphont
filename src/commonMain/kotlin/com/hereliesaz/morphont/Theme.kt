@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
@@ -164,6 +165,27 @@ fun Modifier.floating(radius: Int = 22): Modifier = this
     .clip(RoundedCornerShape(radius.dp))
     .background(Mono.panel)
     .border(1.dp, Mono.border, RoundedCornerShape(radius.dp))
+
+/**
+ * A tool button that names itself, in small text beneath its icon, while it is the active tool and only then.
+ * [name] defaults to [label] without any trailing "(key)" hint.
+ */
+@Composable
+fun ToolIcon(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    enabled: Boolean = true,
+    size: Int = 44,
+    name: String = label.substringBefore(" ("),
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        IconAction(icon, label, onClick, selected = selected, enabled = enabled, size = size)
+        if (selected) Caps(name, color = Mono.ink, size = 8)
+    }
+}
 
 /** Circular icon button, 44dp by default (callers pass 40-48); [selected] fills it with ink. */
 @Composable

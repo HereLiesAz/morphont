@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.DontMemoize
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -17,6 +18,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -85,6 +88,7 @@ fun AnchorCanvas(
     modifier: Modifier = Modifier,
 ) {
     var canvasSize by remember { mutableStateOf(Size.Zero) }
+    var canvasOrigin by remember { mutableStateOf(Offset.Zero) }
     val feedback = remember { CanvasFeedback() }
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current.density
@@ -108,16 +112,21 @@ fun AnchorCanvas(
     // The cross-circle can be enabled on every platform, but defaults to
     // touch-only until the user chooses otherwise. A selected Bézier handle
     // always resolves to its owning on-curve node when the circle is used.
-    val showProxy = app.nodeMoveCircleEnabled && target.selectedNodes().isNotEmpty() &&
+    val showProxy = app.nodeMoveCircleEnabled && app.moveCircleVisible && target.selectedNodes().isNotEmpty() &&
         target.drawingContourIndex == null && app.reduction == null && !(ghost != null && app.ghostTransformMode)
 
     fun frame(): CanvasFrame? {
         if (canvasSize.width <= 0f || canvasSize.height <= 0f) return null
         val mapper = SpaceMapper(vb, canvasSize)
         val proxy = if (!showProxy) null else boundsOfSelection(target.glyph, target.selection)?.let { b ->
-            val tl = mapper.toCanvas(b.minX, b.maxY)
-            val br = mapper.toCanvas(b.maxX, b.minY)
-            proxyPadCenter((tl.x + br.x) / 2f, tl.y, br.y, canvasSize, density, coveredTopPx, coveredBottomPx)
+            val sel = mapper.toCanvas(b.cx, b.cy)
+            val held = app.moveCircleHold
+            if (held != null) sel + held else {
+                val onCurve = target.glyph.contours.flatMap { c -> c.points.filter { it.onCurve } }
+                val gc = boundsOf(onCurve)?.let { g -> mapper.toCanvas(g.cx, g.cy) } ?: sel
+                val all = target.glyph.contours.flatMap { c -> c.points.map { mapper.toCanvas(it.x, it.y) } }
+                placeMoveCircle(sel, gc, all, canvasSize, density, proxyRadiusPx * 1.3f, coveredTopPx, coveredBottomPx)
+            }
         }
         val handles = if (ghost != null && app.ghostTransformMode && ghost.visible) {
             boundsOfContours(app.ghostContours(ghost, anchorName))?.let { b ->
@@ -168,11 +177,18 @@ fun AnchorCanvas(
     // (extremes edited Regular) or nowhere near the nodes once the view had moved.
     val currentFrame by rememberUpdatedState(@DontMemoize { frame() })
 
+    // Publish where the circle's touch area is, in window pixels, so EditorScreen can tell when a touch
+    // landed anywhere else and put the circle away.
+    SideEffect {
+        app.moveCircleArea = frame()?.proxyCenter?.let { (canvasOrigin + it) to proxyRadiusPx * 1.3f }
+    }
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
             .clipToBounds()
             .onSizeChanged { canvasSize = Size(it.width.toFloat(), it.height.toFloat()) }
+            .onGloballyPositioned { canvasOrigin = it.positionInRoot() }
             .pointerInput(anchorName, app) {
                 handleAnchorGestures(
                     frameProvider = { currentFrame() },

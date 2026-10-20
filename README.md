@@ -137,7 +137,13 @@ so anchors can then be reshaped without adding or removing points.
   keep interpolation alive. Also: Delete, Esc, arrow-key nudges (Shift = 10),
   `+`/`-`/`0` for zoom.
 - **Node move circle.** Selecting a node (or one of its curve handles)
-  offers a cross-circle ~76dp away from the selection. **Guides → Move circle**
+  offers a cross-circle. It sits outward -- away from the glyph's centre,
+  through the selection -- and as far out as it takes for no other node or
+  handle to be under its touch area (trying nearby outward angles if the
+  straight line is blocked or off the canvas), and it keeps that spacing
+  while dragged. It responds from the first touch, never vibrates, and goes
+  away on the next touch anywhere else on the screen (the selection stays).
+  **Guides → Move circle**
   toggles it in every platform layout; the default follows pointer type
   (on for touch, off for mouse/stylus) until the user chooses explicitly.
   The complete circle and 30% margin are reserved exclusively for moving
@@ -162,6 +168,8 @@ so anchors can then be reshaped without adding or removing points.
   `initial → remaining` count is clamped to the planned number of deletions,
   so moving the slider right cannot increase the count. The preview shows
   the lost geometry before Apply, which remains undoable.
+- **Tool names.** The active tool in the dock or rail names itself in small
+  text beneath its icon, and only while it is active.
 - **Pointer actions.** Copy, Cut, Paste, Delete, smooth/corner, line/curve,
   Select all, flip and rotate are ordinary tools in the phone dock and the
   desktop rail -- always present, dimmed until they apply (there is no separate

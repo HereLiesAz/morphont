@@ -19,6 +19,7 @@ import androidx.compose.ui.input.pointer.isShiftPressed
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -93,33 +94,63 @@ fun boxDragTransform(b: FontRect, rotate: Boolean, corner: Int, start: Offset, c
 }
 
 /**
- * Where the touch proxy pad sits for a selection whose canvas bounds are
- * [selTop]..[selBottom] around [selCx]: below the selection by default,
- * above it when that would leave the canvas -- always far enough away that
- * the finger on the pad never covers the nodes it moves.
+ * Where the move circle sits. It goes outward -- away from the glyph's centre, through the selection --
+ * and as far out as it takes for no other point (node or handle) to fall inside its touch area
+ * ([touchRadius]): the circle claims every touch in that area, so a point under it could not be tapped.
+ * If the straight-out line is blocked or runs off the canvas it tries nearby outward angles, nearest to
+ * straight-out first. It always stays inside the canvas and out from under the floating rows
+ * ([coveredTop]/[coveredBottom]). Only when nothing is clear does it settle for the spot that covers the
+ * fewest points.
+ *
+ * [selection] is the selected nodes' centre, [glyphCenter] the glyph's, [points] every point of the glyph
+ * (the selected ones too); all in canvas pixels.
  */
-fun proxyPadCenter(
-    selCx: Float,
-    selTop: Float,
-    selBottom: Float,
+fun placeMoveCircle(
+    selection: Offset,
+    glyphCenter: Offset,
+    points: List<Offset>,
     canvasSize: Size,
     density: Float,
+    touchRadius: Float,
     coveredTop: Float = 0f,
     coveredBottom: Float = 0f,
 ): Offset {
-    val gap = 76f * density
-    val margin = 36f * density
-    // [coveredTop]/[coveredBottom]: canvas pixels hidden under the floating rows (suggestions,
-    // selection pill, bottom cards). Those take a touch before the canvas does, so the pad --
-    // margin included, which exceeds its hit radius -- stays clear of them when there's room.
-    var minY = coveredTop + margin
-    var maxY = canvasSize.height - coveredBottom - margin
-    if (maxY < minY) { minY = margin; maxY = max(margin, canvasSize.height - margin) }
-    var y = selBottom + gap
-    if (y > maxY) y = selTop - gap
-    y = y.coerceIn(minY, maxY)
-    val x = selCx.coerceIn(margin, max(margin, canvasSize.width - margin))
-    return Offset(x, y)
+    val visible = touchRadius / 1.3f
+    val edge = visible + 4f * density
+    var minY = coveredTop + edge
+    var maxY = canvasSize.height - coveredBottom - edge
+    if (maxY < minY) { minY = edge; maxY = max(edge, canvasSize.height - edge) }
+    val minX = edge
+    val maxX = max(edge, canvasSize.width - edge)
+
+    val raw = selection - glyphCenter
+    val outward = if (raw.getDistance() > 1e-3f) raw / raw.getDistance()
+        else if (selection.y > canvasSize.height / 2f) Offset(0f, -1f) else Offset(0f, 1f)
+    val clear = touchRadius + 10f * density
+    val start = touchRadius + 12f * density
+    val step = 5f * density
+    val reach = hypot(canvasSize.width, canvasSize.height)
+
+    fun covered(p: Offset): Int = points.count { (it - p).getDistance() < clear }
+    fun inside(p: Offset) = p.x in minX..maxX && p.y in minY..maxY
+
+    var best: Offset? = null
+    var bestCovered = Int.MAX_VALUE
+    for (degrees in listOf(0f, 12f, -12f, 24f, -24f, 36f, -36f, 48f, -48f, 60f, -60f, 72f, -72f, 84f, -84f)) {
+        val rad = degrees * (kotlin.math.PI.toFloat() / 180f)
+        val c = kotlin.math.cos(rad); val sn = kotlin.math.sin(rad)
+        val dir = Offset(outward.x * c - outward.y * sn, outward.x * sn + outward.y * c)
+        var d = start
+        while (d <= reach) {
+            val p = selection + dir * d
+            if (!inside(p)) break
+            val n = covered(p)
+            if (n == 0) return p
+            if (n < bestCovered) { bestCovered = n; best = p }
+            d += step
+        }
+    }
+    return best ?: Offset(selection.x.coerceIn(minX, maxX), (selection.y + start).coerceIn(minY, maxY))
 }
 
 /**
@@ -176,12 +207,17 @@ suspend fun PointerInputScope.handleAnchorGestures(
             val selected = f.app.editTarget(f.anchorName)
             val nodes = selected.selectedNodes().toList()
             if (nodes.isNotEmpty()) {
-                onPointHit()
+                // No haptic and no wait: the circle responds from the first touch. While it is dragged it
+                // keeps its spacing from the node instead of re-choosing a spot under the finger.
+                boundsOfSelection(selected.glyph, selected.selection)?.let { b ->
+                    f.app.moveCircleHold = proxy!! - f.mapper.toCanvas(b.cx, b.cy)
+                }
                 dragSelection(
                     f, down.id, selected, nodes, startPos,
                     slop = 0.5f, feedback = feedback, snapEnabled = false,
                     allowPinch = false,
                 )
+                f.app.moveCircleHold = null
             } else {
                 followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
             }
@@ -304,6 +340,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 return@awaitEachGesture
             }
             if (hitKey !in target.selection) target.selection = setOf(hitKey)
+            app.moveCircleVisible = true
             val hitNode = target.glyph.contours[hitKey.first].points[hitKey.second].onCurve
             // Alt-click on a node toggles it between smooth (mirrored arms) and corner.
             if (hitNode && !app.nodeMoveMode && event.keyboardModifiers.isAltPressed) {
@@ -371,6 +408,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
             target.selection = preserved + newSel
         }
         if (rubberBanding || !completed) feedback.rubberRect = null
+        if (rubberBanding && target.selection.isNotEmpty()) app.moveCircleVisible = true
     }
 }
 

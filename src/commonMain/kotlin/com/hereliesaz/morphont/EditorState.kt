@@ -1,5 +1,6 @@
 package com.hereliesaz.morphont
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -533,6 +534,18 @@ class AppState {
     /** Null follows pointer type: enabled for touch, disabled for mouse/stylus. */
     var nodeMoveCircleOverride by mutableStateOf<Boolean?>(null)
     val nodeMoveCircleEnabled: Boolean get() = nodeMoveCircleOverride ?: touchInput
+
+    /**
+     * The move circle exists only from the moment a node is picked on the canvas until the next touch
+     * anywhere else on the screen (see EditorScreen); the selection itself outlives it.
+     */
+    var moveCircleVisible by mutableStateOf(false)
+
+    /** The circle's touch area in window pixels (centre, radius), so a touch anywhere else can tell it is elsewhere. Null when it isn't shown. */
+    var moveCircleArea: Pair<Offset, Float>? = null
+
+    /** While the circle is being dragged: its fixed offset from the selection, in canvas pixels. */
+    var moveCircleHold: Offset? = null
 
     fun setNodeMoveCircleEnabled(enabled: Boolean) {
         nodeMoveCircleOverride = enabled

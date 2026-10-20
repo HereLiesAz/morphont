@@ -67,30 +67,52 @@ class ProxyPadTest {
         }
     }
 
+    private val radius = 34f // touch radius (26 * 1.3)
+    private fun clearOf(pad: Offset, points: List<Offset>) = points.none { (it - pad).getDistance() < radius }
+
     @Test
-    fun padSitsBelowTheSelectionWhenThereIsRoom() {
-        val pad = proxyPadCenter(200f, 300f, 400f, canvas, density = 1f)
-        assertEquals(476f, pad.y)
+    fun circleGoesOutwardFromTheGlyphCentre() {
+        val center = Offset(200f, 400f)
+        val node = Offset(300f, 400f) // right of centre
+        val pad = placeMoveCircle(node, center, listOf(center, node), canvas, 1f, radius)
+        assertTrue(pad.x > node.x, "expected the circle to the right of the node, was $pad")
+        assertTrue(kotlin.math.abs(pad.y - 400f) < 1f, "straight out, was $pad")
+        // Below the node for a node below centre, above for one above.
+        assertTrue(placeMoveCircle(Offset(200f, 500f), center, listOf(center), canvas, 1f, radius).y > 500f)
+        assertTrue(placeMoveCircle(Offset(200f, 300f), center, listOf(center), canvas, 1f, radius).y < 300f)
     }
 
     @Test
-    fun padNeverLandsUnderTheBottomRows() {
-        // 200px of bottom cards: below the selection would be covered, so the pad goes above.
-        val pad = proxyPadCenter(200f, 300f, 600f, canvas, density = 1f, coveredBottom = 200f)
-        assertEquals(224f, pad.y)
+    fun circleGoesAsFarOutAsItTakesToClearEveryOtherPoint() {
+        val center = Offset(100f, 400f)
+        val node = Offset(200f, 400f)
+        // A run of points straight out from the node: the circle must sit beyond all of them.
+        val wall = (1..8).map { Offset(200f + it * 20f, 400f) }
+        val pad = placeMoveCircle(node, center, wall + node, canvas, 1f, radius)
+        assertTrue(clearOf(pad, wall + node), "no other point may be under the circle, was $pad")
+        assertTrue(pad.x > 200f + 8 * 20f - 1f || kotlin.math.abs(pad.y - 400f) > 1f)
     }
 
     @Test
-    fun padNeverLandsUnderTheTopRows() {
-        // Selection near the top with no room below it: clamp below the 150px of top rows.
-        val pad = proxyPadCenter(200f, 40f, 760f, canvas, density = 1f, coveredTop = 150f)
-        assertTrue(pad.y >= 150f + 36f)
-        assertTrue(pad.y <= 800f - 36f)
+    fun aCrowdedStraightLineMakesItTryNearbyOutwardAngles() {
+        val center = Offset(100f, 400f)
+        val node = Offset(200f, 400f)
+        val blockers = (1..30).map { Offset(200f + it * 6f, 400f) } // blocks straight out for a long way
+        val pad = placeMoveCircle(node, center, blockers + node, canvas, 1f, radius)
+        assertTrue(clearOf(pad, blockers + node))
+        assertTrue(pad.x > node.x, "still outward, was $pad")
     }
 
     @Test
-    fun coveredRowsThatLeaveNoRoomFallBackToTheCanvasEdges() {
-        val pad = proxyPadCenter(200f, 300f, 400f, canvas, density = 1f, coveredTop = 500f, coveredBottom = 500f)
-        assertEquals(476f, pad.y)
+    fun circleStaysOnTheCanvasAndOutFromUnderTheFloatingRows() {
+        val pad = placeMoveCircle(Offset(380f, 60f), Offset(200f, 400f), listOf(Offset(380f, 60f)), canvas, 1f, radius, coveredTop = 150f, coveredBottom = 120f)
+        assertTrue(pad.x in 0f..400f && pad.y in 150f..680f, "was $pad")
+    }
+
+    @Test
+    fun whenNothingIsClearItCoversTheFewestPoints() {
+        val dense = (0..80).flatMap { x -> (0..160).map { y -> Offset(x * 5f, y * 5f) } }
+        val pad = placeMoveCircle(Offset(200f, 400f), Offset(100f, 300f), dense, canvas, 1f, radius)
+        assertTrue(pad.x in 0f..400f && pad.y in 0f..800f)
     }
 }
