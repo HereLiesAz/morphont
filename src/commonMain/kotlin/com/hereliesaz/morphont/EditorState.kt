@@ -938,7 +938,7 @@ class AppState {
                 owners = targets,
                 block = {
                     for (st in targets) {
-                        val reduced = withoutPoints(st.glyph, removed)
+                        val reduced = reducedGlyph(st.glyph, removed)
                         st.replaceWithHistory(GlyphCorner(reduced.width, reduced.contours.filter { it.points.isNotEmpty() }.toMutableList()))
                     }
                 },

@@ -269,43 +269,121 @@ private fun spanBetween(pts: List<Pt>, from: Int, to: Int): CubicSpan {
     return CubicSpan(a, h1, h2, b)
 }
 
-/**
- * Deviation of the two true Bézier spans around the candidate node from
- * the cubic that [deleteFromContour] will actually produce. The old in/out
- * handles and both surviving neighbours' handles all contribute, whether
- * or not a node is marked smooth.
- */
-private fun curveRemovalError(contour: ContourData, nodeOrdinal: Int): Float {
-    val pts = contour.points
-    val nodes = pts.indices.filter { pts[it].onCurve }
-    val count = nodes.size
-    val before = nodes[(nodeOrdinal + count - 1) % count]
-    val mid = nodes[nodeOrdinal]
-    val after = nodes[(nodeOrdinal + 1) % count]
-    val first = spanBetween(pts, before, mid)
-    val second = spanBetween(pts, mid, after)
-    val replacement = spanBetween(pts, before, after)
+private const val FIT_SAMPLES_PER_SPAN = 16
 
-    // Compare the drawn curves, not their arbitrary parameter speeds.
-    // Bidirectional polyline distance catches missed lobes and preserves
-    // geometric equivalence when an outline's two old spans share one new one.
-    val source = (0..12).map { first.at(it / 12f) } +
-        (1..12).map { second.at(it / 12f) }
-    val merged = (0..24).map { replacement.at(it / 24f) }
-    fun pointToLine(p: Pair<Float, Float>, a: Pair<Float, Float>, b: Pair<Float, Float>): Float {
-        val dx = b.first - a.first
-        val dy = b.second - a.second
-        val lengthSquared = dx * dx + dy * dy
-        if (lengthSquared < 1e-9f) return hypot(p.first - a.first, p.second - a.second)
-        val t = (((p.first - a.first) * dx + (p.second - a.second) * dy) / lengthSquared).coerceIn(0f, 1f)
-        return hypot(p.first - a.first - t * dx, p.second - a.second - t * dy)
-    }
-    fun worstDistance(from: List<Pair<Float, Float>>, to: List<Pair<Float, Float>>): Float =
-        from.maxOf { point ->
-            (0 until to.lastIndex).minOf { i -> pointToLine(point, to[i], to[i + 1]) }
-        }
-    return maxOf(worstDistance(source, merged), worstDistance(merged, source))
+/** The original spans from node ordinal [from] up to node ordinal [to] (going round the contour), one cubic each. */
+private fun chainOf(pts: List<Pt>, nodes: List<Int>, from: Int, to: Int): List<CubicSpan> {
+    val n = nodes.size
+    val out = ArrayList<CubicSpan>()
+    var o = from
+    do {
+        out.add(spanBetween(pts, nodes[o], nodes[(o + 1) % n]))
+        o = (o + 1) % n
+    } while (o != to)
+    return out
 }
+
+private fun unit(x: Float, y: Float): Pair<Float, Float>? {
+    val l = hypot(x, y)
+    return if (l < 1e-6f) null else (x / l) to (y / l)
+}
+
+/** Distance from [p] to the polyline [line]. */
+private fun distanceToPolyline(p: Pair<Float, Float>, line: List<Pair<Float, Float>>): Float {
+    var best = Float.POSITIVE_INFINITY
+    for (i in 0 until line.lastIndex) {
+        val a = line[i]; val b = line[i + 1]
+        val dx = b.first - a.first; val dy = b.second - a.second
+        val l2 = dx * dx + dy * dy
+        val t = if (l2 < 1e-9f) 0f else (((p.first - a.first) * dx + (p.second - a.second) * dy) / l2).coerceIn(0f, 1f)
+        val d = hypot(p.first - a.first - t * dx, p.second - a.second - t * dy)
+        if (d < best) best = d
+    }
+    return best
+}
+
+private class Fit(val span: CubicSpan, val error: Float)
+
+/**
+ * One cubic standing in for a whole [chain] of original spans, between the chain's two end nodes.
+ * The end nodes stay put and so do their tangent directions (so a smooth join stays smooth and a
+ * corner stays a corner); only the two handle lengths are free, solved by least squares against the
+ * ORIGINAL outline, then refined by re-parameterising. [Fit.error] is the worst gap between the new
+ * curve and the original, measured both ways -- always against the original, never against an
+ * earlier simplification, so error cannot accumulate from one step to the next. A one-span chain is
+ * returned untouched. A chain that is exactly representable (collinear points, or an exact cubic)
+ * fits with ~0 error.
+ */
+private fun fitChain(chain: List<CubicSpan>): Fit {
+    if (chain.size == 1) return Fit(chain[0], 0f)
+    val a = chain.first().a
+    val b = chain.last().b
+    val q = ArrayList<Pair<Float, Float>>()
+    q.add(a.x to a.y)
+    for (span in chain) for (i in 1..FIT_SAMPLES_PER_SPAN) q.add(span.at(i.toFloat() / FIT_SAMPLES_PER_SPAN))
+    val first = chain.first()
+    val last = chain.last()
+    val d0 = unit(first.h1.x - a.x, first.h1.y - a.y) ?: unit(first.h2.x - a.x, first.h2.y - a.y)
+        ?: unit(first.b.x - a.x, first.b.y - a.y) ?: (1f to 0f)
+    val d3 = unit(last.h2.x - b.x, last.h2.y - b.y) ?: unit(last.h1.x - b.x, last.h1.y - b.y)
+        ?: unit(last.a.x - b.x, last.a.y - b.y) ?: (1f to 0f)
+
+    // Chord-length parameter along the original outline.
+    val u = FloatArray(q.size)
+    for (i in 1 until q.size) u[i] = u[i - 1] + hypot(q[i].first - q[i - 1].first, q[i].second - q[i - 1].second)
+    val total = u.last()
+    if (total < 1e-6f) return Fit(CubicSpan(a, a, b, b), 0f)
+    for (i in u.indices) u[i] /= total
+
+    val chord = hypot(b.x - a.x, b.y - a.y)
+    var alpha = chord / 3f
+    var beta = chord / 3f
+    fun curve(t: Float, al: Float, be: Float): Pair<Float, Float> =
+        CubicSpan(a, Pt(a.x + d0.first * al, a.y + d0.second * al, false), Pt(b.x + d3.first * be, b.y + d3.second * be, false), b).at(t)
+
+    repeat(6) {
+        var c00 = 0f; var c01 = 0f; var c11 = 0f; var x0 = 0f; var x1 = 0f
+        for (i in q.indices) {
+            val t = u[i]; val mt = 1f - t
+            val b1 = 3f * t * mt * mt; val b2 = 3f * t * t * mt
+            val a1x = d0.first * b1; val a1y = d0.second * b1
+            val a2x = d3.first * b2; val a2y = d3.second * b2
+            val rx = q[i].first - (a.x * (mt * mt * mt + b1) + b.x * (b2 + t * t * t))
+            val ry = q[i].second - (a.y * (mt * mt * mt + b1) + b.y * (b2 + t * t * t))
+            c00 += a1x * a1x + a1y * a1y; c01 += a1x * a2x + a1y * a2y; c11 += a2x * a2x + a2y * a2y
+            x0 += a1x * rx + a1y * ry; x1 += a2x * rx + a2y * ry
+        }
+        val det = c00 * c11 - c01 * c01
+        if (kotlin.math.abs(det) > 1e-9f) {
+            val al = (x0 * c11 - x1 * c01) / det
+            val be = (c00 * x1 - c01 * x0) / det
+            if (al > chord * 1e-3f && be > chord * 1e-3f && al.isFinite() && be.isFinite()) { alpha = al; beta = be }
+        }
+        // Newton step: move each sample's parameter to the nearest point on the current curve.
+        for (i in 1 until q.lastIndex) {
+            val t = u[i]; val mt = 1f - t
+            val p1x = a.x + d0.first * alpha; val p1y = a.y + d0.second * alpha
+            val p2x = b.x + d3.first * beta; val p2y = b.y + d3.second * beta
+            val (cx, cy) = curve(t, alpha, beta)
+            val d1x = 3f * (mt * mt * (p1x - a.x) + 2f * mt * t * (p2x - p1x) + t * t * (b.x - p2x))
+            val d1y = 3f * (mt * mt * (p1y - a.y) + 2f * mt * t * (p2y - p1y) + t * t * (b.y - p2y))
+            val d2x = 6f * (mt * (p2x - 2f * p1x + a.x) + t * (b.x - 2f * p2x + p1x))
+            val d2y = 6f * (mt * (p2y - 2f * p1y + a.y) + t * (b.y - 2f * p2y + p1y))
+            val ex = cx - q[i].first; val ey = cy - q[i].second
+            val den = d1x * d1x + d1y * d1y + ex * d2x + ey * d2y
+            if (kotlin.math.abs(den) > 1e-9f) u[i] = (t - (ex * d1x + ey * d1y) / den).coerceIn(0f, 1f)
+        }
+    }
+
+    val span = CubicSpan(a, Pt(a.x + d0.first * alpha, a.y + d0.second * alpha, false), Pt(b.x + d3.first * beta, b.y + d3.second * beta, false), b)
+    val dense = (0..64).map { span.at(it / 64f) }
+    val error = maxOf(q.maxOf { distanceToPolyline(it, dense) }, dense.maxOf { distanceToPolyline(it, q) })
+    return Fit(span, error)
+}
+
+/** Worst deviation from the original outline if node ordinal [between] (and everything between its live neighbours) were merged into one span. */
+private fun mergeError(pts: List<Pt>, nodes: List<Int>, prev: Int, next: Int): Float =
+    fitChain(chainOf(pts, nodes, prev, next)).error
 
 /**
  * Greedy, geometry-aware simplification shared by all compatible anchors.
@@ -320,33 +398,34 @@ fun reductionOrder(glyphs: List<GlyphCorner>): List<Removal> {
     val ref = glyphs.firstOrNull() ?: return emptyList()
     val out = mutableListOf<Removal>()
     ref.contours.forEachIndexed { ci, original ->
-        val alive = original.points.indices.filter { original.points[it].onCurve }.toMutableList()
-        val working = glyphs.map { it.contours[ci].deepCopy() }.toMutableList()
-        // Only the removed node and its immediate neighbours' segments change.
-        // Cache everyone else's true-curve loss across steps.
+        // Node ordinals are shared by every anchor (they are point-compatible); keys use the reference
+        // glyph's point indices. Every cost is measured against the ORIGINAL outlines of every anchor.
+        val sources = glyphs.map { it.contours[ci].points }
+        val nodes = sources.map { pts -> pts.indices.filter { pts[it].onCurve } }
+        val alive = nodes[0].indices.toMutableList()
+        // Only the removed node's two neighbours change which spans they join; cache everyone else's cost.
         val costs = HashMap<Int, Float>()
         while (alive.size > 3) {
-            var bestOrdinal = -1
+            var bestIdx = -1
             var bestCost = Float.POSITIVE_INFINITY
-            for (ordinal in alive.indices) {
-                val cost = costs.getOrPut(alive[ordinal]) {
-                    working.maxOf { curveRemovalError(it, ordinal) }
+            for (idx in alive.indices) {
+                val ord = alive[idx]
+                val cost = costs.getOrPut(ord) {
+                    val prev = alive[(idx + alive.size - 1) % alive.size]
+                    val next = alive[(idx + 1) % alive.size]
+                    sources.indices.maxOf { g -> mergeError(sources[g], nodes[g], prev, next) }
                 }
                 if (cost < bestCost) {
                     bestCost = cost
-                    bestOrdinal = ordinal
+                    bestIdx = idx
                 }
             }
-            if (bestOrdinal < 0) break
-            val removed = alive.removeAt(bestOrdinal)
-            out.add(Removal(ci to removed, bestCost))
+            if (bestIdx < 0) break
+            val removed = alive.removeAt(bestIdx)
+            out.add(Removal(ci to nodes[0][removed], bestCost))
             costs.remove(removed)
-            for (i in working.indices) {
-                val nodes = working[i].points.indices.filter { working[i].points[it].onCurve }
-                working[i] = deleteFromContour(working[i], setOf(nodes[bestOrdinal]))
-            }
-            costs.remove(alive[(bestOrdinal + alive.size - 1) % alive.size])
-            costs.remove(alive[bestOrdinal % alive.size])
+            costs.remove(alive[(bestIdx + alive.size - 1) % alive.size])
+            costs.remove(alive[bestIdx % alive.size])
         }
     }
     // A contour's removals depend on its earlier ones. Compare running
@@ -392,6 +471,59 @@ fun reductionOrder(glyphs: List<GlyphCorner>): List<Removal> {
         }
     }
     return ranked + additional
+}
+
+/**
+ * [glyph] with the [removed] nodes taken out and the outline kept as close to the original as the
+ * remaining nodes allow: each stretch between two surviving nodes is refitted to the original curve
+ * through the removed nodes (see [fitChain]) instead of just inheriting its neighbours' old handles.
+ * A removed node that was redundant leaves the shape exactly as it was. Untouched stretches keep
+ * their handles verbatim. A smooth node whose two handles no longer mirror becomes a corner node
+ * (same position, same tangent line) so that the drawn shape never moves. Contours are never
+ * dropped here, so contour indices still match [glyph]'s.
+ */
+fun reducedGlyph(glyph: GlyphCorner, removed: Set<PointKey>): GlyphCorner =
+    GlyphCorner(
+        glyph.width,
+        glyph.contours.mapIndexed { ci, c ->
+            reduceContour(c, c.points.indices.filter { (ci to it) in removed && c.points[it].onCurve }.toSet())
+        }.toMutableList(),
+    )
+
+private fun reduceContour(c: ContourData, removed: Set<Int>): ContourData {
+    val pts = c.points
+    val nodes = pts.indices.filter { pts[it].onCurve }
+    if (removed.isEmpty() || nodes.isEmpty() || !isValidCubicContour(c)) return deleteFromContour(c, removed)
+    val alive = nodes.indices.filter { nodes[it] !in removed }
+    if (alive.size < 3) return deleteFromContour(c, removed)
+    val n = nodes.size
+    // Per surviving node: its new out-arm and the in-arm of the node that follows it.
+    class Join(val out: Pt?, val inNext: Pt?)
+    val joins = alive.mapIndexed { k, a ->
+        val b = alive[(k + 1) % alive.size]
+        if ((a + 1) % n == b) {
+            Join(outArmIndex(pts, nodes[a])?.let { pts[it].copy2() }, inArmIndex(pts, nodes[b])?.let { pts[it].copy2() })
+        } else {
+            val fit = fitChain(chainOf(pts, nodes, a, b)).span
+            Join(Pt(fit.h1.x, fit.h1.y, false), Pt(fit.h2.x, fit.h2.y, false))
+        }
+    }
+    val out = mutableListOf<Pt>()
+    alive.forEachIndexed { k, a ->
+        val node = pts[nodes[a]].copy2()
+        val arrive = joins[(k + alive.size - 1) % alive.size].inNext
+        val leave = joins[k].out
+        if (node.smooth && arrive != null && leave != null) {
+            // Mirrored means equal length, opposite direction: the two arm vectors cancel.
+            val sx = (arrive.x - node.x) + (leave.x - node.x)
+            val sy = (arrive.y - node.y) + (leave.y - node.y)
+            if (hypot(sx, sy) > 0.5f) node.smooth = false
+        }
+        out.add(node)
+        joins[k].out?.let { out.add(it) }
+        joins[k].inNext?.let { out.add(it) }
+    }
+    return ContourData(out)
 }
 
 /**

@@ -260,7 +260,7 @@ fun AnchorCanvas(
             // Original as a hairline, reduced shape filled: the gap between them is the loss.
             val original = buildOutlinePath(anchor.glyph.contours, map)
             drawPath(original, color = Color.White, style = Stroke(width = hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f * uiScale, 3f * uiScale))))
-            val reduced = withoutPoints(anchor.glyph, reduction.removed)
+            val reduced = reducedGlyph(anchor.glyph, reduction.removed)
             val path = buildOutlinePath(reduced.contours, map)
             drawPath(path, color = outlineFill)
             drawNodes(reduced, emptySet(), map, uiScale, dim = false)
