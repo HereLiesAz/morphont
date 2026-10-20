@@ -230,15 +230,32 @@ class AnchorState(initial: GlyphCorner) {
         if (drawingContourIndex != null) finishContour()
     }
 
-    /** Trash deletes whole nodes, even when just a handle is selected. */
-    fun deleteSelected() {
-        val nodes = selectedNodes()
-        if (nodes.isEmpty()) return
+    /**
+     * What the trash does. A selected node goes, with its handles. A selected handle of a corner node is
+     * retracted onto its node, leaving the node's other handle; making the node mirrored brings it back.
+     * A mirrored node keeps both handles, so a lone handle of one cannot be deleted. Returns a message
+     * when something was refused, null otherwise.
+     */
+    fun deleteSelected(): String? {
+        if (selection.isEmpty()) return null
+        val nodes = selection.filter { (ci, pi) -> glyph.contours.getOrNull(ci)?.points?.getOrNull(pi)?.onCurve == true }.toSet()
+        val handles = selection.filter { (ci, pi) -> glyph.contours.getOrNull(ci)?.points?.getOrNull(pi)?.onCurve == false }
+        val retract = mutableSetOf<PointKey>()
+        var refused = false
+        for ((ci, pi) in handles) {
+            val pts = glyph.contours[ci].points
+            val owner = armOwner(pts, pi) ?: continue
+            if ((ci to owner) in nodes) continue // goes with its node
+            if (pts[owner].smooth) refused = true else retract.add(ci to pi)
+        }
+        val message = if (refused) "A mirrored node keeps both handles. Make it a corner to delete one." else null
+        if (nodes.isEmpty() && retract.isEmpty()) return message
         pushHistory()
-        val updated = deleteSelection(glyph, nodes)
+        val updated = deleteSelection(glyph, nodes + retract)
         selection = emptySet()
         drawingContourIndex = null
         glyph = updated
+        return message
     }
 }
 
@@ -772,6 +789,11 @@ class AppState {
     }
 
     // ------------------------------------------------------------ clipboard
+
+    /** The trash, with its refusal (if any) shown as a status message. */
+    fun trashSelection() {
+        commandTarget.deleteSelected()?.let { setStatus(it, true) }
+    }
 
     fun copySelection() {
         if (nodeEditsLocked) return

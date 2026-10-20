@@ -156,7 +156,7 @@ fun NodeActions(app: AppState, size: Int = 42) {
     IconAction(MIcons.Copy, "Copy", { app.copySelection() }, size = size, enabled = has)
     IconAction(MIcons.Cut, "Cut", { app.cutSelection() }, size = size, enabled = has)
     IconAction(MIcons.Paste, "Paste", { app.paste() }, size = size, enabled = free && app.clipboard != null)
-    IconAction(MIcons.Delete, "Delete", { t.deleteSelected() }, size = size, enabled = has)
+    IconAction(MIcons.Delete, "Delete", { app.trashSelection() }, size = size, enabled = has)
     val smooth = has && t.selectionIsSmooth
     IconAction(if (smooth) MIcons.Corner else MIcons.Smooth, if (smooth) "Make corner" else "Make smooth", { t.toggleSmoothSelected() }, size = size, enabled = has)
     IconAction(MIcons.CurveLine, "Toggle line / curve", { t.toggleCurveSelected() }, size = size, enabled = has)
@@ -751,7 +751,7 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
         mod && e.key == Key.V -> app.paste()
         mod && e.key == Key.A -> t.selectAll()
         mod && e.key == Key.Z -> app.undo()
-        e.key == Key.Delete || e.key == Key.Backspace -> t.deleteSelected()
+        e.key == Key.Delete || e.key == Key.Backspace -> app.trashSelection()
         e.key == Key.Escape -> when {
             app.reduction != null -> app.reduction = null
             t.drawingContourIndex != null -> t.finishContour()

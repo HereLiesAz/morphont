@@ -216,8 +216,12 @@ so anchors can then be reshaped without adding or removing points.
   again; the original geometry and current zoom remain intact. Move Node (M)
   similarly restores an editable glyph when those modes block selection.
   Pen (P) starts drawing. Desktop arrow keys always nudge whole nodes,
-  including when just a handle is selected. Trash or Delete removes the full
-  node with its handles when the selected target is either node or handle.
+  including when just a handle is selected. Trash or Delete removes a selected
+  node with its handles. On a selected handle of a **corner** node it deletes
+  just that handle (it retracts onto the node, which keeps its other handle and
+  hides the retracted one); making the node mirrored brings the handle back at
+  full length. A mirrored node keeps both handles, so Delete on a lone handle of
+  one says so instead of acting.
 - **TrueType import.** Both static and variable `.ttf` files are accepted.
   Static font outlines populate every anchor identically; variable fonts
   sample their supported axis extremes. Imports never overwrite existing
@@ -284,9 +288,11 @@ so anchors can then be reshaped without adding or removing points.
   selection's extent, live -- for comparing the widths of a character's
   parts.
 - **Snapping.** Light: within ~7px a dragged point (or a selection's edges/
-  centre) pulls onto metrics, guides, other nodes, ghost nodes,
-  and (more weakly) the grid; the line it caught flashes. View → Snap
-  toggles it.
+  centre) pulls onto metrics, guides, ghost nodes and (more weakly) the grid,
+  and lines up -- vertically or horizontally -- with other **nodes** (when
+  moving a node) or other **handles** (when moving a handle; handles never snap
+  to nodes). It applies to the move circle too. The line it caught flashes.
+  View → Snap toggles it.
 - **Ghosts.** Reference outlines behind every panel: primitive shapes, a
   character from any TrueType file (static or variable, scaled to this
   project's UPM; loaded per session), or a glyph from this project. A

@@ -20,6 +20,7 @@ fun hitTestPoint(
         glyph.contours.forEachIndexed { ci, contour ->
             contour.points.forEachIndexed { pi, p ->
                 if (anchorsOnly && !p.onCurve) return@forEachIndexed
+                if (!p.onCurve && isRetracted(contour.points, pi)) return@forEachIndexed
                 val d = (mapper.toCanvas(p.x, p.y) - canvasPos).getDistance()
                 if (d <= distance) {
                     distance = d

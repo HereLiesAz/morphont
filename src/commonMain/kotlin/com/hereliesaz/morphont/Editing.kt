@@ -202,7 +202,11 @@ fun snapDelta(
     return SnapResult(sx, sy, lx, ly)
 }
 
-/** Static + user + alignment snap targets for one anchor, excluding the points being moved. */
+/**
+ * Static + user + alignment snap targets for one anchor, excluding the points being moved. Nodes snap to
+ * other nodes and, when [forHandles] is set, handles snap to other handles (never to nodes); a handle
+ * retracted onto its node is not a target.
+ */
 fun buildSnapTargets(
     glyph: GlyphCorner,
     exclude: Set<PointKey>,
@@ -210,6 +214,7 @@ fun buildSnapTargets(
     guides: List<Guide>,
     ghosts: List<List<ContourData>>,
     gridStep: Float?,
+    forHandles: Boolean = false,
 ): SnapTargets {
     val xs = mutableListOf(SnapTarget(0f, "origin"), SnapTarget(glyph.width, "advance"))
     val ys = mutableListOf(
@@ -222,10 +227,11 @@ fun buildSnapTargets(
     for (g in guides) if (g.vertical) xs.add(SnapTarget(g.pos)) else ys.add(SnapTarget(g.pos))
     glyph.contours.forEachIndexed { ci, c ->
         c.points.forEachIndexed { pi, p ->
-            if ((ci to pi) !in exclude && p.onCurve) { xs.add(SnapTarget(p.x)); ys.add(SnapTarget(p.y)) }
+            val wanted = if (forHandles) !p.onCurve && !isRetracted(c.points, pi) else p.onCurve
+            if ((ci to pi) !in exclude && wanted) { xs.add(SnapTarget(p.x)); ys.add(SnapTarget(p.y)) }
         }
     }
-    for (gh in ghosts) for (c in gh) for (p in c.points) if (p.onCurve) {
+    if (!forHandles) for (gh in ghosts) for (c in gh) for (p in c.points) if (p.onCurve) {
         xs.add(SnapTarget(p.x)); ys.add(SnapTarget(p.y))
     }
     return SnapTargets(xs, ys, gridStep)
