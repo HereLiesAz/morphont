@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.DontMemoize
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -161,7 +162,11 @@ fun AnchorCanvas(
         )
     }
 
-    val currentFrame by rememberUpdatedState(::frame)
+    // Must be a fresh lambda every composition. A function reference (`::frame`) is memoized by the
+    // Compose compiler without keys for what the local function captures, so the gesture handler kept
+    // the anchor, zoom, pan and selection from the first composition: taps landed on the wrong anchor
+    // (extremes edited Regular) or nowhere near the nodes once the view had moved.
+    val currentFrame by rememberUpdatedState(@DontMemoize { frame() })
 
     Canvas(
         modifier = modifier
