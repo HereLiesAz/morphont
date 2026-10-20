@@ -52,6 +52,17 @@ fun armOwner(pts: List<Pt>, j: Int): Int? {
     return if (pts[next].onCurve) next else null
 }
 
+/**
+ * True for a handle that has been retracted onto its own node (deleted from a corner node): it has no
+ * length, so there is nothing to see, grab or snap to. Making the node mirrored brings it back.
+ */
+fun isRetracted(pts: List<Pt>, j: Int): Boolean {
+    val p = pts.getOrNull(j) ?: return false
+    if (p.onCurve) return false
+    val owner = pts.getOrNull(armOwner(pts, j) ?: return false) ?: return false
+    return abs(p.x - owner.x) < 0.01f && abs(p.y - owner.y) < 0.01f
+}
+
 /** The other arm of [j]'s owner node, if it has one. */
 fun oppositeArm(pts: List<Pt>, j: Int): Int? {
     val o = armOwner(pts, j) ?: return null
@@ -171,7 +182,9 @@ fun setSmooth(g: GlyphCorner, keys: Collection<PointKey>, smooth: Boolean): Glyp
         val lu = hypot(ux, uy)
         if (lu < 1e-4f) continue // arms folded onto each other or both retracted: nothing to align
         ux /= lu; uy /= lu
-        val len = (lo + li) / 2f
+        // One handle retracted: mirror the surviving one at full length, so the deleted handle comes back
+        // exactly opposite it instead of at half size.
+        val len = if (minOf(lo, li) < 1e-4f) maxOf(lo, li) else (lo + li) / 2f
         pts[a].x = node.x + ux * len; pts[a].y = node.y + uy * len
         pts[b].x = node.x - ux * len; pts[b].y = node.y - uy * len
     }

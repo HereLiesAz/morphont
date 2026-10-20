@@ -218,7 +218,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 }
                 dragSelection(
                     f, down.id, selected, nodes, startPos,
-                    slop = 0.5f, feedback = feedback, snapEnabled = false,
+                    slop = 0.5f, feedback = feedback, snapEnabled = true,
                     allowPinch = false,
                 )
                 f.app.moveCircleHold = null
@@ -405,6 +405,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
             val newSel = mutableSetOf<PointKey>()
             target.glyph.contours.forEachIndexed { ci, c ->
                 c.points.forEachIndexed { pi, p ->
+                    if (isRetracted(c.points, pi)) return@forEachIndexed
                     val pos = f.mapper.toCanvas(p.x, p.y)
                     if (pos.x in x0..x1 && pos.y in y0..y1) newSel.add(ci to pi)
                 }
@@ -418,7 +419,7 @@ suspend fun PointerInputScope.handleAnchorGestures(
 
 private fun snapTolerance(f: CanvasFrame): Float = 7f * f.density / f.mapper.scale
 
-private fun snapTargetsFor(f: CanvasFrame, target: AnchorState, exclude: Set<PointKey>): SnapTargets {
+private fun snapTargetsFor(f: CanvasFrame, target: AnchorState, exclude: Set<PointKey>, forHandles: Boolean = false): SnapTargets {
     val app = f.app
     val anchorGlyph = app.anchors.getValue(f.anchorName).glyph
     val editingGhost = app.activeGhost?.takeIf { it.state === target }
@@ -431,8 +432,9 @@ private fun snapTargetsFor(f: CanvasFrame, target: AnchorState, exclude: Set<Poi
         ghosts = app.visibleGhostContours(f.anchorName, skipId = editingGhost?.id) +
             (if (editingGhost != null) listOf(anchorGlyph.contours) else emptyList()),
         gridStep = if (app.view.showGrid) app.view.gridStep else null,
+        forHandles = forHandles,
     )
-    if (editingGhost == null) return base
+    if (editingGhost == null || forHandles) return base
     return base.copy(xs = base.xs + SnapTarget(anchorGlyph.width, "advance"))
 }
 
@@ -458,7 +460,17 @@ private suspend fun AwaitPointerEventScope.dragSelection(
         val b = boundsOf(origPts)!!
         listOf(b.minX, b.cx, b.maxX) to listOf(b.minY, b.cy, b.maxY)
     }
-    val targets = if (snapEnabled && f.app.view.snap) snapTargetsFor(f, target, keys.toSet()) else null
+    // Nodes lightly snap to other nodes, handles to other handles (a handle's mirrored twin moves with it,
+    // so it is not a target either), each vertically or horizontally.
+    val handleMode = keys.none { (ci, pi) -> origGlyph.contours.getOrNull(ci)?.points?.getOrNull(pi)?.onCurve == true }
+    val skip = keys.toMutableSet()
+    if (handleMode) for ((ci, pi) in keys) {
+        val pts = origGlyph.contours.getOrNull(ci)?.points ?: continue
+        val owner = armOwner(pts, pi) ?: continue
+        inArmIndex(pts, owner)?.let { skip.add(ci to it) }
+        outArmIndex(pts, owner)?.let { skip.add(ci to it) }
+    }
+    val targets = if (snapEnabled && f.app.view.snap) snapTargetsFor(f, target, skip, handleMode) else null
     var pushed = false
     followOrPinch(f, downId, slop, allowPinch = allowPinch) { pos, _ ->
         if (!pushed) { target.pushHistory(); pushed = true }

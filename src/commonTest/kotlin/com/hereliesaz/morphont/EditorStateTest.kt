@@ -1,5 +1,8 @@
 package com.hereliesaz.morphont
 
+import androidx.compose.ui.geometry.Size
+import kotlin.math.hypot
+import kotlin.test.assertTrue
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -171,20 +174,104 @@ class EditorStateTest {
     }
 
     @Test
-    fun trashOnSelectedHandleDeletesItsOwnerAndBothHandles() {
+    fun trashOnAHandleOfACornerNodeDeletesJustThatHandle() {
         val state = AnchorState(GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
             Pt(0f, 0f, true), Pt(0f, 90f, true),
             Pt(90f, 90f, true), Pt(90f, 0f, true),
         )))))
-        state.selection = setOf(0 to 1) // just the outgoing handle of node 0
+        val before = state.glyph.contours.single().points.map { it.copy2() }
+        state.selection = setOf(0 to 1) // just the outgoing handle of corner node 0
+        assertEquals(null, state.deleteSelected())
+        val pts = state.glyph.contours.single().points
+        assertEquals(4, pts.count { it.onCurve }, "the node stays")
+        assertTrue(isRetracted(pts, 1), "the handle is retracted onto its node")
+        // The node's other handle (its in-arm) is untouched.
+        val inArm = inArmIndex(pts, 0)!!
+        assertEquals(before[inArm].x, pts[inArm].x)
+        assertEquals(before[inArm].y, pts[inArm].y)
+        assertTrue(!isRetracted(pts, inArm))
+        state.undo()
+        assertTrue(!isRetracted(state.glyph.contours.single().points, 1))
+    }
+
+    @Test
+    fun aMirroredNodeKeepsBothHandlesAndSaysSo() {
+        val state = AnchorState(GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
+            Pt(0f, 0f, true), Pt(0f, 90f, true), Pt(90f, 90f, true), Pt(90f, 0f, true),
+        )))))
+        state.glyph.contours.single().points[0].smooth = true
+        val before = state.glyph
+        state.selection = setOf(0 to 1)
+        val message = state.deleteSelected()
+        assertTrue(message != null && "corner" in message, "expected a hint to make it a corner, was $message")
+        assertEquals(before, state.glyph)
+        assertEquals(setOf(0 to 1), state.selection)
+    }
+
+    @Test
+    fun deletingANodeStillTakesItsHandlesAndASelectedHandleOfItGoesWithIt() {
+        val state = AnchorState(GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
+            Pt(0f, 0f, true), Pt(0f, 90f, true), Pt(90f, 90f, true), Pt(90f, 0f, true),
+        )))))
+        state.selection = setOf(0 to 0, 0 to 1)
         state.deleteSelected()
         val contour = state.glyph.contours.single()
         assertEquals(3, contour.points.count { it.onCurve })
         assertEquals(9, contour.points.size)
-        assertEquals(0f, contour.points.first().x)
-        assertEquals(90f, contour.points.first().y)
-        state.undo()
-        assertEquals(4, state.glyph.contours.single().points.count { it.onCurve })
+    }
+
+    @Test
+    fun makingTheNodeMirroredBringsADeletedHandleBackAtFullLength() {
+        val g = AnchorState(GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
+            Pt(0f, 0f, true), Pt(0f, 90f, true), Pt(90f, 90f, true), Pt(90f, 0f, true),
+        ))))).glyph
+        val pts = g.contours.single().points
+        val outLen = hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+        val state = AnchorState(g)
+        state.selection = setOf(0 to 1)
+        state.deleteSelected()
+        assertTrue(isRetracted(state.glyph.contours.single().points, 1))
+        state.selection = setOf(0 to 0)
+        state.toggleSmoothSelected()
+        val back = state.glyph.contours.single().points
+        assertTrue(!isRetracted(back, 1) || !isRetracted(back, inArmIndex(back, 0)!!), "a handle should be back")
+        val a = hypot(back[1].x - back[0].x, back[1].y - back[0].y)
+        val b = inArmIndex(back, 0)!!.let { hypot(back[it].x - back[0].x, back[it].y - back[0].y) }
+        assertTrue(kotlin.math.abs(a - b) < 0.01f, "mirrored: both handles the same length ($a vs $b)")
+        assertTrue(a >= outLen * 0.99f || b >= outLen * 0.99f)
+    }
+
+    @Test
+    fun aRetractedHandleCannotBeHitOrSnappedTo() {
+        val state = AnchorState(GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
+            Pt(0f, 0f, true), Pt(0f, 90f, true), Pt(90f, 90f, true), Pt(90f, 0f, true),
+        )))))
+        state.selection = setOf(0 to 1)
+        state.deleteSelected()
+        val mapper = SpaceMapper(ViewBox(-10f, -10f, 120f, 120f), Size(120f, 120f))
+        val at = mapper.toCanvas(0f, 0f)
+        assertEquals(0 to 0, hitTestPoint(state.glyph, mapper, at, 6f), "the node, not the invisible handle")
+        val targets = buildSnapTargets(state.glyph, emptySet(), FontMetrics(), emptyList(), emptyList(), null, forHandles = true)
+        val pts = state.glyph.contours.single().points
+        val live = pts.indices.count { !pts[it].onCurve && !isRetracted(pts, it) }
+        assertEquals(live, targets.xs.count { it.label == null }, "only visible handles are snap targets")
+    }
+
+    @Test
+    fun nodesSnapToNodesAndHandlesToHandles() {
+        val g = AnchorState(GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
+            Pt(10f, 10f, true), Pt(10f, 40f, true), Pt(80f, 90f, true), Pt(90f, 10f, true),
+        ))))).glyph
+        val pts = g.contours.single().points
+        val handleXs = pts.filter { !it.onCurve }.map { it.x }.toSet()
+        val nodeXs = pts.filter { it.onCurve }.map { it.x }.toSet()
+        val forNodes = buildSnapTargets(g, emptySet(), FontMetrics(), emptyList(), emptyList(), null)
+        val forHandles = buildSnapTargets(g, emptySet(), FontMetrics(), emptyList(), emptyList(), null, forHandles = true)
+        // beyond the origin/advance lines every target is a node (resp. a handle)
+        val extraNode = forNodes.xs.filter { it.label == null }.map { it.pos }.toSet()
+        val extraHandle = forHandles.xs.filter { it.label == null }.map { it.pos }.toSet()
+        assertEquals(nodeXs, extraNode)
+        assertEquals(handleXs, extraHandle)
     }
 
     @Test

@@ -397,6 +397,7 @@ private fun DrawScope.drawNodes(glyph: GlyphCorner, selection: Set<PointKey>, ma
             }
         }
         pts.forEachIndexed { pi, p ->
+            if (!p.onCurve && isRetracted(pts, pi)) return@forEachIndexed
             val selected = (ci to pi) in selection
             val center = map(p.x, p.y)
             if (p.onCurve && p.smooth) {
