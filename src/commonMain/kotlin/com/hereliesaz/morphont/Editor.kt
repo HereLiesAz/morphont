@@ -8,6 +8,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -85,7 +89,23 @@ private enum class Sheet { GUIDES, GHOSTS, PREVIEW }
 fun EditorScreen(app: AppState, host: EditorHost, modifier: Modifier = Modifier) {
     var browserOpen by remember { mutableStateOf(false) }
     var fontOverviewOpen by remember { mutableStateOf(false) }
-    BoxWithConstraints(modifier.fillMaxSize().background(Mono.ground).statusBarsPadding().navigationBarsPadding()) {
+    var rootOrigin by remember { mutableStateOf(Offset.Zero) }
+    BoxWithConstraints(
+        modifier.fillMaxSize().background(Mono.ground).statusBarsPadding().navigationBarsPadding()
+            .onGloballyPositioned { rootOrigin = it.positionInRoot() }
+            // The move circle lasts until the next touch anywhere else on the screen. Watched on the way
+            // down and never consumed, so the touch still does whatever it was aimed at; a touch that
+            // picks a node brings the circle straight back.
+            .pointerInput(app) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    val area = app.moveCircleArea
+                    if (area == null || (rootOrigin + down.position - area.first).getDistance() > area.second) {
+                        app.moveCircleVisible = false
+                    }
+                }
+            },
+    ) {
         if (maxWidth < COMPACT_BREAKPOINT) CompactEditor(app, host, { browserOpen = true }, { fontOverviewOpen = true })
         else WideEditor(app, host, { browserOpen = true }, { fontOverviewOpen = true })
     }
@@ -131,7 +151,6 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
         ) {
             SuggestionsRow(app, suggestions)
             GhostBar(app)
-            SelectionPill(app)
             Toast(app)
         }
         if (hint != null) {
@@ -223,20 +242,20 @@ private fun CompactEditor(
         val dockScroll = rememberScrollState()
         Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp).floating(30)) {
             Row(
-                Modifier.fillMaxWidth().height(64.dp).horizontalScroll(dockScroll)
+                Modifier.fillMaxWidth().height(72.dp).horizontalScroll(dockScroll)
                     .padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-            IconAction(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.activeGhost == null && app.reduction == null, size = 44)
-            IconAction(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
-            IconAction(MIcons.Nodes, "Show or hide node tools", { app.showNodeTools = !app.showNodeTools }, selected = app.showNodeTools, size = 42)
-            IconAction(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+            ToolIcon(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.activeGhost == null && app.reduction == null, size = 44)
+            ToolIcon(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
+            ToolIcon(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+            NodeActions(app, size = 42)
             IconAction(MIcons.ResetView, "Reset zoom and pan", { app.view.resetView() }, size = 42)
             IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = 42)
             IconAction(MIcons.Guides, "Guides", { sheet = Sheet.GUIDES }, size = 48)
-            IconAction(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = 48)
-            IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 48, enabled = app.activeGhost == null)
+            ToolIcon(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = 48)
+            ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 48, enabled = app.activeGhost == null)
             }
             Scrollbar(dockScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
         }
@@ -293,12 +312,12 @@ private fun WideEditor(
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
         Row(Modifier.weight(1f).fillMaxWidth()) {
-            Column(Modifier.width(60.dp).fillMaxHeight().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconAction(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.activeGhost == null && app.reduction == null, size = 42)
-                IconAction(MIcons.Move, "Move node (M)", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
-                IconAction(MIcons.Nodes, "Show or hide node tools", { app.showNodeTools = !app.showNodeTools }, selected = app.showNodeTools, size = 42)
-                IconAction(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
-                IconAction(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 42, enabled = app.activeGhost == null)
+            Column(Modifier.width(60.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                ToolIcon(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.activeGhost == null && app.reduction == null, size = 42)
+                ToolIcon(MIcons.Move, "Move node (M)", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
+                ToolIcon(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+                NodeActions(app, size = 42)
+                ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 42, enabled = app.activeGhost == null)
                 IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 42, enabled = app.activeGhost == null)
                 SuggestionsButton(app, suggestions, size = 42)
                 IconAction(MIcons.ResetView, "Reset zoom and pan (0)", { app.view.resetView() }, size = 42)

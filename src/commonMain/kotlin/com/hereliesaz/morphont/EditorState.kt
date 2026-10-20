@@ -1,5 +1,6 @@
 package com.hereliesaz.morphont
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -524,9 +525,6 @@ class AppState {
     /** Move on-curve nodes with their handles instead of editing individual handles. */
     var nodeMoveMode by mutableStateOf(false)
 
-    /** Restore the pointer's contextual actions at any time from the tool rail/dock. */
-    var showNodeTools by mutableStateOf(true)
-
     /** Whether the suggested-edits row is expanded (it's behind a button, not always on screen). */
     var showSuggestions by mutableStateOf(false)
 
@@ -536,6 +534,18 @@ class AppState {
     /** Null follows pointer type: enabled for touch, disabled for mouse/stylus. */
     var nodeMoveCircleOverride by mutableStateOf<Boolean?>(null)
     val nodeMoveCircleEnabled: Boolean get() = nodeMoveCircleOverride ?: touchInput
+
+    /**
+     * The move circle exists only from the moment a node is picked on the canvas until the next touch
+     * anywhere else on the screen (see EditorScreen); the selection itself outlives it.
+     */
+    var moveCircleVisible by mutableStateOf(false)
+
+    /** The circle's touch area in window pixels (centre, radius), so a touch anywhere else can tell it is elsewhere. Null when it isn't shown. */
+    var moveCircleArea: Pair<Offset, Float>? = null
+
+    /** While the circle is being dragged: its fixed offset from the selection, in canvas pixels. */
+    var moveCircleHold: Offset? = null
 
     fun setNodeMoveCircleEnabled(enabled: Boolean) {
         nodeMoveCircleOverride = enabled
@@ -674,7 +684,6 @@ class AppState {
         activeGhostId = null
         ghostTransformMode = true
         nodeMoveMode = false
-        showNodeTools = true
     }
 
     /** The edit target for menu/keyboard commands: the active ghost, else the active anchor. */
@@ -722,7 +731,6 @@ class AppState {
         reduction = null
         activeAnchor = "regular"
         nodeMoveMode = false
-        showNodeTools = true
         setStatus("Loaded \"$name\".")
     }
 
