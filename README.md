@@ -229,6 +229,14 @@ so anchors can then be reshaped without adding or removing points.
   custom lib metadata, hints and Unicode mappings are not retained by
   Morphont's existing glyph-project format. Android/web UFO import is not
   yet available; their TTF import remains unchanged.
+- **Projects.** Work happens inside a named project: a start screen asks
+  for one (or reopens the last), and **Glyphs → Projects** starts, opens,
+  renames or deletes them (deleting asks first). Each project is its own set
+  of glyphs -- a folder on Android and desktop, an IndexedDB database on the
+  web -- and everything autosaves into the project that is open; switching
+  saves the open glyph first. Glyphs saved before projects existed become a
+  project called "Untitled" on first launch. Opening a project `.json`
+  creates a new project from it instead of overwriting the open one.
 - **Desktop glyph filenames.** Forbidden Windows characters (notably `*`)
   and reserved DOS device names are reversibly escaped on disk, and so are
   ASCII capitals, so `A` and `a` stay distinct files on case-insensitive
@@ -325,7 +333,8 @@ so anchors can then be reshaped without adding or removing points.
 - `Theme.kt` -- palette and primitives (`MonoButton`, `IconAction`, `Caps`, `floating`, `HairSlider`, draggable `Scrollbar`), built on `HereLiesAz/convey` (see below)
 - `commonTest/ControlAuditTest.kt` / `desktopTest/DesktopStorageTest.kt` -- regression coverage for mixed undo, suggestions, curve measurements, ghost linking, and transactional desktop projects
 - `desktopMain/` -- desktop window, per-user storage (Windows-safe glyph filenames), UFO/ZIP import and platform file pickers
-- `Storage.kt` -- IndexedDB persistence (one record per glyph) + JSON export/import; migrates a legacy single-blob `localStorage` project automatically on first successful open
+- `Projects.kt` / `ProjectsUi.kt` -- the project list (`ProjectRegistry`, platform-agnostic) and the start screen / switcher; `commonTest/ProjectRegistryTest.kt` and `desktopTest/ProjectStorageTest.kt` cover it
+- `Storage.kt` -- IndexedDB persistence (one database per project, one record per glyph) + JSON export/import; migrates a legacy single-blob `localStorage` project automatically on first successful open
 - `App.kt` / `Main.kt` -- top-level layout and the PWA entry point
 - `VariableFont.kt` / `FamilyImport.kt` -- static and variable TrueType-outline glyph family import
 - `commonTest/TrueTypeImportTest.kt` -- independently constructed SFNT fixture for damaged-glyph recovery, table bounds, and end-of-buffer reads

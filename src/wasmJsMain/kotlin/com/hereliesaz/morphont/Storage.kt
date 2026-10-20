@@ -4,6 +4,7 @@ package com.hereliesaz.morphont
 
 import com.juul.indexeddb.Database
 import com.juul.indexeddb.KeyPath
+import com.juul.indexeddb.deleteDatabase
 import com.juul.indexeddb.openDatabase
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -25,8 +26,16 @@ import kotlin.js.toList
 /** Global JS `encodeURIComponent`, used to build a `data:` URL for export. */
 external fun encodeURIComponent(str: String): String
 
-private const val DATABASE_NAME = "morphont"
+/**
+ * Every project is its own IndexedDB database. The one browsers had before projects
+ * existed is named plain "morphont"; it keeps that name and becomes the project "Untitled".
+ */
+private const val LEGACY_PROJECT_ID = "legacy"
+private const val PROJECT_REGISTRY_KEY = "morphont:projects"
 private const val DATABASE_VERSION = 1
+
+private fun databaseName(projectId: String) =
+    if (projectId == LEGACY_PROJECT_ID) "morphont" else "morphont-$projectId"
 private const val GLYPH_STORE = "glyphs"
 private const val LEGACY_STORAGE_KEY = "morphont:project"
 
@@ -73,6 +82,16 @@ object Storage {
     private val writeMutex = Mutex()
     private val project = mutableMapOf<String, Glyph>()
 
+    /**
+     * Which projects exist. Kept in localStorage: it is a few hundred bytes, read synchronously
+     * at startup, and the glyphs themselves live in IndexedDB.
+     */
+    val registry = ProjectRegistry(
+        read = { try { window.localStorage.getItem(PROJECT_REGISTRY_KEY) } catch (_: Throwable) { null } },
+        write = { text -> try { window.localStorage.setItem(PROJECT_REGISTRY_KEY, text) } catch (_: Throwable) { } },
+    )
+
+    private var projectId: String? = null
     private var database: Database? = null
     private var initialized = false
     private var initializationError: Throwable? = null
@@ -93,8 +112,9 @@ object Storage {
         // with the original error instead of retrying and stalling on each edit.
         initializationError?.let { throw it }
 
+        val id = projectId ?: return@withLock emptyList()
         try {
-            val opened = openDatabase(DATABASE_NAME, DATABASE_VERSION) { db, oldVersion, _ ->
+            val opened = openDatabase(databaseName(id), DATABASE_VERSION) { db, oldVersion, _ ->
                 if (oldVersion < 1) {
                     db.createObjectStore(GLYPH_STORE, KeyPath("name"))
                 }
@@ -109,7 +129,7 @@ object Storage {
                     runCatching { record.name to ProjectCodec.decodeGlyph(record.json) }.getOrNull()
                 }.toMap().toMutableMap()
 
-                if (loaded.isEmpty()) {
+                if (loaded.isEmpty() && id == LEGACY_PROJECT_ID) {
                     val legacy = readLegacyProject()
                     if (legacy.isNotEmpty()) {
                         opened.writeTransaction(GLYPH_STORE) {
@@ -126,7 +146,7 @@ object Storage {
                 project.putAll(loaded)
                 database = opened
                 initialized = true
-                clearLegacyProject()
+                if (id == LEGACY_PROJECT_ID) clearLegacyProject()
                 listGlyphNames()
             } catch (t: Throwable) {
                 opened.close()
@@ -136,6 +156,62 @@ object Storage {
             initializationError = t
             throw t
         }
+    }
+
+    /**
+     * Registers the pre-projects database as "Untitled" if it holds anything. Safe to call on
+     * every launch: it does nothing once that project is known (or was deleted and emptied).
+     */
+    suspend fun adoptLegacyProject() {
+        if (registry.find(LEGACY_PROJECT_ID) != null) return
+        val inDatabase = try {
+            val db = openDatabase(databaseName(LEGACY_PROJECT_ID), DATABASE_VERSION) { d, oldVersion, _ ->
+                if (oldVersion < 1) d.createObjectStore(GLYPH_STORE, KeyPath("name"))
+            }
+            try {
+                db.transaction(GLYPH_STORE) { objectStore(GLYPH_STORE).getAll() }.toList().isNotEmpty()
+            } finally {
+                db.close()
+            }
+        } catch (_: Throwable) {
+            false
+        }
+        if (inDatabase || readLegacyProject().isNotEmpty()) {
+            registry.create(unusedProjectName(registry, "Untitled"), LEGACY_PROJECT_ID)
+        }
+    }
+
+    /**
+     * Switches to project [id]: waits for queued writes to the project being left, closes
+     * its database, then opens and loads the new one. Returns its glyph names.
+     */
+    suspend fun openProject(id: String): List<String> {
+        writeMutex.withLock {
+            database?.close()
+            database = null
+        }
+        initializationMutex.withLock {
+            initialized = false
+            initializationError = null
+            project.clear()
+            projectId = id
+        }
+        return initialize()
+    }
+
+    /** Erases project [id]'s glyphs from the browser. Closes it first if it is the open one. */
+    suspend fun deleteProjectData(id: String) {
+        writeMutex.withLock {
+            if (projectId == id) {
+                database?.close()
+                database = null
+                projectId = null
+                initialized = false
+                project.clear()
+            }
+        }
+        if (id == LEGACY_PROJECT_ID) clearLegacyProject()
+        deleteDatabase(databaseName(id))
     }
 
     fun listGlyphNames(): List<String> = project.keys.sorted()
@@ -183,7 +259,12 @@ object Storage {
         downloadText("morphont-project.json", ProjectCodec.encodeProject(snapshot))
     }
 
-    fun importProject(onLoaded: (List<String>) -> Unit, onError: (String) -> Unit) {
+    /**
+     * Reads a project file into a new project (never over the open one). [beforeSwitch] runs
+     * once the file has decoded, just before the new project opens -- the caller saves and
+     * closes whatever is open there.
+     */
+    fun importProject(beforeSwitch: () -> Unit, onLoaded: (ProjectInfo, List<String>) -> Unit, onError: (String) -> Unit) {
         pickTextFile(".json,application/json", onError) { text ->
             val glyphs = try {
                 ProjectCodec.decodeProject(text)
@@ -194,7 +275,9 @@ object Storage {
 
             scope.launch {
                 try {
-                    initialize()
+                    beforeSwitch()
+                    val info = registry.create(unusedProjectName(registry, "Imported project"))
+                    openProject(info.id)
                     writeMutex.withLock {
                         val db = requireDatabase()
                         db.writeTransaction(GLYPH_STORE) {
@@ -207,7 +290,7 @@ object Storage {
                         project.clear()
                         project.putAll(glyphs)
                     }
-                    onLoaded(listGlyphNames())
+                    onLoaded(info, listGlyphNames())
                 } catch (e: Throwable) {
                     onError(storageMessage("Import failed", e))
                 }
@@ -275,9 +358,12 @@ object Storage {
     }
 
     private fun persistAsync(label: String, block: suspend () -> Unit) {
+        val pinned = projectId ?: return
         scope.launch {
             try {
                 initialize()
+                // A write that outlived its project (another was opened meanwhile) must not land in the new one.
+                if (projectId != pinned) return@launch
                 block()
             } catch (e: Throwable) {
                 // Persistence failures are exceptional and risk data loss. Make them visible instead

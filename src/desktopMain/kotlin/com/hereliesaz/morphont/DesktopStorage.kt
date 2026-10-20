@@ -111,6 +111,30 @@ internal fun recoverProjectDirectory(base: File, glyphs: File) {
     if (backup != null) Files.move(backup.toPath(), glyphs.toPath())
 }
 
+/**
+ * Brings storage and [registry] into agreement. Glyphs saved before projects
+ * existed (`base/glyphs`) become a project named "Untitled", and any project
+ * folder the registry has lost track of is registered rather than orphaned.
+ */
+internal fun adoptStoredProjects(base: File, projectsRoot: File, registry: ProjectRegistry): ProjectRegistry {
+    val legacy = File(base, "glyphs")
+    if (legacy.isDirectory && !legacy.listFiles().isNullOrEmpty()) {
+        val id = "legacy"
+        val target = File(projectsRoot, id)
+        if (!target.exists()) {
+            projectsRoot.mkdirs()
+            Files.move(legacy.toPath(), target.toPath())
+        }
+    }
+    for (folder in projectsRoot.listFiles().orEmpty()) {
+        if (!folder.isDirectory || folder.name.startsWith("morphont-")) continue
+        if (registry.find(folder.name) != null || folder.listFiles().isNullOrEmpty()) continue
+        val label = if (folder.name == "legacy") "Untitled" else "Recovered ${folder.name}"
+        registry.create(unusedProjectName(registry, label), folder.name)
+    }
+    return registry
+}
+
 /** Splits [names] into the glyphs [load] could read and the names of those it could not. */
 internal fun readableGlyphs(names: List<String>, load: (String) -> Glyph?): Pair<MutableMap<String, Glyph>, List<String>> {
     val readable = mutableMapOf<String, Glyph>()
@@ -135,21 +159,57 @@ internal fun projectForExport(saved: Map<String, Glyph>, unsaved: Pair<String, G
  * never leaves a half-written glyph.
  */
 object DesktopStorage {
-    private val dir: File by lazy {
+    private val base: File by lazy {
         val home = System.getProperty("user.home")
         val os = System.getProperty("os.name").lowercase()
-        val base = when {
+        when {
             os.contains("win") -> System.getenv("APPDATA")?.let { File(it, "Morphont") } ?: File(home, "AppData/Roaming/Morphont")
             os.contains("mac") -> File(home, "Library/Application Support/Morphont")
             else -> File(System.getenv("XDG_DATA_HOME") ?: "$home/.local/share", "morphont")
         }
-        val glyphs = File(base, "glyphs")
-        // Recover the previous project if the process died between the two
-        // directory renames of a project import.
-        recoverProjectDirectory(base, glyphs)
-        glyphs.apply { mkdirs() }
+    }
+
+    /** Each project's glyph files live in their own folder under here, named by project id. */
+    private val projectsRoot: File by lazy { File(base, "projects").apply { mkdirs() } }
+
+    private val registryFile: File get() = File(base, "projects.json")
+
+    val registry: ProjectRegistry by lazy {
+        adoptStoredProjects(
+            base, projectsRoot,
+            ProjectRegistry(
+                read = { registryFile.takeIf { it.isFile }?.readText() },
+                write = { text ->
+                    base.mkdirs()
+                    val temp = File(base, "projects.json.tmp")
+                    temp.writeText(text)
+                    Files.move(temp.toPath(), registryFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                },
+            ),
+        )
+    }
+
+    private var projectId: String? = null
+    private var projectDir: File? = null
+
+    private val dir: File get() = checkNotNull(projectDir) { "No project is open." }
+
+    /** Points every glyph operation at project [id], creating its folder if needed. */
+    fun useProject(id: String) {
+        val glyphs = File(projectsRoot, id)
+        // Recover the project if the process died between the two directory
+        // renames of a project import.
+        recoverProjectDirectory(projectsRoot, glyphs)
+        glyphs.mkdirs()
         migrateLegacyGlyphFileNames(glyphs)
-        glyphs
+        projectId = id
+        projectDir = glyphs
+    }
+
+    /** Removes a project's glyphs from disk. Closes it first if it is the open one. */
+    fun deleteProjectFiles(id: String) {
+        if (projectId == id) { projectId = null; projectDir = null }
+        File(projectsRoot, id).deleteRecursively()
     }
 
     private fun fileFor(name: String) = File(dir, desktopGlyphFileName(name))
@@ -158,11 +218,11 @@ object DesktopStorage {
 
     private fun nameOf(file: File): String? = desktopGlyphName(file.name)
 
-    fun listGlyphNames(): List<String> = dir.listFiles().orEmpty().mapNotNull { nameOf(it) }.distinct().sorted()
+    fun listGlyphNames(): List<String> = projectDir?.listFiles().orEmpty().mapNotNull { nameOf(it) }.distinct().sorted()
 
-    fun glyphExists(name: String) = readableFileFor(name).exists()
+    fun glyphExists(name: String) = projectDir != null && readableFileFor(name).exists()
 
-    fun loadGlyph(name: String): Glyph? = runCatching { ProjectCodec.decodeGlyph(readableFileFor(name).readText()) }.getOrNull()
+    fun loadGlyph(name: String): Glyph? = if (projectDir == null) null else runCatching { ProjectCodec.decodeGlyph(readableFileFor(name).readText()) }.getOrNull()
 
     fun saveGlyph(name: String, glyph: Glyph) {
         val target = fileFor(name)

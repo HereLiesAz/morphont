@@ -68,6 +68,8 @@ class EditorHost(
     /** Import/export and similar, shown in the glyph browser's File list. */
     val fileActions: List<Pair<String, () -> Unit>>,
     val onPointHit: () -> Unit = {},
+    /** Start, open, rename and delete projects; null on a surface without them. */
+    val projects: ProjectActions? = null,
     /** Handle/hit-target scale for touch-first surfaces. */
     val touchScale: Float = 1.3f,
 )
@@ -614,8 +616,19 @@ private fun MetricsDialog(app: AppState, onDismiss: () -> Unit) {
 fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var showReport by remember { mutableStateOf(false) }
+    var showProjects by remember { mutableStateOf(false) }
     val names = app.glyphNames
     MonoDialog("Glyphs", onDismiss) {
+        host.projects?.let { projectActions ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Caps("Project")
+                    Text(app.currentProject?.name ?: "", fontSize = 17.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                MonoButton(onClick = { showProjects = true }, outlined = true) { Text("Projects", fontSize = 13.sp) }
+            }
+            if (showProjects) ProjectsDialog(app, projectActions, onDismiss = { showProjects = false }, onSwitched = { showProjects = false; onDismiss() })
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MonoField(name, { name = it }, "New glyph name", Modifier.weight(1f))
             MonoButton(onClick = { if (host.createGlyph(name)) onDismiss() }, selected = true, enabled = name.isNotBlank()) { Text("Create") }

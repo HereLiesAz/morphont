@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -15,6 +16,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import compose.conveyance.ConveySystem
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -51,24 +53,88 @@ private fun openFirstAvailableGlyph(app: AppState, names: List<String>): OpenGly
     return OpenGlyphOutcome.OPENED
 }
 
+/** Saves the open glyph into the project that's open now -- must run before another project is opened. */
+private fun flushOpenGlyph(app: AppState) {
+    if (app.currentProject == null) return
+    app.currentGlyphName?.let { Storage.saveGlyph(it, app.toGlyph()) }
+}
+
+/** Leaves the open project: the editor is cleared and the start screen shows until another is entered. */
+private fun closeOpenProject(app: AppState) {
+    flushOpenGlyph(app)
+    app.beginBulkImport()
+    app.clearEditor()
+    app.currentProject = null
+    app.glyphNames = emptyList()
+}
+
+/** Loads [info]'s glyphs (suspends while the browser database opens) and opens the first one. */
+private suspend fun enterProject(app: AppState, info: ProjectInfo, message: String) {
+    val names = Storage.openProject(info.id)
+    app.currentProject = info
+    app.projects = Storage.registry.projects
+    app.glyphNames = names
+    openFirstAvailableGlyph(app, names)
+    app.setStatus(message)
+}
+
+private fun openProject(app: AppState, scope: CoroutineScope, id: String, message: (ProjectInfo) -> String = { "Opened \"${it.name}\"." }) {
+    if (app.currentProject?.id == id) return
+    val info = Storage.registry.open(id) ?: return
+    app.projects = Storage.registry.projects
+    closeOpenProject(app)
+    scope.launch {
+        try {
+            enterProject(app, info, message(info))
+        } catch (e: Throwable) {
+            app.setStatus("Could not open \"${info.name}\": ${e.message ?: e::class.simpleName}", isError = true)
+        }
+    }
+}
+
+private fun createProject(app: AppState, scope: CoroutineScope, raw: String): Boolean {
+    Storage.registry.nameProblem(raw)?.let { app.setStatus(it, isError = true); return false }
+    val info = Storage.registry.create(raw)
+    app.projects = Storage.registry.projects
+    openProject(app, scope, info.id) { "Started \"${it.name}\". Create a glyph or import a font; everything saves as you work." }
+    return true
+}
+
+private fun renameProject(app: AppState, id: String, raw: String): Boolean {
+    Storage.registry.nameProblem(raw, exceptId = id)?.let { app.setStatus(it, isError = true); return false }
+    val renamed = Storage.registry.rename(id, raw) ?: return false
+    if (app.currentProject?.id == id) app.currentProject = renamed
+    app.projects = Storage.registry.projects
+    return true
+}
+
+private fun deleteProject(app: AppState, scope: CoroutineScope, id: String) {
+    if (app.currentProject?.id == id) closeOpenProject(app)
+    Storage.registry.delete(id)
+    app.projects = Storage.registry.projects
+    scope.launch {
+        try {
+            Storage.deleteProjectData(id)
+        } catch (e: Throwable) {
+            app.setStatus("Could not erase the project's data: ${e.message ?: e::class.simpleName}", isError = true)
+        }
+    }
+}
+
 private fun importProjectIntoApp(app: AppState) {
     Storage.importProject(
-        onLoaded = { names ->
-            app.beginBulkImport()
+        beforeSwitch = { closeOpenProject(app) },
+        onLoaded = { info, names ->
+            app.currentProject = info
+            app.projects = Storage.registry.projects
             app.glyphNames = names
             when (openFirstAvailableGlyph(app, names)) {
-                OpenGlyphOutcome.OPENED -> app.setStatus("Loaded project (${names.size} glyph(s)); opened ${names.first()}.")
-                OpenGlyphOutcome.EMPTY -> {
-                    app.clearEditor()
-                    app.setStatus("Loaded an empty project.")
-                }
-                OpenGlyphOutcome.UNREADABLE -> {
-                    app.clearEditor()
-                    app.setStatus(
-                        "Loaded project (${names.size} glyph(s)), but \"${names.first()}\" could not be read.",
-                        isError = true,
-                    )
-                }
+                OpenGlyphOutcome.OPENED -> app.setStatus("Loaded project (${names.size} glyph(s)) as \"${info.name}\"; opened ${names.first()}.")
+                OpenGlyphOutcome.EMPTY -> app.setStatus("Loaded an empty project as \"${info.name}\".")
+                OpenGlyphOutcome.UNREADABLE -> app.setStatus(
+                    "Loaded project (${names.size} glyph(s)), but \"${names.first()}\" could not be read.",
+                    isError = true,
+                )
             }
         },
         onError = { msg -> app.setStatus(msg, isError = true) },
@@ -112,6 +178,7 @@ fun App() {
         ConveySystem {
             val app = remember { AppState().apply { glyphLookup = { Storage.loadGlyph(it) } } }
             val focus = remember { FocusRequester() }
+            val scope = rememberCoroutineScope()
             val host = remember {
                 EditorHost(
                     pickFontBytes = { onLoaded, onError -> Storage.pickTtfBytes(onLoaded, onError) },
@@ -137,16 +204,28 @@ fun App() {
                             )
                         },
                     ),
+                    projects = ProjectActions(
+                        create = { createProject(app, scope, it) },
+                        open = { openProject(app, scope, it) },
+                        rename = { id, name -> renameProject(app, id, name) },
+                        delete = { deleteProject(app, scope, it) },
+                    ),
                     touchScale = 1.3f,
                 )
             }
 
-            // A returning user should never land in the empty editor. If local storage already
-            // contains glyphs, open one immediately; otherwise the first-run screen is shown.
+            // A returning user should never land in the empty editor: reopen the project they
+            // left. With no project yet, the start screen asks for one.
             LaunchedEffect(Unit) {
-                val names = Storage.listGlyphNames()
-                app.glyphNames = names
-                openFirstAvailableGlyph(app, names)
+                app.projects = Storage.registry.projects
+                Storage.registry.last?.let { last ->
+                    val info = Storage.registry.open(last.id) ?: return@let
+                    try {
+                        enterProject(app, info, "Opened \"${info.name}\".")
+                    } catch (e: Throwable) {
+                        app.setStatus("Could not open \"${info.name}\": ${e.message ?: e::class.simpleName}", isError = true)
+                    }
+                }
                 runCatching { focus.requestFocus() }
             }
 
@@ -198,7 +277,9 @@ fun App() {
                     .focusable()
                     .editorKeys(app),
             ) {
-                if (app.currentGlyphName == null) {
+                if (app.currentProject == null) {
+                    ProjectsScreen(app, host.projects!!)
+                } else if (app.currentGlyphName == null) {
                     WelcomeScreen(
                         app,
                         host,

@@ -7,47 +7,97 @@ import java.io.File
 
 private const val PREFS_NAME = "morphont"
 private const val PROJECT_KEY = "project"
+private const val PROJECT_INDEX_KEY = "project_index"
 private const val LAST_GLYPH_KEY = "last_glyph"
 private const val SELECTED_AXIS_KEY = "selected_axis"
 private const val MOBILE_PANE_KEY = "mobile_pane"
 private const val PREVIEW_VALUE_PREFIX = "preview_"
-private const val GLYPH_DIRECTORY = "morphont-glyphs-v2"
-private const val STAGE_DIRECTORY = "morphont-glyphs-stage"
-private const val BACKUP_DIRECTORY = "morphont-glyphs-backup"
+/** Where glyphs lived before projects: one folder for everything. It becomes the project "Untitled". */
+private const val LEGACY_GLYPH_DIRECTORY = "morphont-glyphs-v2"
+private const val PROJECTS_DIRECTORY = "morphont-projects"
+private const val LEGACY_PROJECT_ID = "legacy"
+private const val STAGE_DIRECTORY = ".stage"
+private const val BACKUP_PREFIX = ".backup-"
 
 /**
  * Android persistence for the same JSON glyph/project contract the web build uses.
  *
- * Glyphs are stored one-per-file in app-internal storage. Older builds wrote the
- * entire project into a single SharedPreferences value; that payload is migrated
- * once and removed only after the file-backed copy has been committed.
+ * Each project is a folder of one-file-per-glyph JSON in app-internal storage;
+ * [registry] tracks their names. Older builds kept everything in a single
+ * folder, or before that in one SharedPreferences value; both are migrated
+ * once into a project called "Untitled", and removed only after the
+ * file-backed copy has been committed.
  */
 class AndroidStorage(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val projectsRoot = File(appContext.filesDir, PROJECTS_DIRECTORY)
+
+    val registry = ProjectRegistry(
+        read = { prefs.getString(PROJECT_INDEX_KEY, null) },
+        write = { prefs.edit().putString(PROJECT_INDEX_KEY, it).apply() },
+    )
+
+    private var projectId: String? = null
 
     init {
-        recoverStrandedDirectorySwapIfNeeded()
+        projectsRoot.mkdirs()
+        recoverStrandedDirectorySwapsIfNeeded()
         migrateLegacyProjectIfNeeded()
+        adoptStoredProjects()
     }
 
     /**
      * [replaceProjectDirectory] swaps directories with two renames that are not atomic
-     * together. If the process died between them, the live directory can be missing while
-     * the real glyphs sit under [BACKUP_DIRECTORY] -- restore it before anything else runs,
+     * together. If the process died between them, a project's folder can be missing while
+     * its glyphs sit under a [BACKUP_PREFIX] folder -- restore it before anything else runs,
      * since [liveDirectory] would otherwise just create a fresh, empty one.
      */
-    private fun recoverStrandedDirectorySwapIfNeeded() {
-        val live = File(appContext.filesDir, GLYPH_DIRECTORY)
-        val backup = File(appContext.filesDir, BACKUP_DIRECTORY)
-        if (!live.exists() && backup.exists()) {
-            backup.renameTo(live)
+    private fun recoverStrandedDirectorySwapsIfNeeded() {
+        projectsRoot.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith(BACKUP_PREFIX) }
+            ?.forEach { backup ->
+                val live = File(projectsRoot, backup.name.removePrefix(BACKUP_PREFIX))
+                if (!live.exists()) backup.renameTo(live)
+            }
+        File(projectsRoot, STAGE_DIRECTORY).deleteRecursively()
+    }
+
+    /**
+     * Brings the folders and [registry] into agreement: the pre-projects folder becomes
+     * the project "Untitled", and any project folder the registry has lost track of is
+     * registered rather than left orphaned.
+     */
+    private fun adoptStoredProjects() {
+        val legacy = File(appContext.filesDir, LEGACY_GLYPH_DIRECTORY)
+        val legacyTarget = File(projectsRoot, LEGACY_PROJECT_ID)
+        if (legacy.isDirectory && !legacyTarget.exists() && !legacy.renameTo(legacyTarget)) {
+            legacy.copyRecursively(legacyTarget, overwrite = true)
+            legacy.deleteRecursively()
         }
-        File(appContext.filesDir, STAGE_DIRECTORY).deleteRecursively()
+        for (folder in projectsRoot.listFiles().orEmpty()) {
+            if (!folder.isDirectory || folder.name.startsWith(".")) continue
+            if (registry.find(folder.name) != null || folder.listFiles().isNullOrEmpty()) continue
+            val label = if (folder.name == LEGACY_PROJECT_ID) "Untitled" else "Recovered ${folder.name}"
+            registry.create(unusedProjectName(registry, label), folder.name)
+        }
+    }
+
+    /** Points every glyph operation at project [id], creating its folder if needed. */
+    fun useProject(id: String) {
+        projectId = id
+        liveDirectory()
+    }
+
+    /** Removes a project's glyphs from disk. Closes it first if it is the open one. */
+    fun deleteProjectFiles(id: String) {
+        if (projectId == id) projectId = null
+        File(projectsRoot, id).deleteRecursively()
+        prefs.edit().remove(LAST_GLYPH_KEY + "_" + id).apply()
     }
 
     private fun liveDirectory(): File =
-        File(appContext.filesDir, GLYPH_DIRECTORY).apply { mkdirs() }
+        File(projectsRoot, checkNotNull(projectId) { "No project is open." }).apply { mkdirs() }
 
     private fun encodedName(name: String): String =
         Base64.encodeToString(
@@ -99,10 +149,9 @@ class AndroidStorage(context: Context) {
         return project
     }
 
-    private fun replaceProjectDirectory(project: Map<String, Glyph>) {
-        val stage = File(appContext.filesDir, STAGE_DIRECTORY)
-        val live = File(appContext.filesDir, GLYPH_DIRECTORY)
-        val backup = File(appContext.filesDir, BACKUP_DIRECTORY)
+    private fun replaceProjectDirectory(project: Map<String, Glyph>, live: File) {
+        val stage = File(projectsRoot, STAGE_DIRECTORY)
+        val backup = File(projectsRoot, BACKUP_PREFIX + live.name)
 
         stage.deleteRecursively()
         backup.deleteRecursively()
@@ -140,23 +189,26 @@ class AndroidStorage(context: Context) {
             return
         }
 
-        replaceProjectDirectory(project)
+        // Lands in the legacy project folder; adoptStoredProjects registers it as "Untitled".
+        replaceProjectDirectory(project, File(projectsRoot, LEGACY_PROJECT_ID))
         prefs.edit().remove(PROJECT_KEY).apply()
     }
 
-    fun listGlyphNames(): List<String> = projectSnapshot().keys.sorted()
+    fun listGlyphNames(): List<String> = if (projectId == null) emptyList() else projectSnapshot().keys.sorted()
 
     fun loadGlyph(name: String): Glyph? =
-        readGlyphFile(glyphFile(liveDirectory(), name))
+        if (projectId == null) null else readGlyphFile(glyphFile(liveDirectory(), name))
 
     fun glyphExists(name: String): Boolean =
-        glyphFile(liveDirectory(), name).isFile
+        projectId != null && glyphFile(liveDirectory(), name).isFile
 
-    fun lastGlyphName(): String? = prefs.getString(LAST_GLYPH_KEY, null)
+    /** The glyph that was open when the current project was last used. */
+    fun lastGlyphName(): String? = projectId?.let { prefs.getString(LAST_GLYPH_KEY + "_" + it, null) }
 
     fun setLastGlyphName(name: String?) {
+        val id = projectId ?: return
         val edit = prefs.edit()
-        if (name == null) edit.remove(LAST_GLYPH_KEY) else edit.putString(LAST_GLYPH_KEY, name)
+        if (name == null) edit.remove(LAST_GLYPH_KEY + "_" + id) else edit.putString(LAST_GLYPH_KEY + "_" + id, name)
         edit.apply()
     }
 
@@ -185,7 +237,13 @@ class AndroidStorage(context: Context) {
         edit.apply()
     }
 
-    fun saveGlyph(name: String, glyph: Glyph) {
+    /**
+     * [forProject], when given, is the project the edit was made in: a save that finishes after
+     * another project was opened is dropped (the switch already saved that glyph) instead of
+     * landing in the wrong project.
+     */
+    fun saveGlyph(name: String, glyph: Glyph, forProject: String? = null) {
+        if (forProject != null && forProject != projectId) return
         writeGlyphFile(liveDirectory(), name, glyph)
     }
 
@@ -200,14 +258,14 @@ class AndroidStorage(context: Context) {
     }
 
     fun exportProjectText(unsaved: Pair<String, Glyph>? = null): String {
-        val project = projectSnapshot().toMutableMap()
+        val project = if (projectId == null) mutableMapOf() else projectSnapshot().toMutableMap()
         unsaved?.let { (name, glyph) -> project[name] = glyph }
         return ProjectCodec.encodeProject(project)
     }
 
     fun importProjectText(text: String): List<String> {
         val project = ProjectCodec.decodeProject(text)
-        replaceProjectDirectory(project)
+        replaceProjectDirectory(project, liveDirectory())
         setLastGlyphName(null)
         return project.keys.sorted()
     }
