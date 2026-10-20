@@ -311,28 +311,18 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
                 return@awaitEachGesture
             }
-            // Touch: holding a node still for the long-press timeout does the same.
+            // Touch: holding a node still for the long-press timeout and then lifting does the same.
+            // Moving at any point -- even after the timeout -- is a drag, never a toggle.
             var movedDuringHold = false
             if (hitNode && !app.nodeMoveMode && down.type == PointerType.Touch) {
                 val early = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                    var end: HoldEnd? = null
-                    while (end == null) {
-                        val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
-                        end = when {
-                            c == null || !c.pressed -> HoldEnd.RELEASED
-                            (c.position - startPos).getDistance() > f.dragStartSlopPx -> HoldEnd.MOVED
-                            else -> null
-                        }
-                    }
-                    end
+                    awaitHoldEnd(down.id, startPos, f.dragStartSlopPx)
                 }
-                when (early) {
-                    null -> {
-                        target.toggleNodeSmooth(hitKey)
-                        followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
+                when (early ?: awaitHoldEnd(down.id, startPos, f.dragStartSlopPx)) {
+                    HoldEnd.RELEASED -> {
+                        if (early == null) target.toggleNodeSmooth(hitKey)
                         return@awaitEachGesture
                     }
-                    HoldEnd.RELEASED -> return@awaitEachGesture
                     HoldEnd.MOVED -> movedDuringHold = true
                 }
             }
@@ -542,5 +532,16 @@ private suspend fun AwaitPointerEventScope.pinch(f: CanvasFrame) {
     }
 }
 
-/** How a touch hold on a node ended before the long-press timeout. */
+/** Waits until [downId] lifts or strays past [slop] from [startPos]. */
+private suspend fun AwaitPointerEventScope.awaitHoldEnd(downId: PointerId, startPos: Offset, slop: Float): HoldEnd {
+    while (true) {
+        val c = awaitPointerEvent().changes.firstOrNull { it.id == downId }
+        when {
+            c == null || !c.pressed -> return HoldEnd.RELEASED
+            (c.position - startPos).getDistance() > slop -> return HoldEnd.MOVED
+        }
+    }
+}
+
+/** How a touch hold on a node ended. */
 private enum class HoldEnd { RELEASED, MOVED }
