@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 fun main() {
     MainScope().launch {
         try {
-            Storage.initialize()
+            Storage.adoptLegacyProject()
         } catch (e: Throwable) {
             val detail = e.message?.takeIf { it.isNotBlank() } ?: e::class.simpleName ?: "storage error"
             window.alert(

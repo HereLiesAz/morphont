@@ -108,13 +108,70 @@ fun DesktopApp() {
                 }
             }, { app.setStatus(it, true) })
 
+            val registry = DesktopStorage.registry
+            remember { app.projects = registry.projects }
+
+            /** Saves the open glyph into the project that's open now -- must run before storage is pointed elsewhere. */
+            fun flushOpenGlyph() {
+                if (app.currentProject == null) return
+                app.currentGlyphName?.let { DesktopStorage.saveGlyph(it, app.toGlyph()) }
+            }
+
+            fun openProject(id: String) {
+                if (app.currentProject?.id == id) return
+                val info = registry.open(id) ?: return
+                flushOpenGlyph()
+                app.beginBulkImport()
+                app.clearEditor()
+                DesktopStorage.useProject(id)
+                app.currentProject = info
+                app.projects = registry.projects
+                val names = DesktopStorage.listGlyphNames()
+                app.glyphNames = names
+                names.firstOrNull()?.let(::open)
+                app.setStatus("Opened \"${info.name}\".")
+            }
+
+            fun createProject(raw: String): Boolean {
+                registry.nameProblem(raw)?.let { app.setStatus(it, true); return false }
+                val info = registry.create(raw)
+                app.projects = registry.projects
+                openProject(info.id)
+                app.setStatus("Started \"${info.name}\". Create a glyph or import a font; everything saves as you work.")
+                return true
+            }
+
+            fun renameProject(id: String, raw: String): Boolean {
+                registry.nameProblem(raw, exceptId = id)?.let { app.setStatus(it, true); return false }
+                val renamed = registry.rename(id, raw) ?: return false
+                if (app.currentProject?.id == id) app.currentProject = renamed
+                app.projects = registry.projects
+                return true
+            }
+
+            fun deleteProject(id: String) {
+                if (app.currentProject?.id == id) {
+                    app.beginBulkImport()
+                    app.clearEditor()
+                    app.currentProject = null
+                    app.glyphNames = emptyList()
+                }
+                DesktopStorage.deleteProjectFiles(id)
+                registry.delete(id)
+                app.projects = registry.projects
+            }
+
             fun importProject() = DesktopStorage.pickText("Open a Morphont project", { text ->
                 try {
+                    ProjectCodec.decodeProject(text) // fail before anything is created
+                    val info = registry.create(unusedProjectName(registry, "Imported project"))
+                    app.projects = registry.projects
+                    openProject(info.id)
                     val names = DesktopStorage.importProjectText(text)
                     app.beginBulkImport()
                     app.glyphNames = names
                     if (names.isEmpty()) { app.clearEditor(); app.setStatus("Loaded an empty project.") }
-                    else { open(names.first()); app.setStatus("Loaded project (${names.size} glyph(s)).") }
+                    else { open(names.first()); app.setStatus("Loaded project (${names.size} glyph(s)) as \"${info.name}\".") }
                 } catch (e: Exception) {
                     app.setStatus("Import failed: ${e.message}", true)
                 }
@@ -144,14 +201,14 @@ fun DesktopApp() {
                                 { app.setStatus("Exported \"$name\".") }, { app.setStatus(it, true) })
                         },
                     ),
+                    projects = ProjectActions(::createProject, ::openProject, ::renameProject, ::deleteProject),
                     touchScale = 1.3f,
                 )
             }
 
+            // Reopen where the last session left off; with no project yet, the start screen asks for one.
             LaunchedEffect(Unit) {
-                val names = DesktopStorage.listGlyphNames()
-                app.glyphNames = names
-                names.firstOrNull()?.let { open(it) }
+                registry.last?.let { openProject(it.id) }
                 runCatching { focus.requestFocus() }
             }
 
@@ -189,7 +246,9 @@ fun DesktopApp() {
             }
 
             Box(Modifier.fillMaxSize().focusRequester(focus).focusable().editorKeys(app)) {
-                if (app.currentGlyphName == null) {
+                if (app.currentProject == null) {
+                    ProjectsScreen(app, host.projects!!)
+                } else if (app.currentGlyphName == null) {
                     WelcomeScreen(app, host, actions = listOf(
                         "Import a TrueType font" to { importFont() },
                         "Import UFO (.ufo / .ufoz)" to { importUfo() },

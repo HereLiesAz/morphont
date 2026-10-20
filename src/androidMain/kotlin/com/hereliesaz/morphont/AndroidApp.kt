@@ -89,11 +89,69 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 return OpenGlyphOutcome.OPENED
             }
 
+            val registry = storage.registry
+            remember { app.projects = registry.projects }
+
+            /** Saves the open glyph into the project that's open now -- must run before storage is pointed elsewhere. */
+            fun flushOpenGlyph() {
+                if (app.currentProject == null) return
+                app.currentGlyphName?.let { storage.saveGlyph(it, app.toGlyph()) }
+            }
+
+            fun openProject(id: String) {
+                if (app.currentProject?.id == id) return
+                val info = registry.open(id) ?: return
+                flushOpenGlyph()
+                app.beginBulkImport()
+                app.clearEditor()
+                storage.useProject(id)
+                app.currentProject = info
+                app.projects = registry.projects
+                val names = storage.listGlyphNames()
+                app.glyphNames = names
+                val last = storage.lastGlyphName()?.let { name -> storage.loadGlyph(name)?.let { name to it } }
+                if (last != null) loadPersistentGlyph(last.first, last.second) else openFirstAvailableGlyph(names)
+                app.setStatus("Opened \"${info.name}\".")
+            }
+
+            fun createProject(raw: String): Boolean {
+                registry.nameProblem(raw)?.let { app.setStatus(it, true); return false }
+                val info = registry.create(raw)
+                app.projects = registry.projects
+                openProject(info.id)
+                app.setStatus("Started \"${info.name}\". Create a glyph or import a font; everything saves as you work.")
+                return true
+            }
+
+            fun renameProject(id: String, raw: String): Boolean {
+                registry.nameProblem(raw, exceptId = id)?.let { app.setStatus(it, true); return false }
+                val renamed = registry.rename(id, raw) ?: return false
+                if (app.currentProject?.id == id) app.currentProject = renamed
+                app.projects = registry.projects
+                return true
+            }
+
+            fun deleteProject(id: String) {
+                if (app.currentProject?.id == id) {
+                    app.beginBulkImport()
+                    app.clearEditor()
+                    app.currentProject = null
+                    app.glyphNames = emptyList()
+                }
+                storage.deleteProjectFiles(id)
+                registry.delete(id)
+                app.projects = registry.projects
+            }
+
             fun importProjectIntoApp() {
                 files.openJson(
                     { text ->
                         scope.launch {
                             try {
+                                ProjectCodec.decodeProject(text) // fail before anything is created
+                                val info = registry.create(unusedProjectName(registry, "Imported project"))
+                                app.projects = registry.projects
+                                openProject(info.id)
                                 val names = withContext(Dispatchers.IO) { storage.importProjectText(text) }
                                 app.beginBulkImport()
                                 app.glyphNames = names
@@ -207,6 +265,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         runCatching { keyboardFocus.requestFocus() }
                     },
+                    projects = ProjectActions(::createProject, ::openProject, ::renameProject, ::deleteProject),
                     touchScale = 1.35f,
                 )
             }
@@ -230,20 +289,8 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                     }
                 }
 
-                val lastName = storage.lastGlyphName()
-                var restored = false
-                if (lastName != null) {
-                    val glyph = storage.loadGlyph(lastName)
-                    if (glyph != null) {
-                        loadPersistentGlyph(lastName, glyph)
-                        restored = true
-                    } else {
-                        storage.setLastGlyphName(null)
-                    }
-                }
-                if (!restored) {
-                    openFirstAvailableGlyph(app.glyphNames)
-                }
+                // Reopen where the last session left off; with no project yet, the start screen asks for one.
+                registry.last?.let { openProject(it.id) }
                 initialized = true
             }
             LaunchedEffect(initialized) {
@@ -256,33 +303,37 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
             LaunchedEffect(Unit) {
                 var saveJob: Job? = null
                 var pendingName: String? = null
+                var pendingProject: String? = null
                 var pendingGlyph: Glyph? = null
                 var pendingEpoch = app.autosaveEpoch
-                snapshotFlow { Triple(initialized, app.autosaveEpoch, app.currentGlyphName to app.toGlyph()) }
-                    .collect { (ready, epoch, named) ->
+                snapshotFlow { Triple(initialized, app.autosaveEpoch, app.currentGlyphName to app.toGlyph()) to app.currentProject?.id }
+                    .collect { (state, projectId) ->
+                        val (ready, epoch, named) = state
                         if (!ready) return@collect
                         val (name, glyph) = named
                         if (epoch != pendingEpoch) {
                             saveJob?.cancel()
                             pendingName = null
+                            pendingProject = null
                             pendingGlyph = null
                         } else if (name != pendingName) {
                             val outgoingName = pendingName
                             val outgoingGlyph = pendingGlyph
                             if (outgoingName != null && outgoingGlyph != null) {
                                 saveJob?.cancel()
-                                withContext(Dispatchers.IO) { storage.saveGlyph(outgoingName, outgoingGlyph) }
+                                withContext(Dispatchers.IO) { storage.saveGlyph(outgoingName, outgoingGlyph, pendingProject) }
                             }
                         }
                         pendingEpoch = epoch
                         pendingName = name
+                        pendingProject = projectId
                         pendingGlyph = glyph
                         if (name == null) return@collect
                         saveJob?.cancel()
                         saveJob = launch {
                             delay(ANDROID_AUTOSAVE_DEBOUNCE_MS)
                             if (epoch == app.autosaveEpoch) withContext(Dispatchers.IO) {
-                                storage.saveGlyph(name, glyph)
+                                storage.saveGlyph(name, glyph, projectId)
                             }
                         }
                     }
@@ -309,7 +360,9 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
 
             Box(Modifier.fillMaxSize().background(Mono.ground)
                 .focusRequester(keyboardFocus).focusable().editorKeys(app)) {
-                if (app.currentGlyphName == null) {
+                if (app.currentProject == null) {
+                    ProjectsScreen(app, host.projects!!)
+                } else if (app.currentGlyphName == null) {
                     WelcomeScreen(
                         app,
                         host,

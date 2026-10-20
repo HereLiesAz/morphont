@@ -490,6 +490,9 @@ class AppState {
      */
     var selectedAxis by mutableStateOf(Axis.WEIGHT)
 
+    /** The project whose glyphs are being edited; null until one is started or opened. */
+    var currentProject by mutableStateOf<ProjectInfo?>(null)
+    var projects by mutableStateOf<List<ProjectInfo>>(emptyList())
     var currentGlyphName by mutableStateOf<String?>(null)
     var glyphNames by mutableStateOf<List<String>>(emptyList())
     var status by mutableStateOf("")
