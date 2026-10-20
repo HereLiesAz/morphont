@@ -518,6 +518,7 @@ fun GuidesSection(app: AppState) {
             Chip("Guides", v.showGuides) { v.showGuides = !v.showGuides }
             Chip("Measure", v.showMeasure) { v.showMeasure = !v.showMeasure }
             Chip("Ghosts", v.showGhosts) { v.showGhosts = !v.showGhosts }
+            Chip("Travel paths", v.showTravel) { v.showTravel = !v.showTravel }
             Chip("Move circle", app.nodeMoveCircleEnabled) {
                 app.setNodeMoveCircleEnabled(!app.nodeMoveCircleEnabled)
             }

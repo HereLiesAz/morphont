@@ -76,7 +76,8 @@ automatic in-between shape looks wrong, the fix is to adjust `regular`,
 not to add another editable point. The Regular panel's travel-path
 overlay only offers each axis's own sweep rather than an arbitrary pair
 of anchors, since an axis's own lo/hi is the only pair guaranteed to
-pass through Regular.
+pass through Regular. The overlay is off by default (it can look like
+nodes to grab); the **Travel paths** chip under Guides turns it on.
 
 Every axis Morphont currently exposes is defined once, in `Model.kt`'s
 `Axis.ALL` -- adding one is only ever a matter of appending another
@@ -144,10 +145,17 @@ so anchors can then be reshaped without adding or removing points.
   rotate, point selection, guides, panning, snapping or pinch navigation.
   A selected handle resolves to its owning node when dragging the circle.
   The circle is hidden during pen drawing, ghost placement and simplify.
-- **Simplify.** The slider compares the true cubic Bézier spans and all
-  incoming/outgoing handles, for both sharp corners and mirrored smooth nodes,
-  against the curve formed by removing a node. It recalculates after every
-  removal and ranks by worst geometric drift across compatible anchors.
+- **Simplify.** Every stage stays as close as possible to the ORIGINAL
+  outline. Taking a node out refits the stretch between its surviving
+  neighbours to the original curve (end points and tangent directions kept,
+  handle lengths solved by least squares), and each candidate is scored by its
+  worst distance from the original -- never from the previous step -- so error
+  cannot pile up. A node that is redundant (collinear, or the join of one exact
+  cubic) comes out with no change to the shape at all; beyond that, no cubic
+  with fewer nodes can match the outline exactly, so the slider shows the
+  smallest deviation that is possible. A smooth node whose handles can no
+  longer mirror becomes a corner node on the same tangent, so the drawn curve
+  never moves. It ranks by worst drift across compatible anchors.
   Normal reduction retains three nodes per contour. At the extreme end of the
   slider it can discard smaller contours and their counters, leaving three
   on-curve nodes in the whole glyph. Handles never count as nodes. The displayed

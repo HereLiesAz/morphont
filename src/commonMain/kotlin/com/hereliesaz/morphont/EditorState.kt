@@ -335,6 +335,8 @@ class ViewSettings {
     var showGuides by mutableStateOf(true)
     var showMeasure by mutableStateOf(true)
     var showGhosts by mutableStateOf(true)
+    /** Regular's per-node travel paths to the extremes. Off by default: they look like nodes you could grab, and aren't. */
+    var showTravel by mutableStateOf(false)
     var snap by mutableStateOf(true)
 
     /** Shared zoom/pan so every anchor panel frames the glyph identically for comparison. */
@@ -938,7 +940,7 @@ class AppState {
                 owners = targets,
                 block = {
                     for (st in targets) {
-                        val reduced = withoutPoints(st.glyph, removed)
+                        val reduced = reducedGlyph(st.glyph, removed)
                         st.replaceWithHistory(GlyphCorner(reduced.width, reduced.contours.filter { it.points.isNotEmpty() }.toMutableList()))
                     }
                 },
