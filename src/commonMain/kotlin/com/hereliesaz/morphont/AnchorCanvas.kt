@@ -111,7 +111,7 @@ fun AnchorCanvas(
 
     // The cross-circle can be enabled on every platform, but defaults to
     // touch-only until the user chooses otherwise. A selected Bézier handle
-    // always resolves to its owning on-curve node when the circle is used.
+    // moves by itself when the circle is used; a selected node moves with its handles.
     val showProxy = app.nodeMoveCircleEnabled && app.moveCircleVisible && target.selectedNodes().isNotEmpty() &&
         target.drawingContourIndex == null && app.reduction == null && !(ghost != null && app.ghostTransformMode)
 

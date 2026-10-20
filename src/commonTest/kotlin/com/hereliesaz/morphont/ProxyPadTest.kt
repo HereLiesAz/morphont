@@ -40,30 +40,34 @@ class ProxyPadTest {
     }
 
     @Test
-    fun crossCircleMovesOwningNodeAndBothHandlesNotAnotherNode() {
-        val app = AppState()
+    fun crossCircleMovesExactlyWhatIsSelected() {
         val glyph = GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
             Pt(0f, 0f, true), Pt(0f, 100f, true),
             Pt(100f, 100f, true), Pt(100f, 0f, true),
         ))))
-        val state = app.anchors.getValue("regular")
-        state.loadFresh(glyph)
-        // A handle is selected; the cross-circle must still move its owner,
-        // not reshape the selected handle or act as a scale/rotation control.
-        state.selection = setOf(0 to 1)
-        app.padMode = PadMode.ROTATE
-        val keys = state.selectedNodes()
-        assertEquals(setOf(0 to 0), keys)
-        val before = state.glyph
-        val after = dragPoints(before, keys, 17f, -9f).contours.single().points
-        val previous = before.contours.single().points
+        val state = AnchorState(glyph)
+        val previous = state.glyph.contours.single().points
+        // A selected handle moves by itself: the node and every other point stay put.
+        val handle = 1 // node 0's out-arm
+        assertTrue(!previous[handle].onCurve)
+        val moved = dragPoints(state.glyph, listOf(0 to handle), 17f, -9f).contours.single().points
+        assertEquals(previous[handle].x + 17f, moved[handle].x)
+        assertEquals(previous[handle].y - 9f, moved[handle].y)
+        assertEquals(previous[0].x, moved[0].x)
+        assertEquals(previous[0].y, moved[0].y)
+        for (i in previous.indices.filter { it != handle && !previous[it].onCurve }) {
+            assertEquals(previous[i].x, moved[i].x, "handle $i must not move")
+            assertEquals(previous[i].y, moved[i].y, "handle $i must not move")
+        }
+        // A selected node carries its own two handles and nothing else.
+        val carried = dragPoints(state.glyph, listOf(0 to 0), 17f, -9f).contours.single().points
         for (i in listOf(0, 1, 11)) {
-            assertEquals(previous[i].x + 17f, after[i].x)
-            assertEquals(previous[i].y - 9f, after[i].y)
+            assertEquals(previous[i].x + 17f, carried[i].x)
+            assertEquals(previous[i].y - 9f, carried[i].y)
         }
         for (i in listOf(3, 4, 5, 6, 7, 8, 9)) {
-            assertEquals(previous[i].x, after[i].x)
-            assertEquals(previous[i].y, after[i].y)
+            assertEquals(previous[i].x, carried[i].x)
+            assertEquals(previous[i].y, carried[i].y)
         }
     }
 

@@ -149,7 +149,9 @@ so anchors can then be reshaped without adding or removing points.
   The complete circle and 30% margin are reserved exclusively for moving
   selected on-curve nodes and their two handles. It cannot activate scale,
   rotate, point selection, guides, panning, snapping or pinch navigation.
-  A selected handle resolves to its owning node when dragging the circle.
+  Dragging the circle moves exactly what is selected: a selected handle moves
+  by itself (its twin re-mirrors on a smooth node), a selected node moves with
+  its handles.
   The circle is hidden during pen drawing, ghost placement and simplify.
 - **Simplify.** Every stage stays as close as possible to the ORIGINAL
   outline. Taking a node out refits the stretch between its surviving
