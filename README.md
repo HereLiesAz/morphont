@@ -76,7 +76,8 @@ automatic in-between shape looks wrong, the fix is to adjust `regular`,
 not to add another editable point. The Regular panel's travel-path
 overlay only offers each axis's own sweep rather than an arbitrary pair
 of anchors, since an axis's own lo/hi is the only pair guaranteed to
-pass through Regular.
+pass through Regular. The overlay is off by default (it can look like
+nodes to grab); the **Travel paths** chip under Guides turns it on.
 
 Every axis Morphont currently exposes is defined once, in `Model.kt`'s
 `Axis.ALL` -- adding one is only ever a matter of appending another

@@ -108,7 +108,7 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
         AnchorCanvas(
             anchorName = app.activeAnchor,
             app = app,
-            travelPathOverlay = if (app.activeAnchor == "regular") computeTravelPathOverlay(app) else null,
+            travelPathOverlay = if (app.view.showTravel && app.activeAnchor == "regular") computeTravelPathOverlay(app) else null,
             interactionScale = touchScale,
             onPointHit = host.onPointHit,
             coveredTopPx = coveredTop,
