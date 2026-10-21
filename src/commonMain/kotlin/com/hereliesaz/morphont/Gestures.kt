@@ -438,6 +438,23 @@ private fun snapTargetsFor(f: CanvasFrame, target: AnchorState, exclude: Set<Poi
     return base.copy(xs = base.xs + SnapTarget(anchorGlyph.width, "advance"))
 }
 
+/**
+ * Points a dragged handle must not snap to: the handles being dragged, and -- on a mirrored node only --
+ * the twin that moves with them. On a corner node the other handle stays put, so it is a target: a handle
+ * lines up vertically or horizontally with its own node's other handle.
+ */
+internal fun handleSnapSkip(glyph: GlyphCorner, keys: Collection<PointKey>): Set<PointKey> {
+    val skip = keys.toMutableSet()
+    for ((ci, pi) in keys) {
+        val pts = glyph.contours.getOrNull(ci)?.points ?: continue
+        val owner = armOwner(pts, pi) ?: continue
+        if (!pts[owner].smooth) continue
+        inArmIndex(pts, owner)?.let { skip.add(ci to it) }
+        outArmIndex(pts, owner)?.let { skip.add(ci to it) }
+    }
+    return skip
+}
+
 /** Drags [keys] of [target] by the pointer delta (nodes carry their arms, see [dragPoints]), with light snapping, recording one undo step. */
 private suspend fun AwaitPointerEventScope.dragSelection(
     f: CanvasFrame,
@@ -463,13 +480,7 @@ private suspend fun AwaitPointerEventScope.dragSelection(
     // Nodes lightly snap to other nodes, handles to other handles (a handle's mirrored twin moves with it,
     // so it is not a target either), each vertically or horizontally.
     val handleMode = keys.none { (ci, pi) -> origGlyph.contours.getOrNull(ci)?.points?.getOrNull(pi)?.onCurve == true }
-    val skip = keys.toMutableSet()
-    if (handleMode) for ((ci, pi) in keys) {
-        val pts = origGlyph.contours.getOrNull(ci)?.points ?: continue
-        val owner = armOwner(pts, pi) ?: continue
-        inArmIndex(pts, owner)?.let { skip.add(ci to it) }
-        outArmIndex(pts, owner)?.let { skip.add(ci to it) }
-    }
+    val skip = if (handleMode) handleSnapSkip(origGlyph, keys) else keys.toSet()
     val targets = if (snapEnabled && f.app.view.snap) snapTargetsFor(f, target, skip, handleMode) else null
     var pushed = false
     followOrPinch(f, downId, slop, allowPinch = allowPinch) { pos, _ ->
