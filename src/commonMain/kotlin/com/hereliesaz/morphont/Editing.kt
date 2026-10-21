@@ -585,8 +585,32 @@ private fun loopOf(c: ContourData): Loop {
     return Loop(List(n) { pts[3 * it] }, List(n) { pts[3 * it + 1] }, List(n) { pts[(3 * (it - 1) + 2 + pts.size) % pts.size] })
 }
 
-/** [c] with the cheapest nodes (by the simplifier, against [c]'s own outline) removed until [target] remain. */
+/** [c] with its longest segments split in two (the outline does not move) until it has [target] nodes. */
+private fun subdividedTo(c: ContourData, target: Int): ContourData {
+    var loop = loopOf(c)
+    fun mid(a: Pt, b: Pt) = Pt((a.x + b.x) / 2f, (a.y + b.y) / 2f, false)
+    while (loop.size < target) {
+        val n = loop.size
+        val j = (0 until n).maxBy { i -> val a = loop.nodes[i]; val b = loop.nodes[(i + 1) % n]; hypot(b.x - a.x, b.y - a.y) + hypot(loop.outs[i].x - a.x, loop.outs[i].y - a.y) }
+        val p0 = loop.nodes[j]; val p1 = loop.outs[j]; val p2 = loop.ins[(j + 1) % n]; val p3 = loop.nodes[(j + 1) % n]
+        val q0 = mid(p0, p1); val q1 = mid(p1, p2); val q2 = mid(p2, p3)
+        val r0 = mid(q0, q1); val r1 = mid(q1, q2)
+        val s = Pt((r0.x + r1.x) / 2f, (r0.y + r1.y) / 2f, true, smooth = true)
+        val nodes = loop.nodes.toMutableList(); val outs = loop.outs.toMutableList(); val ins = loop.ins.toMutableList()
+        outs[j] = q0
+        ins[(j + 1) % n] = q2
+        nodes.add(j + 1, s); outs.add(j + 1, r1); ins.add(j + 1, r0)
+        loop = Loop(nodes, outs, ins)
+    }
+    return loop.toContour()
+}
+
+/**
+ * [c] with the cheapest nodes (by the simplifier, against [c]'s own outline) removed until [target] remain,
+ * or, when it has fewer than [target], extra nodes added without changing the outline.
+ */
 private fun reducedTo(c: ContourData, target: Int): ContourData {
+    if (nodesIn(c) < target) return subdividedTo(c, target)
     val extra = nodesIn(c) - target
     if (extra <= 0) return c
     val g = GlyphCorner(0f, mutableListOf(c))
@@ -638,7 +662,8 @@ fun matchToFewest(glyphs: Map<String, GlyphCorner>): MatchOutcome {
 
     val rebuilt = HashMap<String, MutableList<ContourData>>()
     for (t in template.indices) {
-        val target = done.keys.minOf { nodesIn(paired.getValue(it)[t]) }
+        // A closed contour needs three nodes to be a shape the simplifier and the editor can work with.
+        val target = maxOf(3, done.keys.minOf { nodesIn(paired.getValue(it)[t]) })
         val reduced = done.keys.associateWith { reducedTo(paired.getValue(it)[t], target) }
         val base = loopOf(reduced.getValue(ref))
         fun norm(l: Loop): List<Pair<Float, Float>> {
