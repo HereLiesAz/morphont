@@ -126,6 +126,24 @@ class LinkedStatesTest {
         assertNull(compatibilityIssue(app.cornersSnapshot(), listOf(lo, "regular", hi)))
     }
 
+    @Test fun aTwoNodeContourIsGivenAThirdNodeWithoutMovingTheOutline() {
+        val lens = ContourData(mutableListOf(
+            Pt(-50f, 0f, true), Pt(-50f, 40f, false), Pt(50f, 40f, false),
+            Pt(50f, 0f, true), Pt(50f, -40f, false), Pt(-50f, -40f, false),
+        ))
+        val app = AppState()
+        app.anchors.getValue(lo).loadFresh(GlyphCorner(600f, mutableListOf(ring(6, 150f).contours[0], lens)))
+        app.anchors.getValue("regular").loadFresh(GlyphCorner(600f, mutableListOf(ring(6, 200f).contours[0], ring(3, 50f).contours[0])))
+        app.anchors.getValue(hi).loadFresh(GlyphCorner(600f, mutableListOf(ring(6, 260f).contours[0], ring(4, 60f).contours[0])))
+        app.selectedAxis = Axis.WEIGHT
+        app.matchToFewestNodes()
+        assertNull(compatibilityIssue(app.cornersSnapshot(), listOf(lo, "regular", hi)))
+        for (n in listOf(lo, "regular", hi)) assertEquals(3, app.anchors.getValue(n).glyph.contours[1].points.count { it.onCurve }, n)
+        val before = lens.points.filter { it.onCurve }.map { it.x to it.y }
+        val after = app.anchors.getValue(lo).glyph.contours[1].points.filter { it.onCurve }.map { it.x to it.y }
+        assertTrue(before.all { it in after }, "the original nodes are still where they were")
+    }
+
     @Test fun nothingToMatchWhenTheStatesAgreeOrOnlyOneIsDrawn() {
         assertTrue(!app(8, 8, 8).statesDiffer())
         val app = AppState()
