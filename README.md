@@ -292,10 +292,13 @@ so anchors can then be reshaped without adding or removing points.
   for whole contours) in any one of them deletes the same nodes from all of
   them as a single undo step, and the status line says which states changed.
   Anchors that don't match are left alone, and deleting just a handle never
-  touches the others. Where the states already differ, the **Trim to the fewest
-  nodes** suggestion brings each larger state down to the count (per contour) of
-  the smallest, using the shape-preserving simplifier, as one undo step. It
-  picks nodes in each state independently, so check the result in the preview.
+  touches the others. Where the states differ, the **Match nodes to the
+  fewest** suggestion rebuilds Extra Thin, Regular and Extra Black on one shared
+  structure with only as many nodes as the sparsest has: that state is the
+  template; the others pair their contours with its by position and size
+  (unpaired contours are dropped, and the status says so), are cut down by the
+  shape-preserving simplifier, turned to run the same way round and started at
+  the node that lines up best with the template's. One undo step.
 - **Snapping.** Light: within ~7px a dragged point (or a selection's edges/
   centre) pulls onto metrics, guides, ghost nodes and (more weakly) the grid,
   and lines up -- vertically or horizontally -- with other **nodes** (when
