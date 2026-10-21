@@ -544,3 +544,125 @@ fun withoutPoints(glyph: GlyphCorner, removed: Set<PointKey>, mergeIntoPrevious:
             deleteFromContour(c, c.points.indices.filter { (ci to it) in removed && c.points[it].onCurve }.toSet(), mergeIntoPrevious = mergeIntoPrevious)
         }.toMutableList(),
     )
+
+// ------------------------------------------------------- match to the fewest
+
+/**
+ * What [matchToFewest] produced: [glyphs] (state name to its rebuilt outline) and [dropped] (contours a
+ * state had that no other state could pair with), or a [problem] when it can't be done.
+ */
+class MatchOutcome(val glyphs: Map<String, GlyphCorner>?, val dropped: Map<String, Int> = emptyMap(), val problem: String? = null)
+
+private fun nodesIn(c: ContourData) = c.points.count { it.onCurve }
+
+private fun nodeArea(c: ContourData): Float {
+    val ns = c.points.filter { it.onCurve }
+    var a = 0f
+    for (i in ns.indices) { val p = ns[i]; val q = ns[(i + 1) % ns.size]; a += p.x * q.y - q.x * p.y }
+    return a
+}
+
+/** One completed contour (node, out-arm, in-arm per segment) as parallel lists, so it can be reversed and rotated. */
+private class Loop(val nodes: List<Pt>, val outs: List<Pt>, val ins: List<Pt>) {
+    val size get() = nodes.size
+
+    fun toContour() = ContourData(
+        (0 until size).flatMap { j -> listOf(nodes[j].copy2(), outs[j].copy2(), ins[(j + 1) % size].copy2()) }.toMutableList(),
+    )
+
+    /** Same outline walked the other way: each node keeps its place, its two arms swap roles. */
+    fun reversed(): Loop {
+        val order = List(size) { (size - it) % size }
+        return Loop(order.map { nodes[it] }, order.map { ins[it] }, order.map { outs[it] })
+    }
+
+    fun rotated(by: Int) = Loop(List(size) { nodes[(it + by) % size] }, List(size) { outs[(it + by) % size] }, List(size) { ins[(it + by) % size] })
+}
+
+private fun loopOf(c: ContourData): Loop {
+    val pts = c.points
+    val n = pts.size / 3
+    return Loop(List(n) { pts[3 * it] }, List(n) { pts[3 * it + 1] }, List(n) { pts[(3 * (it - 1) + 2 + pts.size) % pts.size] })
+}
+
+/** [c] with the cheapest nodes (by the simplifier, against [c]'s own outline) removed until [target] remain. */
+private fun reducedTo(c: ContourData, target: Int): ContourData {
+    val extra = nodesIn(c) - target
+    if (extra <= 0) return c
+    val g = GlyphCorner(0f, mutableListOf(c))
+    val keys = reductionOrder(listOf(g)).take(extra).map { it.key }.toSet()
+    return completeNodeHandles(reducedGlyph(g, keys).contours[0])
+}
+
+/**
+ * Gives the drawn [glyphs] (state name to outline) one shared structure with as few nodes as the sparsest
+ * state has. The state with the fewest nodes is the template: its contours are the ones kept. Each other state
+ * pairs its contours with the template's by position and size (contours with no partner are dropped), then every
+ * paired contour is cut down to the fewest nodes any state has for it by the shape-preserving simplifier,
+ * turned to run the same way round as the template, and started at the node that lines up best with the
+ * template's. Every node ends with both handles, so the states interpolate point for point.
+ */
+fun matchToFewest(glyphs: Map<String, GlyphCorner>): MatchOutcome {
+    if (glyphs.size < 2) return MatchOutcome(null, problem = "Draw at least two states first.")
+    val done = glyphs.mapValues { completeNodeHandles(it.value) }
+    if (done.values.any { g -> g.contours.isEmpty() || g.contours.any { it.points.isEmpty() || !isValidCubicContour(it) } }) {
+        return MatchOutcome(null, problem = "A state has an empty or malformed outline.")
+    }
+    val ref = done.entries.minBy { (_, g) -> g.contours.sumOf(::nodesIn) }.key
+    val k = done.values.minOf { it.contours.size }
+    fun area(c: ContourData) = boundsOf(c.points)?.let { it.width * it.height } ?: 0f
+    // The template: the reference's k largest contours, in their own order.
+    val keep = done.getValue(ref).contours.indices.sortedByDescending { area(done.getValue(ref).contours[it]) }.take(k).sorted()
+    val template = keep.map { done.getValue(ref).contours[it] }
+
+    // paired[name][t] = the contour of that state standing for template contour t.
+    val paired = HashMap<String, List<ContourData>>()
+    val dropped = HashMap<String, Int>()
+    for ((name, g) in done) {
+        if (name == ref) { paired[name] = template; dropped[name] = g.contours.size - k; continue }
+        val boxes = g.contours.map { boundsOf(it.points)!! }
+        val tboxes = template.map { boundsOf(it.points)!! }
+        val costs = ArrayList<Triple<Float, Int, Int>>()
+        for (t in template.indices) for (s in g.contours.indices) {
+            val a = tboxes[t]; val b = boxes[s]
+            val scale = maxOf(1f, hypot(a.width, a.height))
+            val size = kotlin.math.abs(kotlin.math.ln((b.width * b.height + 1f) / (a.width * a.height + 1f))) / 2f
+            costs.add(Triple(hypot(a.cx - b.cx, a.cy - b.cy) / scale + size, t, s))
+        }
+        val pick = arrayOfNulls<Int>(template.size)
+        val used = HashSet<Int>()
+        for ((_, t, s) in costs.sortedBy { it.first }) if (pick[t] == null && s !in used) { pick[t] = s; used.add(s) }
+        paired[name] = pick.map { g.contours[it!!] }
+        dropped[name] = g.contours.size - k
+    }
+
+    val rebuilt = HashMap<String, MutableList<ContourData>>()
+    for (t in template.indices) {
+        val target = done.keys.minOf { nodesIn(paired.getValue(it)[t]) }
+        val reduced = done.keys.associateWith { reducedTo(paired.getValue(it)[t], target) }
+        val base = loopOf(reduced.getValue(ref))
+        fun norm(l: Loop): List<Pair<Float, Float>> {
+            val b = boundsOf(l.nodes) ?: return l.nodes.map { 0f to 0f }
+            val w = if (b.width < 1e-3f) 1f else b.width; val h = if (b.height < 1e-3f) 1f else b.height
+            return l.nodes.map { (it.x - b.minX) / w to (it.y - b.minY) / h }
+        }
+        val want = norm(base)
+        for ((name, c) in reduced) {
+            var loop = loopOf(c)
+            if (name != ref) {
+                if ((nodeArea(c) < 0f) != (nodeArea(reduced.getValue(ref)) < 0f)) loop = loop.reversed()
+                if (loop.size == base.size) {
+                    val best = (0 until loop.size).minBy { s ->
+                        val got = norm(loop.rotated(s))
+                        got.indices.sumOf { i -> ((got[i].first - want[i].first).let { it * it } + (got[i].second - want[i].second).let { it * it }).toDouble() }
+                    }
+                    loop = loop.rotated(best)
+                }
+            }
+            rebuilt.getOrPut(name) { mutableListOf() }.add(loop.toContour())
+        }
+    }
+    val out = done.mapValues { (name, g) -> GlyphCorner(g.width, rebuilt.getValue(name)) }
+    compatibilityIssue(out, out.keys.toList())?.let { return MatchOutcome(null, problem = "Couldn't reconcile them: $it") }
+    return MatchOutcome(out, dropped.filterValues { it > 0 })
+}

@@ -10,7 +10,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** The three states of an axis keep the same nodes: delete in one deletes in all while they match; trim fixes a mismatch. */
+/** The three states of an axis keep the same nodes: delete in one deletes in all while they match; match-to-fewest fixes a mismatch. */
 class LinkedStatesTest {
     private val lo = Axis.WEIGHT.lo
     private val hi = Axis.WEIGHT.hi
@@ -85,37 +85,52 @@ class LinkedStatesTest {
         for (n in listOf(lo, "regular", hi)) assertEquals(2, app.anchors.getValue(n).glyph.contours.size, n)
     }
 
-    @Test fun trimGivesEveryStateOnlyAsManyNodesAsTheFewest() {
+    @Test fun matchGivesEveryStateOnlyAsManyNodesAsTheFewest() {
         val app = app(10, 12, 7)
         app.activeAnchor = "regular"
-        val plan = assertNotNull(app.trimPlan())
-        assertEquals(setOf(lo, "regular"), plan.keys, "the smallest state is left alone")
-        app.trimToFewestNodes()
+        assertTrue(app.statesDiffer())
+        app.matchToFewestNodes()
         for (n in listOf(lo, "regular", hi)) assertEquals(7, nodes(app, n), n)
         assertNull(compatibilityIssue(app.cornersSnapshot(), listOf(lo, "regular", hi)))
-        assertNull(app.trimPlan(), "nothing left to trim")
+        assertTrue(!app.statesDiffer(), "nothing left to match")
         app.undo()
         assertEquals(10, nodes(app, lo)); assertEquals(12, nodes(app, "regular")); assertEquals(7, nodes(app, hi))
     }
 
-    @Test fun trimmedStatesStayOnTheirOwnOriginalShape() {
+    @Test fun matchedStatesStayOnTheirOwnOriginalShape() {
         val app = app(10, 12, 7)
-        val original = app.anchors.getValue("regular").glyph
-        app.trimToFewestNodes()
-        val trimmed = app.anchors.getValue("regular").glyph
-        // The ring has radius 200; every trimmed point must still be on (or very near) the circle.
-        val worst = trimmed.contours[0].points.filter { it.onCurve }.maxOf { kotlin.math.abs(kotlin.math.hypot(it.x, it.y) - 200f) }
-        assertTrue(worst < 0.5f, "trimmed nodes should stay on the original outline, off by $worst")
-        assertTrue(original.contours[0].points.size > trimmed.contours[0].points.size)
+        app.matchToFewestNodes()
+        for ((n, r) in listOf(lo to 150f, "regular" to 200f, hi to 260f)) {
+            val worst = app.anchors.getValue(n).glyph.contours[0].points.filter { it.onCurve }.maxOf { kotlin.math.abs(kotlin.math.hypot(it.x, it.y) - r) }
+            assertTrue(worst < 0.5f, "$n nodes should stay on the original outline, off by $worst")
+        }
     }
 
-    @Test fun nothingToTrimWhenTheStatesAgreeOrCannotBeCompared() {
-        assertNull(app(8, 8, 8).trimPlan())
+    @Test fun matchTurnsAndStartsEachStateToLineUpWithTheTemplate() {
+        val thin = ring(6, 150f)
+        val turned = ring(6, 200f).contours[0].points.let { p -> ContourData(p.reversed().let { r -> (r.drop(7) + r.take(7)).toMutableList() }) }
+        val out = matchToFewest(mapOf(lo to thin, "regular" to GlyphCorner(600f, mutableListOf(turned))))
+        val g = assertNotNull(out.glyphs, out.problem)
+        fun angles(n: String) = g.getValue(n).contours[0].points.filter { it.onCurve }.map { kotlin.math.atan2(it.y, it.x) }
+        for ((a, b) in angles(lo).zip(angles("regular"))) assertTrue(kotlin.math.abs(a - b) < 1e-2f, "node angles $a vs $b")
+    }
+
+    @Test fun matchPairsContoursBySizeAndDropsTheUnpaired() {
+        val app = AppState()
+        app.anchors.getValue(lo).loadFresh(GlyphCorner(600f, mutableListOf(ring(8, 150f).contours[0], ring(5, 40f).contours[0])))
+        app.anchors.getValue("regular").loadFresh(ring(6, 200f))
+        app.anchors.getValue(hi).loadFresh(ring(7, 260f))
+        app.selectedAxis = Axis.WEIGHT
+        app.matchToFewestNodes()
+        for (n in listOf(lo, "regular", hi)) { assertEquals(1, app.anchors.getValue(n).glyph.contours.size, n); assertEquals(6, nodes(app, n), n) }
+        assertNull(compatibilityIssue(app.cornersSnapshot(), listOf(lo, "regular", hi)))
+    }
+
+    @Test fun nothingToMatchWhenTheStatesAgreeOrOnlyOneIsDrawn() {
+        assertTrue(!app(8, 8, 8).statesDiffer())
         val app = AppState()
         app.anchors.getValue("regular").loadFresh(ring(8, 200f))
         app.selectedAxis = Axis.WEIGHT
-        assertNull(app.trimPlan(), "only one state is drawn")
-        app.anchors.getValue(hi).loadFresh(GlyphCorner(600f, mutableListOf(ring(6, 200f).contours[0], ring(5, 50f).contours[0])))
-        assertNull(app.trimPlan(), "different contour counts can't be compared")
+        assertTrue(!app.statesDiffer(), "only one state is drawn")
     }
 }

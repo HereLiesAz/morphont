@@ -840,41 +840,38 @@ class AppState {
         return listOf(axis.lo, "regular", axis.hi)
     }
 
-    /**
-     * What it would take to give every drawn state of [axisTriple] only as many nodes (per contour) as the
-     * one with the fewest: for each larger state, the nodes the shape-preserving simplifier would remove,
-     * keyed by anchor. Null when the states already agree, or can't be compared (different contour counts).
-     */
-    fun trimPlan(): Map<String, Set<PointKey>>? {
-        val names = axisTriple().filter { anchors.getValue(it).glyph.contours.isNotEmpty() }
-        if (names.size < 2) return null
-        val glyphs = names.associateWith { anchors.getValue(it).glyph }
-        val contourCount = glyphs.values.map { it.contours.size }.toSet().singleOrNull() ?: return null
-        fun nodes(g: GlyphCorner, ci: Int) = g.contours[ci].points.count { it.onCurve }
-        val orders = glyphs.mapValues { reductionOrder(listOf(it.value)) }
-        val plan = mutableMapOf<String, MutableSet<PointKey>>()
-        for (ci in 0 until contourCount) {
-            val target = maxOf(3, names.minOf { nodes(glyphs.getValue(it), ci) })
-            for (n in names) {
-                val extra = nodes(glyphs.getValue(n), ci) - target
-                if (extra <= 0) continue
-                plan.getOrPut(n) { mutableSetOf() }
-                    .addAll(orders.getValue(n).filter { it.key.first == ci }.take(extra).map { it.key })
-            }
-        }
-        return plan.filterValues { it.isNotEmpty() }.takeIf { it.isNotEmpty() }
+    /** The drawn states of [axisTriple]. */
+    private fun drawnTriple() = axisTriple().filter { anchors.getValue(it).glyph.contours.isNotEmpty() }
+
+    /** True when the drawn states of [axisTriple] don't share one structure (different node or contour counts), so [matchToFewestNodes] has work to do. */
+    fun statesDiffer(): Boolean {
+        val names = drawnTriple()
+        return names.size >= 2 && compatibilityIssue(cornersSnapshot(), names) != null
     }
 
-    /** Trims the larger states down to the fewest nodes, each by the simplifier, as one undo step. */
-    fun trimToFewestNodes() {
-        val plan = trimPlan() ?: return
-        val targets = plan.keys.map { anchors.getValue(it) }
+    /** "Extra Thin 7 · Regular 8 · Extra Black 7": each drawn state's node count. */
+    fun nodeCountSummary(): String =
+        drawnTriple().joinToString(" · ") { n -> "${ANCHOR_LABELS[n] ?: n} ${anchors.getValue(n).glyph.contours.sumOf { c -> c.points.count { it.onCurve } }}" }
+
+    /**
+     * Rebuilds the states of [axisTriple] on one shared structure with only as many nodes as the sparsest
+     * has (see [matchToFewest]), as one undo step. Says why when it can't.
+     */
+    fun matchToFewestNodes() {
+        if (activeGhost != null || reduction != null) return
+        val names = drawnTriple()
+        val before = names.associateWith { anchors.getValue(it).glyph }
+        val out = matchToFewest(before)
+        val glyphs = out.glyphs ?: run { setStatus(out.problem ?: "Couldn't match them.", true); return }
+        val targets = names.filter { glyphs[it] != before[it] }.map { anchors.getValue(it) }
+        if (targets.isEmpty()) { setStatus("They already match."); return }
         groupUndo(
             owners = targets,
-            block = { for ((name, keys) in plan) anchors.getValue(name).let { st -> st.replaceWithHistory(reducedGlyph(st.glyph, keys)) } },
+            block = { for (n in names) if (glyphs[n] != before[n]) anchors.getValue(n).replaceWithHistory(glyphs.getValue(n)) },
             undo = { targets.forEach { it.undo() } },
         )
-        setStatus("Trimmed " + plan.entries.joinToString(", ") { "${ANCHOR_LABELS[it.key] ?: it.key} -${it.value.size}" } + " to match the fewest nodes. Undo puts it back.")
+        val lost = out.dropped.entries.joinToString(", ") { "${ANCHOR_LABELS[it.key] ?: it.key} -${it.value} contour(s)" }
+        setStatus("Matched to the fewest nodes: " + nodeCountSummary() + (if (lost.isEmpty()) "" else ". Dropped: $lost") + ". Undo puts it back.")
     }
 
     fun copySelection() {

@@ -392,9 +392,7 @@ private fun interpolation(app: AppState): List<Suggestion> {
     val out = mutableListOf<Suggestion>()
     val src = app.activeAnchor
     val srcLabel = ANCHOR_LABELS[src] ?: src
-    app.trimPlan()?.let { plan ->
-        out.add(Suggestion("Trim to the fewest nodes", plan.entries.joinToString(", ") { "${ANCHOR_LABELS[it.key] ?: it.key} -${it.value.size}" }) { a -> a.trimToFewestNodes() })
-    }
+    if (app.statesDiffer()) out.add(Suggestion("Match nodes to the fewest", app.nodeCountSummary()) { a -> a.matchToFewestNodes() })
     out.add(Suggestion("Copy $srcLabel to every anchor", "replaces the others") { a -> a.copyActiveToOthers() })
     val first = ANCHORS.firstOrNull { it != "regular" && compatibilityIssue(mapOf("regular" to corners["regular"], it to corners[it]), listOf("regular", it)) != null }
     if (first != null && first != src) out.add(Suggestion("Go to the mismatch", ANCHOR_LABELS[first]) { a ->
