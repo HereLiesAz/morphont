@@ -322,7 +322,9 @@ so anchors can then be reshaped without adding or removing points.
   and lines up -- vertically or horizontally -- with other **nodes** (when
   moving a node) or other **handles** (when moving a handle; handles never snap
   to nodes, but a handle of a corner node also lines up with its own node's
-  other handle). It applies to the move circle too. The line it caught flashes.
+  other handle). Once a handle lines up with another handle on one axis it also
+  takes that handle's length or angle (distance and direction from its own
+  node), whichever lands closer on the same line. It applies to the move circle too. The line it caught flashes.
   View → Snap toggles it.
 - **Ghost look.** While any ghost is showing the working glyph's fill is
   see-through (Ghosts panel → Glyph opacity, default 50%) so ghosts read

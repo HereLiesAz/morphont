@@ -272,6 +272,26 @@ class EditorStateTest {
     }
 
     @Test
+    fun aHandleLinedUpWithAnotherTakesItsLengthOrAngle() {
+        fun o(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(x, y)
+        // Matched handle: node (0,0), handle (30,40) -- length 50, angle atan2(40,30).
+        val matched = o(30f, 40f); val matchedNode = o(0f, 0f)
+        // Dragged handle's node at (100,0), handle currently at x=30 (lined up), y=... near length 50 from its node? no: (30,y) is 70 away in x already
+        // so the length match is out of reach; the angle match (same direction, up and to the right) needs x > 100 -> none: nothing to snap to.
+        assertEquals(null, matchedHandleSnap(o(100f, 0f), matched, matchedNode, true, 30f, 30f, 10f, 3f))
+        // Node (0,100): handle at x=30 -- the same angle puts it at (30,140); the same length at (30, 100+-40).
+        val byAngle = matchedHandleSnap(o(0f, 100f), matched, matchedNode, true, 30f, 30f, 139f, 3f)
+        assertEquals(30f, byAngle!!.x, 1e-3f); assertEquals(140f, byAngle.y, 1e-3f)
+        val byLength = matchedHandleSnap(o(0f, 100f), matched, matchedNode, true, 30f, 30f, 61f, 3f)
+        assertEquals(60f, byLength!!.y, 1e-3f)
+        // Too far from either: left where it is.
+        assertEquals(null, matchedHandleSnap(o(0f, 100f), matched, matchedNode, true, 30f, 30f, 100f, 3f))
+        // Horizontal line: node (100,0), handle on y=40 -> same length puts it at x=100+-30; same angle at (130,40).
+        val h = matchedHandleSnap(o(100f, 0f), matched, matchedNode, false, 40f, 129f, 40f, 3f)
+        assertEquals(130f, h!!.x, 1e-3f)
+    }
+
+    @Test
     fun nodesSnapToNodesAndHandlesToHandles() {
         val g = AnchorState(GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
             Pt(10f, 10f, true), Pt(10f, 40f, true), Pt(80f, 90f, true), Pt(90f, 10f, true),
