@@ -15,6 +15,8 @@ import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isAltPressed
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
@@ -71,7 +73,59 @@ data class GhostHandles(
     val corners: List<Offset>, // minX/minY, minX/maxY, maxX/maxY, maxX/minY in font terms
     val rotate: Offset,
     val boundsFont: FontRect,
+    /** Edge midpoints, left, top, right, bottom (a selection's transform box only). */
+    val edges: List<Offset> = emptyList(),
 )
+
+/** What a drag on a selection's transform box grabbed. [Edge] indexes left, top, right, bottom. */
+sealed class BoxGrab {
+    data object Rotate : BoxGrab()
+    data class Corner(val index: Int) : BoxGrab()
+    data class Edge(val index: Int) : BoxGrab()
+}
+
+/**
+ * Photoshop's Free Transform Points, for the box around selected nodes, in font units. A corner scales
+ * about the opposite corner (Shift keeps the proportions); an edge scales along one axis only, or with
+ * [skew] slides that edge sideways; outside a corner (or the knob) rotates about the centre (Shift snaps to
+ * 15 degrees). [fromCentre] (Alt) makes every scale or skew pivot on the box's centre instead.
+ */
+fun selectionBoxTransform(b: FontRect, grab: BoxGrab, start: Offset, cur: Offset, shift: Boolean, fromCentre: Boolean, skew: Boolean): Affine {
+    fun ratio(now: Float, then: Float, origin: Float) = if (abs(then - origin) < 1e-3f) 1f else (now - origin) / (then - origin)
+    return when (grab) {
+        BoxGrab.Rotate -> {
+            val a0 = atan2(start.y - b.cy, start.x - b.cx)
+            val a1 = atan2(cur.y - b.cy, cur.x - b.cx)
+            var degrees = (a1 - a0) * 180f / kotlin.math.PI.toFloat()
+            if (shift) degrees = kotlin.math.round(degrees / 15f) * 15f
+            rotationAbout(degrees, b.cx, b.cy)
+        }
+        is BoxGrab.Corner -> {
+            val c = grab.index
+            val ox = if (fromCentre) b.cx else if (c == 0 || c == 1) b.maxX else b.minX
+            val oy = if (fromCentre) b.cy else if (c == 0 || c == 3) b.maxY else b.minY
+            var sx = ratio(cur.x, start.x, ox)
+            var sy = ratio(cur.y, start.y, oy)
+            if (shift) { val u = if (abs(sx - 1f) >= abs(sy - 1f)) sx else sy; sx = u; sy = u }
+            scalingAbout(sx, sy, ox, oy)
+        }
+        is BoxGrab.Edge -> {
+            val e = grab.index
+            val ox = if (fromCentre) b.cx else if (e == 0) b.maxX else b.minX
+            val oy = if (fromCentre) b.cy else if (e == 1) b.minY else b.maxY
+            when {
+                e == 0 || e == 2 -> if (skew) {
+                    val k = (cur.y - start.y) / (if (abs(start.x - ox) < 1e-3f) 1f else (start.x - ox))
+                    listOf(1f, k, 0f, 1f, 0f, -k * ox)
+                } else scalingAbout(ratio(cur.x, start.x, ox), 1f, ox, oy)
+                else -> if (skew) {
+                    val k = (cur.x - start.x) / (if (abs(start.y - oy) < 1e-3f) 1f else (start.y - oy))
+                    listOf(1f, 0f, k, 1f, -k * oy, 0f)
+                } else scalingAbout(1f, ratio(cur.y, start.y, oy), ox, oy)
+            }
+        }
+    }
+}
 
 /**
  * The transform a transform-box drag implies, in font units: rotate about the
@@ -261,17 +315,30 @@ suspend fun PointerInputScope.handleAnchorGestures(
             nodeOnly = app.nodeMoveMode,
         )
         if (sh != null && pointUnderPointer == null) {
-            val rotateHit = (startPos - sh.rotate).getDistance() <= f.hitRadiusPx * 1.3f
-            val cornerHit = if (rotateHit) -1 else sh.corners.indexOfFirst { (startPos - it).getDistance() <= f.hitRadiusPx * 1.3f }
-            if (rotateHit || cornerHit >= 0) {
+            val reach = f.hitRadiusPx * 1.3f
+            val box = sh.boundsFont
+            val grab: BoxGrab? = when {
+                (startPos - sh.rotate).getDistance() <= reach -> BoxGrab.Rotate
+                sh.corners.indexOfFirst { (startPos - it).getDistance() <= reach } >= 0 ->
+                    BoxGrab.Corner(sh.corners.indexOfFirst { (startPos - it).getDistance() <= reach })
+                sh.edges.indexOfFirst { (startPos - it).getDistance() <= reach } >= 0 ->
+                    BoxGrab.Edge(sh.edges.indexOfFirst { (startPos - it).getDistance() <= reach })
+                // With a mouse, just outside a corner rotates, as in Photoshop; touch keeps to the knob.
+                !app.touchInput && sh.corners.any { (startPos - it).getDistance() in reach..reach * 2.4f } -> BoxGrab.Rotate
+                else -> null
+            }
+            if (grab != null) {
                 onPointHit()
                 val keys = target.selection.toList()
                 val orig = target.glyph.deepCopy()
                 val startFont = f.mapper.toFont(startPos)
+                val shift = event.keyboardModifiers.isShiftPressed
+                val fromCentre = event.keyboardModifiers.isAltPressed
+                val skew = event.keyboardModifiers.isCtrlPressed || event.keyboardModifiers.isMetaPressed
                 var pushed = false
                 followOrPinch(f, down.id, f.dragStartSlopPx) { pos, _ ->
                     if (!pushed) { target.pushHistory(); pushed = true }
-                    val t = boxDragTransform(sh.boundsFont, rotateHit, cornerHit, startFont, f.mapper.toFont(pos))
+                    val t = selectionBoxTransform(box, grab, startFont, f.mapper.toFont(pos), shift, fromCentre, skew)
                     target.replaceGlyph(transformPoints(orig, keys, t))
                 }
                 return@awaitEachGesture

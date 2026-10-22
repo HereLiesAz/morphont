@@ -150,6 +150,7 @@ fun AnchorCanvas(
                     listOf(Offset(l, btm), Offset(l, t), Offset(r, t), Offset(r, btm)),
                     Offset((l + r) / 2f, t - 26f * uiScale),
                     b,
+                    edges = listOf(Offset(l, (t + btm) / 2f), Offset((l + r) / 2f, t), Offset(r, (t + btm) / 2f), Offset((l + r) / 2f, btm)),
                 )
             }
         } else null
@@ -341,6 +342,10 @@ fun AnchorCanvas(
             for (c in h.corners) {
                 drawRect(bgColor, topLeft = c - Offset(4.5f * uiScale, 4.5f * uiScale), size = Size(9f * uiScale, 9f * uiScale))
                 drawRect(Color.White, topLeft = c - Offset(4.5f * uiScale, 4.5f * uiScale), size = Size(9f * uiScale, 9f * uiScale), style = Stroke(width = 1.4f * uiScale))
+            }
+            for (c in h.edges) {
+                drawRect(bgColor, topLeft = c - Offset(3.5f * uiScale, 3.5f * uiScale), size = Size(7f * uiScale, 7f * uiScale))
+                drawRect(Color.White, topLeft = c - Offset(3.5f * uiScale, 3.5f * uiScale), size = Size(7f * uiScale, 7f * uiScale), style = Stroke(width = 1.4f * uiScale))
             }
             drawCircle(bgColor, radius = 5.5f * uiScale, center = h.rotate)
             drawCircle(Color.White, radius = 5.5f * uiScale, center = h.rotate, style = Stroke(width = 1.4f * uiScale))

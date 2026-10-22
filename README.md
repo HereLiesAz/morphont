@@ -120,6 +120,12 @@ so anchors can then be reshaped without adding or removing points.
   and pulls out its arms, as in Photoshop. A neighbour without an arm of
   its own gets one sitting on that neighbour, so the segment is a cubic
   that still meets it without a tangent.
+- **Free Transform Points.** Select two or more nodes and a box appears around
+  them (as with Photoshop's Ctrl+T on selected anchors): drag a corner to scale
+  about the opposite corner, an edge to scale along one axis, the knob above it
+  (or, with a mouse, just outside a corner) to rotate about the centre. Shift
+  keeps proportions / snaps rotation to 15°, Alt pivots on the centre, and
+  Ctrl/Cmd on an edge skews. Each drag is one undo step (no separate commit).
 - **Reset to the natural path.** On Regular, once the three states of the open
   axis match point for point, the suggestion **Reset to the natural path** moves
   every Regular point to exactly halfway between the two extremes, so each
