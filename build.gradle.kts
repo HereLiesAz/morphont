@@ -97,6 +97,8 @@ kotlin {
         val androidMain by getting {
             dependencies {
                 implementation("androidx.activity:activity-compose:1.13.0")
+                // Play's in-app update API: whether a Play-installed copy has an update waiting.
+                implementation("com.google.android.play:app-update-ktx:2.1.0")
             }
         }
     }
@@ -107,6 +109,20 @@ val desktopVersion: String = Properties().apply {
     rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }.let { p -> listOf("versionMajor", "versionMinor", "versionPatch").map { p.getProperty(it, "0").trim().toIntOrNull() ?: 0 } }
     .joinToString(".")
+
+// The desktop app's own version, for the update check: the same major.minor.patch its installers carry.
+val generateDesktopVersion by tasks.registering {
+    val out = layout.buildDirectory.dir("generated/morphontVersion/kotlin")
+    val version = desktopVersion
+    inputs.property("version", version)
+    outputs.dir(out)
+    doLast {
+        val file = out.get().file("com/hereliesaz/morphont/MorphontVersion.kt").asFile
+        file.parentFile.mkdirs()
+        file.writeText("package com.hereliesaz.morphont\n\n/** Generated from version.properties. */\ninternal const val DESKTOP_VERSION = \"$version\"\n")
+    }
+}
+kotlin.sourceSets.getByName("desktopMain").kotlin.srcDir(generateDesktopVersion)
 
 compose.desktop {
     application {

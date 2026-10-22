@@ -26,11 +26,17 @@ reporting and no telemetry. The web version is served as static files by GitHub 
 loads, it works offline. GitHub's own handling of page requests is covered by
 [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement).
 
-The one network feature is the **font store**, and it runs only when you open it. Browsing and
+**Update check.** When it starts, and when you choose Check for updates, the Android and desktop
+apps ask where they were installed from whether a newer Morphont exists: a copy from Google Play asks
+Google Play; any other copy reads the public list of Morphont releases on
+[GitHub](https://github.com/HereLiesAz/morphont/releases). The request carries nothing from your
+projects; GitHub's and Google's handling of it is covered by their own privacy statements.
+
+The other network feature is the **font store**, and it runs only when you open it. Browsing and
 installing fetch the catalog and the font packages you choose from
 [azphalt.store](https://azphalt.store) — ordinary web requests carrying your search text and the
-package you asked for, and nothing from your projects. This is why the Android app asks for internet
-access. The store's own handling of requests is covered by its operator's terms.
+package you asked for, and nothing from your projects. These two are why the Android app asks for
+internet access. The store's own handling of requests is covered by its operator's terms.
 
 ## Files you open or save
 

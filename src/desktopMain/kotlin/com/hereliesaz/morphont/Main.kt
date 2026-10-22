@@ -207,6 +207,7 @@ fun DesktopApp() {
                     touchScale = 1.3f,
                     settings = DesktopStorage.settings,
                     fontStore = DesktopFontStore.host,
+                    updates = DesktopUpdates.checker,
                 )
             }
 
@@ -261,6 +262,7 @@ fun DesktopApp() {
                 } else {
                     EditorScreen(app, host)
                 }
+                AutoUpdatePrompt(host.updates)
             }
         }
     }

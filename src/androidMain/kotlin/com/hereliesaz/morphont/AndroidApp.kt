@@ -46,7 +46,7 @@ private enum class OpenGlyphOutcome { OPENED, EMPTY, UNREADABLE }
  * tablets, exactly as on the web.
  */
 @Composable
-fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
+fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: UpdateChecker? = null) {
     // Read before the theme composes, so a saved light theme never flashes dark first.
     val saved = remember { storage.settings.load().also { ThemeState.dark = it.dark } }
     MorphontTheme {
@@ -276,6 +276,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                     touchScale = 1.35f,
                     settings = storage.settings,
                     fontStore = AndroidFontStore.host(context, files),
+                    updates = updates,
                 )
             }
 
@@ -383,6 +384,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 } else {
                     EditorScreen(app, host)
                 }
+                AutoUpdatePrompt(host.updates)
             }
         }
     }
