@@ -691,3 +691,36 @@ fun matchToFewest(glyphs: Map<String, GlyphCorner>): MatchOutcome {
     compatibilityIssue(out, out.keys.toList())?.let { return MatchOutcome(null, problem = "Couldn't reconcile them: $it") }
     return MatchOutcome(out, dropped.filterValues { it > 0 })
 }
+
+// ------------------------------------------------------- natural path
+
+/**
+ * [regular] with every point moved to the straight-line midpoint of the same point in [lo] and [hi] -- the
+ * natural path, where each node's travel from one extreme to the other is a straight line with Regular
+ * exactly halfway. Structure and node types stay [regular]'s. Null unless the three match point for point.
+ */
+fun midpointGlyph(lo: GlyphCorner, regular: GlyphCorner, hi: GlyphCorner): GlyphCorner? {
+    val names = listOf("lo", "regular", "hi")
+    if (compatibilityIssue(mapOf("lo" to lo, "regular" to regular, "hi" to hi), names) != null) return null
+    val out = regular.deepCopy()
+    out.width = (lo.width + hi.width) / 2f
+    out.contours.forEachIndexed { ci, c ->
+        c.points.forEachIndexed { pi, p ->
+            val a = lo.contours[ci].points[pi]; val b = hi.contours[ci].points[pi]
+            p.x = (a.x + b.x) / 2f; p.y = (a.y + b.y) / 2f
+        }
+    }
+    return out
+}
+
+/** The largest distance any point of [a] sits from the same point of [b]; infinite if their structures differ. */
+fun maxPointDistance(a: GlyphCorner, b: GlyphCorner): Float {
+    if (a.contours.size != b.contours.size) return Float.POSITIVE_INFINITY
+    var worst = 0f
+    for (ci in a.contours.indices) {
+        val pa = a.contours[ci].points; val pb = b.contours[ci].points
+        if (pa.size != pb.size) return Float.POSITIVE_INFINITY
+        for (i in pa.indices) worst = maxOf(worst, hypot(pa[i].x - pb[i].x, pa[i].y - pb[i].y))
+    }
+    return worst
+}

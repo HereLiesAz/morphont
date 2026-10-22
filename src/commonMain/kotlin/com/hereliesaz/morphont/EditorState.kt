@@ -903,6 +903,28 @@ class AppState {
         t.replaceGlyph(retractNodeHandles(t.glyph, key))
     }
 
+    /** Regular moved to the midpoint of the open axis's two extremes (see [midpointGlyph]), or null if that isn't possible. */
+    fun naturalRegular(): GlyphCorner? {
+        val (lo, mid, hi) = axisTriple().map { anchors.getValue(it).glyph }
+        if (lo.contours.isEmpty() || hi.contours.isEmpty() || mid.contours.isEmpty()) return null
+        return midpointGlyph(lo, mid, hi)
+    }
+
+    /** True when Regular is viewable-resettable: the three states match and Regular isn't already at the midpoint. */
+    fun regularCanReset(): Boolean {
+        val natural = naturalRegular() ?: return false
+        return maxPointDistance(natural, anchors.getValue("regular").glyph) > 0.5f
+    }
+
+    /** Puts Regular back on the natural path: halfway between the extremes, point for point. One undo step. */
+    fun resetRegularToNaturalPath() {
+        if (activeGhost != null || reduction != null) return
+        val natural = naturalRegular()
+        if (natural == null) { setStatus("The three states must match point for point first (Match nodes to the fewest).", true); return }
+        anchors.getValue("regular").replaceWithHistory(natural)
+        setStatus("Regular reset to halfway between ${ANCHOR_LABELS[axisTriple()[0]]} and ${ANCHOR_LABELS[axisTriple()[2]]}. Undo puts it back.")
+    }
+
     /** The three states of the axis being worked on: its low extreme, Regular, its high extreme. */
     fun axisTriple(): List<String> {
         val axis = Axis.ALL.firstOrNull { it.lo == activeAnchor || it.hi == activeAnchor } ?: selectedAxis

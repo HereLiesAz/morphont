@@ -120,6 +120,10 @@ so anchors can then be reshaped without adding or removing points.
   and pulls out its arms, as in Photoshop. A neighbour without an arm of
   its own gets one sitting on that neighbour, so the segment is a cubic
   that still meets it without a tangent.
+- **Reset to the natural path.** On Regular, once the three states of the open
+  axis match point for point, the suggestion **Reset to the natural path** moves
+  every Regular point to exactly halfway between the two extremes, so each
+  node's travel is a straight line with no bend. One undo step.
 - **Anchor-point tools** (dock; keys A, D, C), as in Photoshop. **Add** (A): tap
   a segment to insert a node there without changing the outline (hold and drag
   to place it); a node on a curve is smooth, on a straight side a corner.

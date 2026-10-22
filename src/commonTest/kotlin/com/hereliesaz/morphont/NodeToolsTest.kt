@@ -152,4 +152,29 @@ class NodeToolsTest {
         assertTrue(abs(hit.t - 0.5f) < 0.05f, "t=${hit.t}")
         assertNull(hitTestSegment(g, mapper, mapper.toCanvas(0f, 0f), 6f), "the centre of the ring is not on any segment")
     }
+
+    @Test fun resetRegularPutsEveryPointHalfwayBetweenTheExtremes() {
+        val app = app(8, 8, 8)
+        app.activeAnchor = "regular"
+        assertTrue(app.regularCanReset(), "rings of radius 150/200/260 are not at the midpoint (205)")
+        app.resetRegularToNaturalPath()
+        val reg = app.anchors.getValue("regular").glyph.contours[0].points
+        val a = app.anchors.getValue(lo).glyph.contours[0].points
+        val b = app.anchors.getValue(hi).glyph.contours[0].points
+        for (i in reg.indices) {
+            assertEquals((a[i].x + b[i].x) / 2f, reg[i].x, 1e-3f)
+            assertEquals((a[i].y + b[i].y) / 2f, reg[i].y, 1e-3f)
+        }
+        assertTrue(!app.regularCanReset(), "already there")
+        app.undo()
+        assertTrue(app.regularCanReset())
+    }
+
+    @Test fun resetRegularRefusesWhenTheStatesDoNotMatch() {
+        val app = app(8, 8, 6)
+        assertTrue(!app.regularCanReset())
+        val before = app.anchors.getValue("regular").glyph
+        app.resetRegularToNaturalPath()
+        assertEquals(before, app.anchors.getValue("regular").glyph)
+    }
 }

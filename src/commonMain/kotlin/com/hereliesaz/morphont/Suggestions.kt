@@ -403,10 +403,17 @@ private fun interpolation(app: AppState): List<Suggestion> {
     return out
 }
 
+/** Regular only: back to the natural path, exactly halfway between the open axis's extremes. */
+private fun naturalPath(app: AppState): List<Suggestion> {
+    if (app.activeAnchor != "regular" || !app.regularCanReset()) return emptyList()
+    val (lo, _, hi) = app.axisTriple()
+    return listOf(Suggestion("Reset to the natural path", "halfway between ${ANCHOR_LABELS[lo]} and ${ANCHOR_LABELS[hi]}") { a -> a.resetRegularToNaturalPath() })
+}
+
 /** Every suggestion that applies to the active anchor right now, most useful first. */
 fun suggestionsFor(app: AppState): List<Suggestion> {
     if (app.currentGlyphName == null || app.activeGhost != null || app.reduction != null) return emptyList()
     val g = app.anchors.getValue(app.activeAnchor).glyph
-    return interpolation(app) + generate(app) +
+    return interpolation(app) + naturalPath(app) + generate(app) +
         (if (points(g) == 0) emptyList() else cleanup(app) + alignment(app) + consistency(app))
 }
