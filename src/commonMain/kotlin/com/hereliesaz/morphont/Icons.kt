@@ -33,9 +33,13 @@ object MIcons {
 
     val Select = icon("select", emptyList(), listOf("M5 3l14 8-6 1.5L10 19z"))
     val Pen = icon("pen", listOf("M12 3 5 13l3 8h8l3-8z", circle(12f, 12f, 1.6f)))
+    val AddNode = icon("addNode", listOf("M10 6 3 15l3 6h8l3-6z", "M18 3v6M15 6h6"))
+    val SubtractNode = icon("subtractNode", listOf("M10 6 3 15l3 6h8l3-6z", "M15 6h6"))
+    val ConvertNode = icon("convertNode", listOf("M4 20 12 5l8 15", "M8.5 13c2-1.4 5-1.4 7 0"))
     val Guides = icon("guides", listOf("M3 3h18v6H9v12H3z", "M7 3v3M11 3v3M15 3v3M3 13h3M3 17h3"))
     val Measure = icon("measure", listOf("M4 12h16M4 8v8M20 8v8"))
-    val Ghost = icon("ghost", listOf("M5 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M17 9h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M13 21h-2a2 2 0 0 1-2-2v-2"))
+    // A ghost, not a copy: the silhouette with a ragged hem and two eyes.
+    val Ghost = icon("ghost", listOf("M5 21V11a7 7 0 0 1 14 0v10l-2.3-2-2.4 2-2.3-2-2.3 2-2.4-2z"), listOf(circle(9.5f, 11f, 1.2f), circle(14.5f, 11f, 1.2f)))
     val Simplify = icon("simplify", listOf("M3 18c4-10 14-10 18 0"), listOf(circle(3f, 18f, 1.6f), circle(21f, 18f, 1.6f)))
     val Undo = icon("undo", listOf("M9 14 4 9l5-5", "M4 9h10a6 6 0 0 1 0 12h-3"))
     val More = icon("more", emptyList(), listOf(circle(5f, 12f, 1.6f), circle(12f, 12f, 1.6f), circle(19f, 12f, 1.6f)))
@@ -44,7 +48,8 @@ object MIcons {
     val Cut = icon("cut", listOf(circle(6f, 18f, 3f), circle(18f, 18f, 3f), "M8 16 19 4M16 16 5 4"))
     // Node types, drawn as on the canvas: a square is a corner, a circle on a straight tangent is smooth.
     val Corner = icon("corner", listOf("M4 20 12 8l8 12", "M10 6h4v4h-4z"))
-    val CurveLine = icon("curveLine", listOf("M4 19C6 3 18 3 20 19", circle(4f, 19f, 1.4f), circle(20f, 19f, 1.4f)))
+    // A cubic with its two handles drawn in -- distinct from Simplify's bare arc.
+    val CurveLine = icon("curveLine", listOf("M5 19C5 10 10 5 19 5", "M5 19v-8M19 5h-8", circle(5f, 19f, 1.4f), circle(5f, 11f, 1.1f), circle(11f, 5f, 1.1f), circle(19f, 5f, 1.4f)))
     val Smooth = icon("smooth", listOf("M4 12h5.6M14.4 12H20", circle(12f, 12f, 2.4f)), listOf("M3 10.4 4.6 12 3 13.6 1.4 12z", "M21 10.4 22.6 12 21 13.6 19.4 12z"))
     val Delete = icon("delete", listOf("M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"))
     val Plus = icon("plus", listOf("M12 5v14M5 12h14"))

@@ -2,7 +2,10 @@ package com.hereliesaz.morphont
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -420,6 +423,16 @@ fun GhostsSection(app: AppState, host: EditorHost) {
             }
         }
         if (app.ghosts.isEmpty()) Text("Lay a shape, another glyph, or a character from any font over this one to compare.", fontSize = 13.sp, color = Mono.inkDim)
+        if (app.ghosts.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Glyph opacity", fontSize = 13.sp, color = Mono.ink, maxLines = 1, modifier = Modifier.width(110.dp))
+            HairSlider(
+                value = app.view.glyphOpacity,
+                onValueChange = { app.view.glyphOpacity = it },
+                modifier = Modifier.weight(1f).height(32.dp),
+                valueRange = 0.1f..1f,
+            )
+            Caps("${(app.view.glyphOpacity * 100).toInt()}%", size = 10, modifier = Modifier.width(44.dp).padding(start = 8.dp))
+        }
         for (g in app.ghosts) {
             val active = g.id == app.activeGhostId
             Column(
@@ -438,6 +451,16 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Segmented(listOf("Over", "Beside"), if (g.beside) 1 else 0) { g.beside = it == 1 }
+                        Segmented(listOf("Dotted", "Solid"), if (g.solid) 1 else 0) { g.solid = it == 1 }
+                        for ((i, entry) in GhostStyle.colors.withIndex()) {
+                            Box(
+                                Modifier.size(24.dp).clip(CircleShape)
+                                    .background(entry.second)
+                                    .border(if (g.color == i) 2.dp else 0.dp, Mono.ink, CircleShape)
+                                    .clickable(onClickLabel = "Outline colour: ${entry.first}") { g.color = i }
+                                    .semantics { contentDescription = "Outline colour: ${entry.first}" },
+                            )
+                        }
                         if (g.isLinked) IconAction(
                             MIcons.Guides, "Ghost weight, width and axes",
                             { ghostAxisId = g.id }, size = 36,
@@ -761,17 +784,28 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
         e.key == Key.P -> {
             if (!app.nodeEditsLocked) {
                 app.nodeMoveMode = false
+                app.nodeTool = null
                 if (t.drawingContourIndex == null) t.startNewContour()
             }
         }
         e.key == Key.V -> {
             if (t.drawingContourIndex != null) t.finishContour()
             app.nodeMoveMode = false
+            app.nodeTool = null
         }
         e.key == Key.M -> {
             if (!app.nodeEditsLocked) {
                 if (t.drawingContourIndex != null) t.finishContour()
                 app.nodeMoveMode = true
+                app.nodeTool = null
+            }
+        }
+        e.key == Key.A || e.key == Key.D || e.key == Key.C -> {
+            if (!app.nodeEditsLocked) {
+                if (t.drawingContourIndex != null) t.finishContour()
+                app.nodeMoveMode = false
+                app.moveCircleVisible = false
+                app.nodeTool = when (e.key) { Key.A -> NodeTool.ADD; Key.D -> NodeTool.SUBTRACT; else -> NodeTool.CONVERT }
             }
         }
         e.key == Key.DirectionLeft -> t.nudgeSelected(-step, 0f)

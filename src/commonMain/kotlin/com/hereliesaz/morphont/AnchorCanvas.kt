@@ -112,7 +112,7 @@ fun AnchorCanvas(
     // The cross-circle can be enabled on every platform, but defaults to
     // touch-only until the user chooses otherwise. A selected Bézier handle
     // moves by itself when the circle is used; a selected node moves with its handles.
-    val showProxy = app.nodeMoveCircleEnabled && app.moveCircleVisible && target.selectedNodes().isNotEmpty() &&
+    val showProxy = app.nodeMoveCircleEnabled && app.moveCircleVisible && app.nodeTool == null && target.selectedNodes().isNotEmpty() &&
         target.drawingContourIndex == null && app.reduction == null && !(ghost != null && app.ghostTransformMode)
 
     fun frame(): CanvasFrame? {
@@ -138,7 +138,7 @@ fun AnchorCanvas(
                 GhostHandles(corners, Offset(top.x, top.y - 30f * uiScale), b)
             }
         } else null
-        val selHandles = if (target.selection.size >= 2 && !app.nodeMoveMode && target.drawingContourIndex == null && app.reduction == null &&
+        val selHandles = if (target.selection.size >= 2 && !app.nodeMoveMode && app.nodeTool == null && target.drawingContourIndex == null && app.reduction == null &&
             !(ghost != null && app.ghostTransformMode)
         ) {
             boundsOfSelection(target.glyph, target.selection)?.let { b ->
@@ -248,8 +248,13 @@ fun AnchorCanvas(
             val contours = app.ghostContours(g, anchorName)
             if (g.id == app.activeGhostId) continue // drawn solid, over the glyph, below
             val path = buildOutlinePath(contours, map)
-            drawPath(path, color = ghostFill)
-            drawPath(path, color = ghostStroke, style = Stroke(width = hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f * uiScale, 4f * uiScale))))
+            val tint = GhostStyle.color(g.color)
+            drawPath(path, color = if (g.color == 0) ghostFill else tint.copy(alpha = 0.12f))
+            drawPath(
+                path, color = tint,
+                style = if (g.solid) Stroke(width = 1.4f * hair)
+                else Stroke(width = hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f * uiScale, 4f * uiScale))),
+            )
         }
 
         travelPathOverlay?.let { overlay ->
@@ -290,7 +295,9 @@ fun AnchorCanvas(
             }
         } else {
             val outlinePath = buildOutlinePath(anchor.glyph.contours, map)
-            drawPath(outlinePath, color = outlineFill)
+            // With ghosts showing, the working glyph is see-through so they read underneath it.
+            val seeThrough = view.showGhosts && app.ghosts.any { it.visible }
+            drawPath(outlinePath, color = if (seeThrough) outlineFill.copy(alpha = view.glyphOpacity) else outlineFill)
             drawPath(outlinePath, color = outlineStroke.copy(alpha = 0.5f), style = Stroke(width = hair))
         }
 

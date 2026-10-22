@@ -276,8 +276,13 @@ class GhostLayer(
     initialAxisOverrides: Map<String, Float> = emptyMap(),
     referenceCorners: Map<String, GlyphCorner> = emptyMap(),
     supportedAxes: List<String> = emptyList(),
+    solid: Boolean = false,
+    color: Int = 0,
 ) {
     var label by mutableStateOf(label)
+    /** Outline solid instead of dotted, and its colour (an index into [GhostStyle.colors]). */
+    var solid by mutableStateOf(solid)
+    var color by mutableStateOf(color)
     val axisOverrides = mutableStateMapOf<String, Float>().apply { putAll(initialAxisOverrides) }
     var referenceCorners by mutableStateOf(referenceCorners)
     var supportedAxes by mutableStateOf(supportedAxes)
@@ -337,12 +342,15 @@ class GhostLayer(
     fun toData() = GhostData(
         label, if (isLinked) emptyList() else state.glyph.contours.map { it.deepCopy() },
         visible, sourceGlyph, matrix, beside, axisOverrides.toMap(),
-        referenceCorners, supportedAxes,
+        referenceCorners, supportedAxes, solid, color,
     )
 }
 
 /** What dragging the touch proxy pad does to the selection. */
 enum class PadMode { MOVE, SCALE, ROTATE }
+
+/** Photoshop's anchor-point tools: Add Anchor Point, Delete Anchor Point, Convert Point. */
+enum class NodeTool { ADD, SUBTRACT, CONVERT }
 
 /** View toggles shared by every editing canvas. */
 class ViewSettings {
@@ -353,6 +361,8 @@ class ViewSettings {
     var showGuides by mutableStateOf(true)
     var showMeasure by mutableStateOf(true)
     var showGhosts by mutableStateOf(true)
+    /** How opaque the working glyph's fill is while ghosts are showing, so they can be seen through it. */
+    var glyphOpacity by mutableStateOf(0.5f)
     /** Regular's per-node travel paths to the extremes. Off by default: they look like nodes you could grab, and aren't. */
     var showTravel by mutableStateOf(false)
     var snap by mutableStateOf(true)
@@ -542,6 +552,9 @@ class AppState {
     /** Move on-curve nodes with their handles instead of editing individual handles. */
     var nodeMoveMode by mutableStateOf(false)
 
+    /** The active Add / Subtract / Convert node tool, or null. Exclusive with Move node and the Pen. */
+    var nodeTool by mutableStateOf<NodeTool?>(null)
+
     /** Whether the suggested-edits row is expanded (it's behind a button, not always on screen). */
     var showSuggestions by mutableStateOf(false)
 
@@ -701,6 +714,7 @@ class AppState {
         activeGhostId = null
         ghostTransformMode = true
         nodeMoveMode = false
+        nodeTool = null
     }
 
     /** The edit target for menu/keyboard commands: the active ghost, else the active anchor. */
@@ -736,7 +750,7 @@ class AppState {
             val layer = GhostLayer(
                 nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph,
                 it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside,
-                it.axisOverrides, it.referenceCorners, it.supportedAxes,
+                it.axisOverrides, it.referenceCorners, it.supportedAxes, it.solid, it.color,
             )
             attachGhost(layer)
             ghosts.add(layer)
@@ -748,6 +762,7 @@ class AppState {
         reduction = null
         activeAnchor = "regular"
         nodeMoveMode = false
+        nodeTool = null
         setStatus("Loaded \"$name\".")
     }
 
@@ -832,6 +847,60 @@ class AppState {
             undo = { targets.forEach { it.undo() } },
         )
         setStatus(message ?: "Deleted ${nodes.size} node(s) from ${linkedNote(group)} (they match).")
+    }
+
+    /**
+     * Add Anchor Point: inserts a node on [hit]'s segment without changing the outline. Every anchor that
+     * matches this one gets the same node on the same segment, as one undo step. Returns the new node's key
+     * in the edit target, or null if nothing was added.
+     */
+    fun addNodeAt(hit: SegmentHit): PointKey? {
+        if (nodeEditsLocked) return null
+        val t = commandTarget
+        val linked = t === anchors.getValue(activeAnchor)
+        val group = if (linked) matchingAnchors() else listOf(activeAnchor)
+        val targets = if (linked) group.map { anchors.getValue(it) } else listOf(t)
+        val made = arrayOfNulls<PointKey>(1)
+        groupUndo(
+            owners = targets,
+            block = {
+                for (st in targets) {
+                    val c = st.glyph.contours.getOrNull(hit.contour) ?: continue
+                    val (nc, index) = splitSegment(c, hit.from, hit.t) ?: continue
+                    val g = st.glyph.deepCopy()
+                    g.contours[hit.contour] = nc
+                    st.replaceWithHistory(g)
+                    if (st === t) made[0] = hit.contour to index
+                }
+            },
+            undo = { targets.forEach { it.undo() } },
+        )
+        val key = made[0] ?: return null
+        t.selection = setOf(key)
+        setStatus(if (targets.size > 1) "Added a node to ${linkedNote(group)} (they match)." else "Added a node.")
+        return key
+    }
+
+    /** Delete Anchor Point: removes node [key] (from every matching anchor, see [trashSelection]). */
+    fun subtractNode(key: PointKey) {
+        if (nodeEditsLocked) return
+        val t = commandTarget
+        if (t.glyph.contours.getOrNull(key.first)?.points?.getOrNull(key.second)?.onCurve != true) return
+        t.selection = setOf(key)
+        trashSelection()
+    }
+
+    /** Convert Point, click: node [key] becomes a corner with no handles. Nothing to do if it already is one. */
+    fun convertNodeToCorner(key: PointKey) {
+        if (nodeEditsLocked) return
+        val t = commandTarget
+        val pts = t.glyph.contours.getOrNull(key.first)?.points ?: return
+        val node = pts.getOrNull(key.second)?.takeIf { it.onCurve } ?: return
+        val arms = listOfNotNull(outArmIndex(pts, key.second), inArmIndex(pts, key.second))
+        t.selection = setOf(key)
+        if (!node.smooth && arms.all { isRetracted(pts, it) }) return
+        t.pushHistory()
+        t.replaceGlyph(retractNodeHandles(t.glyph, key))
     }
 
     /** The three states of the axis being worked on: its low extreme, Regular, its high extreme. */

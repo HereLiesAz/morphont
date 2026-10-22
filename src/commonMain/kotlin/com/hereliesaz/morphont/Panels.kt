@@ -77,14 +77,18 @@ fun PreviewCanvas(app: AppState, modifier: Modifier = Modifier, showGhosts: Bool
             issue != null -> Caps("Anchors differ", color = Mono.error, size = 9)
             else -> {
                 val inst = interpolateGlyph(corners, app.previewValues)
-                val ghosts = if (showGhosts && app.view.showGhosts) app.ghosts.filter { it.visible }.map { app.ghostPreviewContours(it, inst.width) } else emptyList()
+                val ghosts = if (showGhosts && app.view.showGhosts) app.ghosts.filter { it.visible }.map { it to app.ghostPreviewContours(it, inst.width) } else emptyList()
                 Canvas(Modifier.fillMaxSize()) {
                     if (size.width <= 0f || size.height <= 0f) return@Canvas
                     val mapper = SpaceMapper(editorViewBox(app.metrics, inst.width, 1.15f, 0f, 0f), size)
                     val map: (Float, Float) -> Offset = { x, y -> mapper.toCanvas(x, y) }
                     drawPath(buildOutlinePath(inst.contours, map), color = Mono.ink)
-                    for (g in ghosts) {
-                        drawPath(buildOutlinePath(g, map), color = Color(0xFF7A7A7A), style = Stroke(width = 1.2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 4f))))
+                    for ((layer, g) in ghosts) {
+                        drawPath(
+                            buildOutlinePath(g, map),
+                            color = if (layer.color == 0) Color(0xFF7A7A7A) else GhostStyle.color(layer.color),
+                            style = if (layer.solid) Stroke(width = 1.4f) else Stroke(width = 1.2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 4f))),
+                        )
                     }
                 }
             }

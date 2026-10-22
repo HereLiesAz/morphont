@@ -334,6 +334,12 @@ suspend fun PointerInputScope.handleAnchorGestures(
             return@awaitEachGesture
         }
 
+        val nodeTool = app.nodeTool
+        if (nodeTool != null && !app.nodeEditsLocked) {
+            nodeToolGesture(f, nodeTool, down.id, target, startPos, feedback)
+            return@awaitEachGesture
+        }
+
         val hitKey = pointUnderPointer
         if (hitKey != null) {
             onPointHit()
@@ -417,6 +423,101 @@ suspend fun PointerInputScope.handleAnchorGestures(
     }
 }
 
+/**
+ * One press with an anchor-point tool, as in Photoshop. Add: tap a segment to insert a node there (hold and
+ * drag to place it). Subtract: tap a node to remove it. Convert: tap a node to strip its handles and make
+ * it a corner, drag from a node to pull out symmetric handles, drag a handle to move it alone.
+ */
+private suspend fun AwaitPointerEventScope.nodeToolGesture(
+    f: CanvasFrame,
+    tool: NodeTool,
+    downId: PointerId,
+    target: AnchorState,
+    startPos: Offset,
+    feedback: CanvasFeedback,
+) {
+    val app = f.app
+    val hit = hitTestPoint(target.glyph, f.mapper, startPos, radiusPx = f.hitRadiusPx)
+    val hitPoint = hit?.let { (ci, pi) -> target.glyph.contours.getOrNull(ci)?.points?.getOrNull(pi) }
+    when (tool) {
+        NodeTool.ADD -> {
+            val seg = if (hit == null) hitTestSegment(target.glyph, f.mapper, startPos, f.hitRadiusPx) else null
+            if (seg == null) { followOrPinch(f, downId, f.dragStartSlopPx) { _, _ -> }; return }
+            when (awaitTapOrMove(downId, startPos, f.dragStartSlopPx)) {
+                TapEnd.RELEASED -> app.addNodeAt(seg)
+                TapEnd.PINCHED -> pinch(f)
+                TapEnd.MOVED -> {
+                    val key = app.addNodeAt(seg)
+                    if (key != null) dragSelection(f, downId, target, listOf(key), startPos, 0.5f, feedback, primary = key, recordHistory = false)
+                    else followOrPinch(f, downId, Float.MAX_VALUE) { _, _ -> }
+                }
+            }
+        }
+        NodeTool.SUBTRACT -> {
+            if (hit == null || hitPoint?.onCurve != true) { followOrPinch(f, downId, f.dragStartSlopPx) { _, _ -> }; return }
+            when (awaitTapOrMove(downId, startPos, f.dragStartSlopPx)) {
+                TapEnd.RELEASED -> app.subtractNode(hit)
+                TapEnd.PINCHED -> pinch(f)
+                TapEnd.MOVED -> followOrPinch(f, downId, Float.MAX_VALUE) { _, _ -> }
+            }
+        }
+        NodeTool.CONVERT -> {
+            if (hit == null || hitPoint == null) { followOrPinch(f, downId, f.dragStartSlopPx) { _, _ -> }; return }
+            if (!hitPoint.onCurve) {
+                target.selection = setOf(hit)
+                dragSelection(f, downId, target, listOf(hit), startPos, f.dragStartSlopPx, feedback, breakSymmetry = true)
+                return
+            }
+            when (awaitTapOrMove(downId, startPos, f.dragStartSlopPx)) {
+                TapEnd.RELEASED -> app.convertNodeToCorner(hit)
+                TapEnd.PINCHED -> pinch(f)
+                TapEnd.MOVED -> {
+                    target.selection = setOf(hit)
+                    val orig = target.glyph.deepCopy()
+                    val targets = if (app.view.snap) snapTargetsFor(f, target, setOf(hit), forHandles = true) else null
+                    var pushed = false
+                    fun pull(pos: Offset) {
+                        if (!pushed) { target.pushHistory(); pushed = true }
+                        val p = f.mapper.toFont(pos)
+                        var x = p.x; var y = p.y
+                        if (targets != null) {
+                            val r = snapDelta(listOf(x), listOf(y), 0f, 0f, targets, snapTolerance(f))
+                            x += r.dx; y += r.dy
+                            feedback.snapX = r.xLine; feedback.snapY = r.yLine
+                        }
+                        target.replaceGlyph(pullSymmetricHandles(orig, hit, x, y))
+                    }
+                    pull(lastTapPosition)
+                    followOrPinch(f, downId, 0.5f, allowPinch = false) { pos, _ -> pull(pos) }
+                    feedback.clearSnap()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Waits for [downId] to lift, stray past [slop] from [startPos], or for a second finger to land.
+ * Where it strayed to is left in [lastTapPosition], so the drag it starts can use that first move.
+ */
+private var lastTapPosition = Offset.Zero
+
+private suspend fun AwaitPointerEventScope.awaitTapOrMove(downId: PointerId, startPos: Offset, slop: Float): TapEnd {
+    while (true) {
+        val ev = awaitPointerEvent()
+        if (ev.changes.count { it.pressed } >= 2) { ev.changes.forEach { it.consume() }; return TapEnd.PINCHED }
+        val c = ev.changes.firstOrNull { it.id == downId } ?: return TapEnd.RELEASED
+        c.consume()
+        lastTapPosition = c.position
+        when {
+            !c.pressed -> return TapEnd.RELEASED
+            (c.position - startPos).getDistance() > slop -> return TapEnd.MOVED
+        }
+    }
+}
+
+private enum class TapEnd { RELEASED, MOVED, PINCHED }
+
 private fun snapTolerance(f: CanvasFrame): Float = 7f * f.density / f.mapper.scale
 
 private fun snapTargetsFor(f: CanvasFrame, target: AnchorState, exclude: Set<PointKey>, forHandles: Boolean = false): SnapTargets {
@@ -467,9 +568,17 @@ private suspend fun AwaitPointerEventScope.dragSelection(
     primary: PointKey? = null,
     snapEnabled: Boolean = true,
     allowPinch: Boolean = true,
+    /** False when the drag continues an edit that already recorded its undo step (Add Anchor Point). */
+    recordHistory: Boolean = true,
+    /** Convert Point: a dragged handle moves alone, so its node stops being mirrored. */
+    breakSymmetry: Boolean = false,
 ) {
     if (keys.isEmpty()) return
     val origGlyph = target.glyph.deepCopy()
+    if (breakSymmetry) for ((ci, pi) in keys) {
+        val pts = origGlyph.contours.getOrNull(ci)?.points ?: continue
+        armOwner(pts, pi)?.let { pts[it].smooth = false }
+    }
     val origPts = keys.mapNotNull { (ci, pi) -> origGlyph.contours.getOrNull(ci)?.points?.getOrNull(pi) }
     val primaryPt = primary?.let { (ci, pi) -> origGlyph.contours.getOrNull(ci)?.points?.getOrNull(pi) }
     // A grabbed point snaps by itself; a selection snaps by its edges and centre.
@@ -484,7 +593,7 @@ private suspend fun AwaitPointerEventScope.dragSelection(
     val targets = if (snapEnabled && f.app.view.snap) snapTargetsFor(f, target, skip, handleMode) else null
     var pushed = false
     followOrPinch(f, downId, slop, allowPinch = allowPinch) { pos, _ ->
-        if (!pushed) { target.pushHistory(); pushed = true }
+        if (!pushed) { if (recordHistory) target.pushHistory(); pushed = true }
         val delta = pos - startPos
         var dx = delta.x / f.mapper.scale
         var dy = -delta.y / f.mapper.scale
