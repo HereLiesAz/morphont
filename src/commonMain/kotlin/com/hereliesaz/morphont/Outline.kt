@@ -324,6 +324,62 @@ fun toggleCurveSelection(g: GlyphCorner, selection: Set<PointKey>): Pair<GlyphCo
     return out to newSel
 }
 
+/**
+ * Inserts a node on the segment leaving node [from] of [c], at parameter [t] (0..1) along it, without
+ * changing the outline (de Casteljau). The two ends keep their tangent directions; only their handle on
+ * this segment shortens. The new node is smooth on a curve and a corner on a straight side. Returns the
+ * new contour and the new node's point index, or null when [c] isn't a valid cubic contour or [from]
+ * isn't a node of it.
+ */
+fun splitSegment(c: ContourData, from: Int, t: Float): Pair<ContourData, Int>? {
+    val pts = c.points
+    if (!isValidCubicContour(c) || pts.getOrNull(from)?.onCurve != true) return null
+    val segs = segmentsOf(pts)
+    val seg = segs.firstOrNull { it.from == from } ?: return null
+    val a = pts[seg.from]; val b = pts[seg.to]
+    val straight = seg.arms == null
+    val p1 = seg.arms?.first ?: Pt(a.x + (b.x - a.x) / 3f, a.y + (b.y - a.y) / 3f, false)
+    val p2 = seg.arms?.second ?: Pt(b.x - (b.x - a.x) / 3f, b.y - (b.y - a.y) / 3f, false)
+    fun mid(p: Pt, q: Pt, u: Float) = Pt(p.x + (q.x - p.x) * u, p.y + (q.y - p.y) * u, false)
+    val q0 = mid(a, p1, t); val q1 = mid(p1, p2, t); val q2 = mid(p2, b, t)
+    val r0 = mid(q0, q1, t); val r1 = mid(q1, q2, t)
+    val m = mid(r0, r1, t)
+    val collinear = kotlin.math.abs((p1.x - a.x) * (b.y - a.y) - (p1.y - a.y) * (b.x - a.x)) < 1e-3f &&
+        kotlin.math.abs((p2.x - a.x) * (b.y - a.y) - (p2.y - a.y) * (b.x - a.x)) < 1e-3f
+    val node = Pt(m.x, m.y, true, smooth = !straight && !collinear)
+    val out = mutableListOf<Pt>()
+    var newIndex = -1
+    for (s in segs) {
+        out.add(pts[s.from].copy2())
+        if (s !== seg) { s.arms?.let { (x, y) -> out.add(x.copy2()); out.add(y.copy2()) }; continue }
+        out.add(q0); out.add(r0)
+        newIndex = out.size
+        out.add(node); out.add(r1); out.add(q2)
+    }
+    return ContourData(out) to newIndex
+}
+
+/** Node [key] with both handles pulled back onto it and made a corner (Photoshop's Convert Point click). */
+fun retractNodeHandles(g: GlyphCorner, key: PointKey): GlyphCorner {
+    val out = g.deepCopy()
+    val pts = out.contours.getOrNull(key.first)?.points ?: return out
+    val node = pts.getOrNull(key.second)?.takeIf { it.onCurve } ?: return out
+    for (arm in listOfNotNull(outArmIndex(pts, key.second), inArmIndex(pts, key.second))) { pts[arm].x = node.x; pts[arm].y = node.y }
+    node.smooth = false
+    return out
+}
+
+/** Node [key] made smooth with its out-handle at ([x], [y]) and the in-handle mirrored (Photoshop's Convert Point drag). */
+fun pullSymmetricHandles(g: GlyphCorner, key: PointKey, x: Float, y: Float): GlyphCorner {
+    val out = g.deepCopy()
+    val pts = out.contours.getOrNull(key.first)?.points ?: return out
+    val node = pts.getOrNull(key.second)?.takeIf { it.onCurve } ?: return out
+    node.smooth = true
+    outArmIndex(pts, key.second)?.let { pts[it].x = x; pts[it].y = y }
+    inArmIndex(pts, key.second)?.let { val (mx, my) = mirrorArm(node.x, node.y, x, y); pts[it].x = mx; pts[it].y = my }
+    return out
+}
+
 /** Appends a corner node at ([x], [y]) to a contour being drawn, splitting the closing segment around it. */
 fun appendDrawNode(c: ContourData, x: Float, y: Float): ContourData {
     val pts = c.points.map { it.copy2() }.toMutableList()

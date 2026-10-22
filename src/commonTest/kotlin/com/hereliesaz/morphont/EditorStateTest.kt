@@ -258,6 +258,20 @@ class EditorStateTest {
     }
 
     @Test
+    fun aHandleSnapsToItsOwnNodesOtherHandleOnACornerButNotOnAMirroredNode() {
+        val g = AnchorState(GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
+            Pt(0f, 0f, true), Pt(0f, 90f, true), Pt(90f, 90f, true), Pt(90f, 0f, true),
+        ))))).glyph
+        val pts = g.contours.single().points
+        val out = 0 to 1
+        val inn = 0 to inArmIndex(pts, 0)!!
+        pts[0].smooth = false
+        assertEquals(setOf(out), handleSnapSkip(g, listOf(out)), "a corner's other handle stays put, so it is a target")
+        pts[0].smooth = true
+        assertEquals(setOf(out, inn), handleSnapSkip(g, listOf(out)), "a mirrored twin moves with the handle")
+    }
+
+    @Test
     fun nodesSnapToNodesAndHandlesToHandles() {
         val g = AnchorState(GlyphCorner(500f, mutableListOf(ContourData(mutableListOf(
             Pt(10f, 10f, true), Pt(10f, 40f, true), Pt(80f, 90f, true), Pt(90f, 10f, true),

@@ -15,6 +15,8 @@ import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isAltPressed
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
@@ -71,7 +73,59 @@ data class GhostHandles(
     val corners: List<Offset>, // minX/minY, minX/maxY, maxX/maxY, maxX/minY in font terms
     val rotate: Offset,
     val boundsFont: FontRect,
+    /** Edge midpoints, left, top, right, bottom (a selection's transform box only). */
+    val edges: List<Offset> = emptyList(),
 )
+
+/** What a drag on a selection's transform box grabbed. [Edge] indexes left, top, right, bottom. */
+sealed class BoxGrab {
+    data object Rotate : BoxGrab()
+    data class Corner(val index: Int) : BoxGrab()
+    data class Edge(val index: Int) : BoxGrab()
+}
+
+/**
+ * Photoshop's Free Transform Points, for the box around selected nodes, in font units. A corner scales
+ * about the opposite corner (Shift keeps the proportions); an edge scales along one axis only, or with
+ * [skew] slides that edge sideways; outside a corner (or the knob) rotates about the centre (Shift snaps to
+ * 15 degrees). [fromCentre] (Alt) makes every scale or skew pivot on the box's centre instead.
+ */
+fun selectionBoxTransform(b: FontRect, grab: BoxGrab, start: Offset, cur: Offset, shift: Boolean, fromCentre: Boolean, skew: Boolean): Affine {
+    fun ratio(now: Float, then: Float, origin: Float) = if (abs(then - origin) < 1e-3f) 1f else (now - origin) / (then - origin)
+    return when (grab) {
+        BoxGrab.Rotate -> {
+            val a0 = atan2(start.y - b.cy, start.x - b.cx)
+            val a1 = atan2(cur.y - b.cy, cur.x - b.cx)
+            var degrees = (a1 - a0) * 180f / kotlin.math.PI.toFloat()
+            if (shift) degrees = kotlin.math.round(degrees / 15f) * 15f
+            rotationAbout(degrees, b.cx, b.cy)
+        }
+        is BoxGrab.Corner -> {
+            val c = grab.index
+            val ox = if (fromCentre) b.cx else if (c == 0 || c == 1) b.maxX else b.minX
+            val oy = if (fromCentre) b.cy else if (c == 0 || c == 3) b.maxY else b.minY
+            var sx = ratio(cur.x, start.x, ox)
+            var sy = ratio(cur.y, start.y, oy)
+            if (shift) { val u = if (abs(sx - 1f) >= abs(sy - 1f)) sx else sy; sx = u; sy = u }
+            scalingAbout(sx, sy, ox, oy)
+        }
+        is BoxGrab.Edge -> {
+            val e = grab.index
+            val ox = if (fromCentre) b.cx else if (e == 0) b.maxX else b.minX
+            val oy = if (fromCentre) b.cy else if (e == 1) b.minY else b.maxY
+            when {
+                e == 0 || e == 2 -> if (skew) {
+                    val k = (cur.y - start.y) / (if (abs(start.x - ox) < 1e-3f) 1f else (start.x - ox))
+                    listOf(1f, k, 0f, 1f, 0f, -k * ox)
+                } else scalingAbout(ratio(cur.x, start.x, ox), 1f, ox, oy)
+                else -> if (skew) {
+                    val k = (cur.x - start.x) / (if (abs(start.y - oy) < 1e-3f) 1f else (start.y - oy))
+                    listOf(1f, 0f, k, 1f, -k * oy, 0f)
+                } else scalingAbout(1f, ratio(cur.y, start.y, oy), ox, oy)
+            }
+        }
+    }
+}
 
 /**
  * The transform a transform-box drag implies, in font units: rotate about the
@@ -261,17 +315,30 @@ suspend fun PointerInputScope.handleAnchorGestures(
             nodeOnly = app.nodeMoveMode,
         )
         if (sh != null && pointUnderPointer == null) {
-            val rotateHit = (startPos - sh.rotate).getDistance() <= f.hitRadiusPx * 1.3f
-            val cornerHit = if (rotateHit) -1 else sh.corners.indexOfFirst { (startPos - it).getDistance() <= f.hitRadiusPx * 1.3f }
-            if (rotateHit || cornerHit >= 0) {
+            val reach = f.hitRadiusPx * 1.3f
+            val box = sh.boundsFont
+            val grab: BoxGrab? = when {
+                (startPos - sh.rotate).getDistance() <= reach -> BoxGrab.Rotate
+                sh.corners.indexOfFirst { (startPos - it).getDistance() <= reach } >= 0 ->
+                    BoxGrab.Corner(sh.corners.indexOfFirst { (startPos - it).getDistance() <= reach })
+                sh.edges.indexOfFirst { (startPos - it).getDistance() <= reach } >= 0 ->
+                    BoxGrab.Edge(sh.edges.indexOfFirst { (startPos - it).getDistance() <= reach })
+                // With a mouse, just outside a corner rotates, as in Photoshop; touch keeps to the knob.
+                !app.touchInput && sh.corners.any { (startPos - it).getDistance() in reach..reach * 2.4f } -> BoxGrab.Rotate
+                else -> null
+            }
+            if (grab != null) {
                 onPointHit()
                 val keys = target.selection.toList()
                 val orig = target.glyph.deepCopy()
                 val startFont = f.mapper.toFont(startPos)
+                val shift = event.keyboardModifiers.isShiftPressed
+                val fromCentre = event.keyboardModifiers.isAltPressed
+                val skew = event.keyboardModifiers.isCtrlPressed || event.keyboardModifiers.isMetaPressed
                 var pushed = false
                 followOrPinch(f, down.id, f.dragStartSlopPx) { pos, _ ->
                     if (!pushed) { target.pushHistory(); pushed = true }
-                    val t = boxDragTransform(sh.boundsFont, rotateHit, cornerHit, startFont, f.mapper.toFont(pos))
+                    val t = selectionBoxTransform(box, grab, startFont, f.mapper.toFont(pos), shift, fromCentre, skew)
                     target.replaceGlyph(transformPoints(orig, keys, t))
                 }
                 return@awaitEachGesture
@@ -331,6 +398,12 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 onPointHit()
                 followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
             }
+            return@awaitEachGesture
+        }
+
+        val nodeTool = app.nodeTool
+        if (nodeTool != null && !app.nodeEditsLocked) {
+            nodeToolGesture(f, nodeTool, down.id, target, startPos, feedback)
             return@awaitEachGesture
         }
 
@@ -417,6 +490,101 @@ suspend fun PointerInputScope.handleAnchorGestures(
     }
 }
 
+/**
+ * One press with an anchor-point tool, as in Photoshop. Add: tap a segment to insert a node there (hold and
+ * drag to place it). Subtract: tap a node to remove it. Convert: tap a node to strip its handles and make
+ * it a corner, drag from a node to pull out symmetric handles, drag a handle to move it alone.
+ */
+private suspend fun AwaitPointerEventScope.nodeToolGesture(
+    f: CanvasFrame,
+    tool: NodeTool,
+    downId: PointerId,
+    target: AnchorState,
+    startPos: Offset,
+    feedback: CanvasFeedback,
+) {
+    val app = f.app
+    val hit = hitTestPoint(target.glyph, f.mapper, startPos, radiusPx = f.hitRadiusPx)
+    val hitPoint = hit?.let { (ci, pi) -> target.glyph.contours.getOrNull(ci)?.points?.getOrNull(pi) }
+    when (tool) {
+        NodeTool.ADD -> {
+            val seg = if (hit == null) hitTestSegment(target.glyph, f.mapper, startPos, f.hitRadiusPx) else null
+            if (seg == null) { followOrPinch(f, downId, f.dragStartSlopPx) { _, _ -> }; return }
+            when (awaitTapOrMove(downId, startPos, f.dragStartSlopPx)) {
+                TapEnd.RELEASED -> app.addNodeAt(seg)
+                TapEnd.PINCHED -> pinch(f)
+                TapEnd.MOVED -> {
+                    val key = app.addNodeAt(seg)
+                    if (key != null) dragSelection(f, downId, target, listOf(key), startPos, 0.5f, feedback, primary = key, recordHistory = false)
+                    else followOrPinch(f, downId, Float.MAX_VALUE) { _, _ -> }
+                }
+            }
+        }
+        NodeTool.SUBTRACT -> {
+            if (hit == null || hitPoint?.onCurve != true) { followOrPinch(f, downId, f.dragStartSlopPx) { _, _ -> }; return }
+            when (awaitTapOrMove(downId, startPos, f.dragStartSlopPx)) {
+                TapEnd.RELEASED -> app.subtractNode(hit)
+                TapEnd.PINCHED -> pinch(f)
+                TapEnd.MOVED -> followOrPinch(f, downId, Float.MAX_VALUE) { _, _ -> }
+            }
+        }
+        NodeTool.CONVERT -> {
+            if (hit == null || hitPoint == null) { followOrPinch(f, downId, f.dragStartSlopPx) { _, _ -> }; return }
+            if (!hitPoint.onCurve) {
+                target.selection = setOf(hit)
+                dragSelection(f, downId, target, listOf(hit), startPos, f.dragStartSlopPx, feedback, breakSymmetry = true)
+                return
+            }
+            when (awaitTapOrMove(downId, startPos, f.dragStartSlopPx)) {
+                TapEnd.RELEASED -> app.convertNodeToCorner(hit)
+                TapEnd.PINCHED -> pinch(f)
+                TapEnd.MOVED -> {
+                    target.selection = setOf(hit)
+                    val orig = target.glyph.deepCopy()
+                    val targets = if (app.view.snap) snapTargetsFor(f, target, setOf(hit), forHandles = true) else null
+                    var pushed = false
+                    fun pull(pos: Offset) {
+                        if (!pushed) { target.pushHistory(); pushed = true }
+                        val p = f.mapper.toFont(pos)
+                        var x = p.x; var y = p.y
+                        if (targets != null) {
+                            val r = snapDelta(listOf(x), listOf(y), 0f, 0f, targets, snapTolerance(f))
+                            x += r.dx; y += r.dy
+                            feedback.snapX = r.xLine; feedback.snapY = r.yLine
+                        }
+                        target.replaceGlyph(pullSymmetricHandles(orig, hit, x, y))
+                    }
+                    pull(lastTapPosition)
+                    followOrPinch(f, downId, 0.5f, allowPinch = false) { pos, _ -> pull(pos) }
+                    feedback.clearSnap()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Waits for [downId] to lift, stray past [slop] from [startPos], or for a second finger to land.
+ * Where it strayed to is left in [lastTapPosition], so the drag it starts can use that first move.
+ */
+private var lastTapPosition = Offset.Zero
+
+private suspend fun AwaitPointerEventScope.awaitTapOrMove(downId: PointerId, startPos: Offset, slop: Float): TapEnd {
+    while (true) {
+        val ev = awaitPointerEvent()
+        if (ev.changes.count { it.pressed } >= 2) { ev.changes.forEach { it.consume() }; return TapEnd.PINCHED }
+        val c = ev.changes.firstOrNull { it.id == downId } ?: return TapEnd.RELEASED
+        c.consume()
+        lastTapPosition = c.position
+        when {
+            !c.pressed -> return TapEnd.RELEASED
+            (c.position - startPos).getDistance() > slop -> return TapEnd.MOVED
+        }
+    }
+}
+
+private enum class TapEnd { RELEASED, MOVED, PINCHED }
+
 private fun snapTolerance(f: CanvasFrame): Float = 7f * f.density / f.mapper.scale
 
 private fun snapTargetsFor(f: CanvasFrame, target: AnchorState, exclude: Set<PointKey>, forHandles: Boolean = false): SnapTargets {
@@ -438,6 +606,23 @@ private fun snapTargetsFor(f: CanvasFrame, target: AnchorState, exclude: Set<Poi
     return base.copy(xs = base.xs + SnapTarget(anchorGlyph.width, "advance"))
 }
 
+/**
+ * Points a dragged handle must not snap to: the handles being dragged, and -- on a mirrored node only --
+ * the twin that moves with them. On a corner node the other handle stays put, so it is a target: a handle
+ * lines up vertically or horizontally with its own node's other handle.
+ */
+internal fun handleSnapSkip(glyph: GlyphCorner, keys: Collection<PointKey>): Set<PointKey> {
+    val skip = keys.toMutableSet()
+    for ((ci, pi) in keys) {
+        val pts = glyph.contours.getOrNull(ci)?.points ?: continue
+        val owner = armOwner(pts, pi) ?: continue
+        if (!pts[owner].smooth) continue
+        inArmIndex(pts, owner)?.let { skip.add(ci to it) }
+        outArmIndex(pts, owner)?.let { skip.add(ci to it) }
+    }
+    return skip
+}
+
 /** Drags [keys] of [target] by the pointer delta (nodes carry their arms, see [dragPoints]), with light snapping, recording one undo step. */
 private suspend fun AwaitPointerEventScope.dragSelection(
     f: CanvasFrame,
@@ -450,9 +635,17 @@ private suspend fun AwaitPointerEventScope.dragSelection(
     primary: PointKey? = null,
     snapEnabled: Boolean = true,
     allowPinch: Boolean = true,
+    /** False when the drag continues an edit that already recorded its undo step (Add Anchor Point). */
+    recordHistory: Boolean = true,
+    /** Convert Point: a dragged handle moves alone, so its node stops being mirrored. */
+    breakSymmetry: Boolean = false,
 ) {
     if (keys.isEmpty()) return
     val origGlyph = target.glyph.deepCopy()
+    if (breakSymmetry) for ((ci, pi) in keys) {
+        val pts = origGlyph.contours.getOrNull(ci)?.points ?: continue
+        armOwner(pts, pi)?.let { pts[it].smooth = false }
+    }
     val origPts = keys.mapNotNull { (ci, pi) -> origGlyph.contours.getOrNull(ci)?.points?.getOrNull(pi) }
     val primaryPt = primary?.let { (ci, pi) -> origGlyph.contours.getOrNull(ci)?.points?.getOrNull(pi) }
     // A grabbed point snaps by itself; a selection snaps by its edges and centre.
@@ -463,17 +656,11 @@ private suspend fun AwaitPointerEventScope.dragSelection(
     // Nodes lightly snap to other nodes, handles to other handles (a handle's mirrored twin moves with it,
     // so it is not a target either), each vertically or horizontally.
     val handleMode = keys.none { (ci, pi) -> origGlyph.contours.getOrNull(ci)?.points?.getOrNull(pi)?.onCurve == true }
-    val skip = keys.toMutableSet()
-    if (handleMode) for ((ci, pi) in keys) {
-        val pts = origGlyph.contours.getOrNull(ci)?.points ?: continue
-        val owner = armOwner(pts, pi) ?: continue
-        inArmIndex(pts, owner)?.let { skip.add(ci to it) }
-        outArmIndex(pts, owner)?.let { skip.add(ci to it) }
-    }
+    val skip = if (handleMode) handleSnapSkip(origGlyph, keys) else keys.toSet()
     val targets = if (snapEnabled && f.app.view.snap) snapTargetsFor(f, target, skip, handleMode) else null
     var pushed = false
     followOrPinch(f, downId, slop, allowPinch = allowPinch) { pos, _ ->
-        if (!pushed) { target.pushHistory(); pushed = true }
+        if (!pushed) { if (recordHistory) target.pushHistory(); pushed = true }
         val delta = pos - startPos
         var dx = delta.x / f.mapper.scale
         var dy = -delta.y / f.mapper.scale

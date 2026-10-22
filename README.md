@@ -120,6 +120,24 @@ so anchors can then be reshaped without adding or removing points.
   and pulls out its arms, as in Photoshop. A neighbour without an arm of
   its own gets one sitting on that neighbour, so the segment is a cubic
   that still meets it without a tangent.
+- **Free Transform Points.** Select two or more nodes and a box appears around
+  them (as with Photoshop's Ctrl+T on selected anchors): drag a corner to scale
+  about the opposite corner, an edge to scale along one axis, the knob above it
+  (or, with a mouse, just outside a corner) to rotate about the centre. Shift
+  keeps proportions / snaps rotation to 15°, Alt pivots on the centre, and
+  Ctrl/Cmd on an edge skews. Each drag is one undo step (no separate commit).
+- **Reset to the natural path.** On Regular, once the three states of the open
+  axis match point for point, the suggestion **Reset to the natural path** moves
+  every Regular point to exactly halfway between the two extremes, so each
+  node's travel is a straight line with no bend. One undo step.
+- **Anchor-point tools** (dock; keys A, D, C), as in Photoshop. **Add** (A): tap
+  a segment to insert a node there without changing the outline (hold and drag
+  to place it); a node on a curve is smooth, on a straight side a corner.
+  **Subtract** (D): tap a node to remove it, the neighbouring curve reflowing.
+  **Convert** (C): tap a node to strip its handles and make it a corner; drag
+  from a node to pull out symmetric (smooth) handles; drag a handle to move it
+  alone, which makes its node a corner. Add and Subtract act on every state
+  that matches the open one (see below) as one undo step; Convert is per state.
 - **Format.** TrueType imports and projects saved before the cubic model
   (quadratic, with implied on-curve midpoints) convert exactly on load:
   each implied midpoint becomes a smooth node and each quadratic
@@ -303,8 +321,13 @@ so anchors can then be reshaped without adding or removing points.
   centre) pulls onto metrics, guides, ghost nodes and (more weakly) the grid,
   and lines up -- vertically or horizontally -- with other **nodes** (when
   moving a node) or other **handles** (when moving a handle; handles never snap
-  to nodes). It applies to the move circle too. The line it caught flashes.
+  to nodes, but a handle of a corner node also lines up with its own node's
+  other handle). It applies to the move circle too. The line it caught flashes.
   View → Snap toggles it.
+- **Ghost look.** While any ghost is showing the working glyph's fill is
+  see-through (Ghosts panel → Glyph opacity, default 50%) so ghosts read
+  underneath it. Each ghost's outline is dotted or solid and one of six
+  colours, chosen on its row in the Ghosts panel; both save with the glyph.
 - **Ghosts.** Reference outlines behind every panel: primitive shapes, a
   character from any TrueType file (static or variable, scaled to this
   project's UPM; loaded per session), or a glyph from this project. A

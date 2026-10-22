@@ -195,6 +195,18 @@ private fun moveNodeTool(app: AppState) {
         app.commandTarget.drawingContourIndex?.let { app.commandTarget.finishContour() }
     }
     app.nodeMoveMode = true
+    app.nodeTool = null
+}
+
+private fun nodeToolSelect(app: AppState, tool: NodeTool) {
+    if (app.activeGhost == null || app.ghostTransformMode || app.reduction != null) {
+        app.resumeGlyphSelection()
+    } else {
+        app.commandTarget.drawingContourIndex?.let { app.commandTarget.finishContour() }
+    }
+    app.nodeMoveMode = false
+    app.moveCircleVisible = false
+    app.nodeTool = tool
 }
 
 private fun penTool(app: AppState) {
@@ -202,6 +214,7 @@ private fun penTool(app: AppState) {
     if (app.activeGhost != null && app.ghostTransformMode) return
     if (app.reduction != null) app.resumeGlyphSelection()
     app.nodeMoveMode = false
+    app.nodeTool = null
     val t = app.editTarget(app.activeAnchor)
     if (t.drawingContourIndex == null) t.startNewContour()
 }
@@ -247,9 +260,12 @@ private fun CompactEditor(
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-            ToolIcon(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.activeGhost == null && app.reduction == null, size = 44)
+            ToolIcon(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.nodeTool == null && app.activeGhost == null && app.reduction == null, size = 44)
             ToolIcon(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
             ToolIcon(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+            ToolIcon(MIcons.AddNode, "Add node", { nodeToolSelect(app, NodeTool.ADD) }, selected = app.nodeTool == NodeTool.ADD, size = 42, name = "Add")
+            ToolIcon(MIcons.SubtractNode, "Subtract node", { nodeToolSelect(app, NodeTool.SUBTRACT) }, selected = app.nodeTool == NodeTool.SUBTRACT, size = 42, name = "Subtract")
+            ToolIcon(MIcons.ConvertNode, "Convert node", { nodeToolSelect(app, NodeTool.CONVERT) }, selected = app.nodeTool == NodeTool.CONVERT, size = 42, name = "Convert")
             NodeActions(app, size = 42)
             IconAction(MIcons.ResetView, "Reset zoom and pan", { app.view.resetView() }, size = 42)
             IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = 42)
@@ -313,9 +329,12 @@ private fun WideEditor(
         Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
         Row(Modifier.weight(1f).fillMaxWidth()) {
             Column(Modifier.width(60.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                ToolIcon(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.activeGhost == null && app.reduction == null, size = 42)
+                ToolIcon(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.nodeTool == null && app.activeGhost == null && app.reduction == null, size = 42)
                 ToolIcon(MIcons.Move, "Move node (M)", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
                 ToolIcon(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+                ToolIcon(MIcons.AddNode, "Add node (A)", { nodeToolSelect(app, NodeTool.ADD) }, selected = app.nodeTool == NodeTool.ADD, size = 42, name = "Add")
+                ToolIcon(MIcons.SubtractNode, "Subtract node (D)", { nodeToolSelect(app, NodeTool.SUBTRACT) }, selected = app.nodeTool == NodeTool.SUBTRACT, size = 42, name = "Subtract")
+                ToolIcon(MIcons.ConvertNode, "Convert node (C)", { nodeToolSelect(app, NodeTool.CONVERT) }, selected = app.nodeTool == NodeTool.CONVERT, size = 42, name = "Convert")
                 NodeActions(app, size = 42)
                 ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 42, enabled = app.activeGhost == null)
                 IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 42, enabled = app.activeGhost == null)
