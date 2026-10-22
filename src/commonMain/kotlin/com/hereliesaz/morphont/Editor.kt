@@ -75,7 +75,7 @@ import androidx.compose.ui.unit.sp
 /** Below this width the editor is the phone layout (one canvas, axis strip, dock); above it, the desktop layout. */
 private val COMPACT_BREAKPOINT = 900.dp
 
-private val hairline = Color(0xFF181818)
+private val hairline get() = Mono.hairline
 
 private enum class Sheet { GUIDES, GHOSTS, PREVIEW }
 
@@ -90,6 +90,12 @@ fun EditorScreen(app: AppState, host: EditorHost, modifier: Modifier = Modifier)
     var browserOpen by remember { mutableStateOf(false) }
     var fontOverviewOpen by remember { mutableStateOf(false) }
     var rootOrigin by remember { mutableStateOf(Offset.Zero) }
+    // Whatever changes in the settings is written back, so the next launch starts as this one left off.
+    host.settings?.let { store ->
+        androidx.compose.runtime.LaunchedEffect(store, app) {
+            androidx.compose.runtime.snapshotFlow { app.settings() }.collect { store.save(it) }
+        }
+    }
     BoxWithConstraints(
         modifier.fillMaxSize().background(Mono.ground).statusBarsPadding().navigationBarsPadding()
             .onGloballyPositioned { rootOrigin = it.positionInRoot() }
@@ -239,9 +245,9 @@ private fun CompactEditor(
                 Caps("${ANCHOR_LABELS[app.activeAnchor]} · ${nodeCount(app)} nodes")
             }
             SuggestionsButton(app, suggestions)
-            IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, enabled = app.activeGhost == null)
             IconAction(MIcons.Undo, "Undo", { app.undo() })
-            IconAction(MIcons.More, "Glyphs and file", openBrowser)
+            IconAction(MIcons.Redo, "Redo", { app.redo() }, enabled = app.canRedo)
+            EditorMenuButton(app, host, openBrowser, openFontOverview, goTo = { sheet = when (it) { "preview" -> Sheet.PREVIEW; "ghosts" -> Sheet.GHOSTS; else -> Sheet.GUIDES } })
         }
         AnchorFilmstrip(app, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 6.dp), compact = true)
         Stage(app, host, host.touchScale, Modifier.weight(1f).fillMaxWidth(), suggestions) {
@@ -272,6 +278,8 @@ private fun CompactEditor(
             IconAction(MIcons.Guides, "Guides", { sheet = Sheet.GUIDES }, size = 48)
             ToolIcon(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = 48)
             ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 48, enabled = app.activeGhost == null)
+            StatesMenuButton(app, size = 48)
+            IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 48, enabled = app.activeGhost == null)
             }
             Scrollbar(dockScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
         }
@@ -324,6 +332,8 @@ private fun WideEditor(
             ZoomControl(app.view)
             IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = 40)
             IconAction(MIcons.Undo, "Undo", { app.undo() }, size = 40)
+        IconAction(MIcons.Redo, "Redo", { app.redo() }, size = 40, enabled = app.canRedo)
+        EditorMenuButton(app, host, openBrowser, openFontOverview, goTo = null, size = 40)
             MonoButton(onClick = openBrowser, selected = true) { Text("Glyphs & file", fontSize = 13.sp) }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
@@ -337,6 +347,7 @@ private fun WideEditor(
                 ToolIcon(MIcons.ConvertNode, "Convert node (C)", { nodeToolSelect(app, NodeTool.CONVERT) }, selected = app.nodeTool == NodeTool.CONVERT, size = 42, name = "Convert")
                 NodeActions(app, size = 42)
                 ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 42, enabled = app.activeGhost == null)
+                StatesMenuButton(app, size = 42)
                 IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 42, enabled = app.activeGhost == null)
                 SuggestionsButton(app, suggestions, size = 42)
                 IconAction(MIcons.ResetView, "Reset zoom and pan (0)", { app.view.resetView() }, size = 42)

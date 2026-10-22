@@ -189,6 +189,19 @@ object DesktopStorage {
         )
     }
 
+    private val settingsFile: File get() = File(base, "settings.json")
+
+    /** Theme and view settings, one small JSON file next to the project list. */
+    val settings = SettingsStore(
+        read = { settingsFile.takeIf { it.isFile }?.readText() },
+        write = { text ->
+            base.mkdirs()
+            val temp = File(base, "settings.json.tmp")
+            temp.writeText(text)
+            Files.move(temp.toPath(), settingsFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        },
+    )
+
     private var projectId: String? = null
     private var projectDir: File? = null
 

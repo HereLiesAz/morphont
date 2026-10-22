@@ -625,14 +625,23 @@ private fun reducedTo(c: ContourData, target: Int): ContourData {
  * paired contour is cut down to the fewest nodes any state has for it by the shape-preserving simplifier,
  * turned to run the same way round as the template, and started at the node that lines up best with the
  * template's. Every node ends with both handles, so the states interpolate point for point.
+ *
+ * With [mostNodes] it goes the other way: the state with the most nodes is the template and every sparser state
+ * gains nodes (by splitting its longest segments, which never moves its outline) up to that count. That needs
+ * the same number of contours in every state.
  */
-fun matchToFewest(glyphs: Map<String, GlyphCorner>): MatchOutcome {
+fun matchToFewest(glyphs: Map<String, GlyphCorner>, mostNodes: Boolean = false): MatchOutcome {
     if (glyphs.size < 2) return MatchOutcome(null, problem = "Draw at least two states first.")
     val done = glyphs.mapValues { completeNodeHandles(it.value) }
     if (done.values.any { g -> g.contours.isEmpty() || g.contours.any { it.points.isEmpty() || !isValidCubicContour(it) } }) {
         return MatchOutcome(null, problem = "A state has an empty or malformed outline.")
     }
-    val ref = done.entries.minBy { (_, g) -> g.contours.sumOf(::nodesIn) }.key
+    // Adding nodes can't invent a missing contour, and dropping one would lose drawing: refuse instead.
+    if (mostNodes && done.values.map { it.contours.size }.toSet().size > 1) {
+        return MatchOutcome(null, problem = "The states have different numbers of contours, so nodes alone can't match them. Use Match nodes to the fewest, or draw the missing contour.")
+    }
+    val ref = if (mostNodes) done.entries.maxBy { (_, g) -> g.contours.sumOf(::nodesIn) }.key
+        else done.entries.minBy { (_, g) -> g.contours.sumOf(::nodesIn) }.key
     val k = done.values.minOf { it.contours.size }
     fun area(c: ContourData) = boundsOf(c.points)?.let { it.width * it.height } ?: 0f
     // The template: the reference's k largest contours, in their own order.
@@ -663,7 +672,8 @@ fun matchToFewest(glyphs: Map<String, GlyphCorner>): MatchOutcome {
     val rebuilt = HashMap<String, MutableList<ContourData>>()
     for (t in template.indices) {
         // A closed contour needs three nodes to be a shape the simplifier and the editor can work with.
-        val target = maxOf(3, done.keys.minOf { nodesIn(paired.getValue(it)[t]) })
+        val target = if (mostNodes) done.keys.maxOf { nodesIn(paired.getValue(it)[t]) }
+            else maxOf(3, done.keys.minOf { nodesIn(paired.getValue(it)[t]) })
         val reduced = done.keys.associateWith { reducedTo(paired.getValue(it)[t], target) }
         val base = loopOf(reduced.getValue(ref))
         fun norm(l: Loop): List<Pair<Float, Float>> {

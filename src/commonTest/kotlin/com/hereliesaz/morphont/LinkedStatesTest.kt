@@ -151,4 +151,35 @@ class LinkedStatesTest {
         app.selectedAxis = Axis.WEIGHT
         assertTrue(!app.statesDiffer(), "only one state is drawn")
     }
+
+    @Test fun addMissingNodesBringsEveryStateUpToTheMost() {
+        val app = app(10, 12, 7)
+        app.activeAnchor = "regular"
+        app.addMissingNodes()
+        for (n in listOf(lo, "regular", hi)) assertEquals(12, nodes(app, n), n)
+        assertNull(compatibilityIssue(app.cornersSnapshot(), listOf(lo, "regular", hi)))
+        assertTrue(!app.statesDiffer())
+        app.undo()
+        assertEquals(10, nodes(app, lo)); assertEquals(12, nodes(app, "regular")); assertEquals(7, nodes(app, hi))
+    }
+
+    @Test fun addedNodesDoNotMoveTheOutline() {
+        val app = app(6, 6, 12)
+        app.addMissingNodes()
+        // ring of radius 150 sampled at its nodes: every node, old or new, still sits on the circle.
+        val worst = app.anchors.getValue(lo).glyph.contours[0].points.filter { it.onCurve }
+            .maxOf { kotlin.math.abs(kotlin.math.hypot(it.x, it.y) - 150f) }
+        assertTrue(worst < 1.5f, "added nodes should stay on the outline, off by $worst")
+    }
+
+    @Test fun addMissingNodesRefusesWhenContourCountsDiffer() {
+        val app = AppState()
+        app.anchors.getValue(lo).loadFresh(GlyphCorner(600f, mutableListOf(ring(8, 150f).contours[0], ring(5, 40f).contours[0])))
+        app.anchors.getValue("regular").loadFresh(ring(6, 200f))
+        app.anchors.getValue(hi).loadFresh(ring(7, 260f))
+        app.selectedAxis = Axis.WEIGHT
+        val before = app.anchors.getValue(lo).glyph
+        app.addMissingNodes()
+        assertEquals(before, app.anchors.getValue(lo).glyph, "nothing is dropped or invented")
+    }
 }

@@ -397,6 +397,21 @@ class AppState {
     private class UndoEntry(val owners: MutableList<Any>, val action: () -> Unit)
     private val undoActions = mutableListOf<UndoEntry>()
     private var recording = true
+
+    /** Everything Undo and Redo move between: the outlines, guides, metrics and ghosts at one moment. */
+    private class EditorSnapshot(
+        val corners: Map<String, GlyphCorner>,
+        val guides: List<Guide>,
+        val metrics: FontMetrics,
+        val ghosts: List<GhostData>,
+    )
+
+    /** States Undo stepped back from, newest last; Redo steps forward to them. Cleared by any new edit. */
+    private val redoStack = mutableStateListOf<EditorSnapshot>()
+    private var redoing = false
+
+    /** Whether there is anything to Redo. */
+    val canRedo: Boolean get() = redoStack.isNotEmpty()
     /** Increment before bulk imports so pending autosaves cannot overwrite newly imported records. */
     var autosaveEpoch by mutableStateOf(0)
         private set
@@ -412,6 +427,7 @@ class AppState {
 
     private fun recordUndo(owners: List<Any>, action: () -> Unit) {
         if (!recording) return
+        if (!redoing) redoStack.clear() // a new edit ends the line Redo would have followed
         undoActions.add(UndoEntry(owners.toMutableList(), action))
         if (undoActions.size > 150) {
             // Keep the owner's private history in step with the evicted global entry.
@@ -577,6 +593,25 @@ class AppState {
     /** While the circle is being dragged: its fixed offset from the selection, in canvas pixels. */
     var moveCircleHold: Offset? = null
 
+    /** What persists between sessions, read off the live state. */
+    fun settings() = AppSettings(
+        dark = ThemeState.dark, snap = view.snap, showMetrics = view.showMetrics, showRulers = view.showRulers,
+        showGuides = view.showGuides, showMeasure = view.showMeasure, showGhosts = view.showGhosts,
+        showTravel = view.showTravel, showGrid = view.showGrid, gridStep = view.gridStep,
+        glyphOpacity = view.glyphOpacity, moveCircle = nodeMoveCircleOverride,
+    )
+
+    /** Puts saved [s] back: theme, view toggles, grid step, glyph opacity and the move-circle choice. */
+    fun applySettings(s: AppSettings) {
+        ThemeState.dark = s.dark
+        view.snap = s.snap; view.showMetrics = s.showMetrics; view.showRulers = s.showRulers
+        view.showGuides = s.showGuides; view.showMeasure = s.showMeasure; view.showGhosts = s.showGhosts
+        view.showTravel = s.showTravel; view.showGrid = s.showGrid
+        view.gridStep = s.gridStep.takeIf { it > 0f } ?: 50f
+        view.glyphOpacity = s.glyphOpacity.coerceIn(0.1f, 1f)
+        nodeMoveCircleOverride = s.moveCircle
+    }
+
     fun setNodeMoveCircleEnabled(enabled: Boolean) {
         nodeMoveCircleOverride = enabled
     }
@@ -664,10 +699,77 @@ class AppState {
             setStatus("Apply or cancel Simplify before undoing.", true)
             return
         }
+        val before = snapshot()
         val action = undoActions.removeAt(undoActions.lastIndex).action
         val previous = recording
         recording = false
         try { action() } finally { recording = previous }
+        redoStack.add(before)
+        if (redoStack.size > 150) redoStack.removeAt(0)
+    }
+
+    private fun snapshot() = EditorSnapshot(
+        corners = anchors.mapValues { it.value.glyph.deepCopy() },
+        guides = guides.toList(),
+        metrics = metrics,
+        ghosts = ghosts.map { it.toData() },
+    )
+
+    private fun ghostFromData(it: GhostData) = GhostLayer(
+        nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph,
+        it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside,
+        it.axisOverrides, it.referenceCorners, it.supportedAxes, it.solid, it.color,
+    )
+
+    private fun setGhosts(list: List<GhostData>) {
+        activeGhostId = null
+        ghosts.clear()
+        for (d in list) {
+            val layer = ghostFromData(d)
+            attachGhost(layer)
+            ghosts.add(layer)
+            d.sourceGlyph?.let { src -> cacheLinked(src) }
+        }
+    }
+
+    /**
+     * Redo the edit Undo last stepped back from: moves outlines, guides, metrics and ghosts to how they were,
+     * as ordinary edits of their own (so the redo can itself be undone). Any new edit forgets what was left.
+     */
+    fun redo() {
+        if (reduction != null) {
+            setStatus("Apply or cancel Simplify before redoing.", true)
+            return
+        }
+        val target = redoStack.removeLastOrNull() ?: run { setStatus("Nothing to redo."); return }
+        val now = snapshot()
+        redoing = true
+        try {
+            val changed = ANCHORS.filter { target.corners[it] != now.corners[it] }
+            if (changed.isNotEmpty()) {
+                val owners = changed.map { anchors.getValue(it) }
+                groupUndo(
+                    owners = owners,
+                    block = { for (n in changed) anchors.getValue(n).replaceWithHistory(target.corners.getValue(n).deepCopy()) },
+                    undo = { owners.forEach { it.undo() } },
+                )
+            }
+            if (target.guides != now.guides) {
+                val before = now.guides
+                recordUndo { guides.clear(); guides.addAll(before) }
+                guides.clear(); guides.addAll(target.guides)
+            }
+            if (target.metrics != now.metrics) {
+                val before = now.metrics
+                recordUndo { metrics = before }
+                metrics = target.metrics
+            }
+            if (target.ghosts != now.ghosts) {
+                val before = now.ghosts
+                recordUndo { setGhosts(before) }
+                setGhosts(target.ghosts)
+            }
+        } finally { redoing = false }
     }
 
     /** Switches the active ghost between placement and node editing; node editing bakes/detaches first. */
@@ -747,17 +849,14 @@ class AppState {
         ghosts.clear()
         linkedGlyphs.clear()
         glyph.ghosts.forEach {
-            val layer = GhostLayer(
-                nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph,
-                it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside,
-                it.axisOverrides, it.referenceCorners, it.supportedAxes, it.solid, it.color,
-            )
+            val layer = ghostFromData(it)
             attachGhost(layer)
             ghosts.add(layer)
             it.sourceGlyph?.let { src -> cacheLinked(src) }
         }
         metrics = glyph.metrics ?: FontMetrics()
         undoActions.clear()
+        redoStack.clear()
         activeGhostId = null
         reduction = null
         activeAnchor = "regular"
@@ -779,6 +878,7 @@ class AppState {
         reduction = null
         metrics = FontMetrics()
         undoActions.clear()
+        redoStack.clear()
     }
 
     fun toGlyph(): Glyph = Glyph(
@@ -945,14 +1045,15 @@ class AppState {
         drawnTriple().joinToString(" · ") { n -> "${ANCHOR_LABELS[n] ?: n} ${anchors.getValue(n).glyph.contours.sumOf { c -> c.points.count { it.onCurve } }}" }
 
     /**
-     * Rebuilds the states of [axisTriple] on one shared structure with only as many nodes as the sparsest
-     * has (see [matchToFewest]), as one undo step. Says why when it can't.
+     * Rebuilds the states of [axisTriple] on one shared structure (see [matchToFewest]) as one undo step: with only
+     * as many nodes as the sparsest has, or, with [most], with as many as the densest has (nodes added to the
+     * others). Says why when it can't.
      */
-    fun matchToFewestNodes() {
+    private fun matchStates(most: Boolean) {
         if (activeGhost != null || reduction != null) return
         val names = drawnTriple()
         val before = names.associateWith { anchors.getValue(it).glyph }
-        val out = matchToFewest(before)
+        val out = matchToFewest(before, mostNodes = most)
         val glyphs = out.glyphs ?: run { setStatus(out.problem ?: "Couldn't match them.", true); return }
         val targets = names.filter { glyphs[it] != before[it] }.map { anchors.getValue(it) }
         if (targets.isEmpty()) { setStatus("They already match."); return }
@@ -962,8 +1063,13 @@ class AppState {
             undo = { targets.forEach { it.undo() } },
         )
         val lost = out.dropped.entries.joinToString(", ") { "${ANCHOR_LABELS[it.key] ?: it.key} -${it.value} contour(s)" }
-        setStatus("Matched to the fewest nodes: " + nodeCountSummary() + (if (lost.isEmpty()) "" else ". Dropped: $lost") + ". Undo puts it back.")
+        setStatus((if (most) "Added the missing nodes: " else "Matched to the fewest nodes: ") + nodeCountSummary() + (if (lost.isEmpty()) "" else ". Dropped: $lost") + ". Undo puts it back.")
     }
+
+    fun matchToFewestNodes() = matchStates(most = false)
+
+    /** Gives every sparser state the nodes it is missing, up to the densest state's count. */
+    fun addMissingNodes() = matchStates(most = true)
 
     fun copySelection() {
         if (nodeEditsLocked) return

@@ -75,6 +75,8 @@ class EditorHost(
     val projects: ProjectActions? = null,
     /** Handle/hit-target scale for touch-first surfaces. */
     val touchScale: Float = 1.3f,
+    /** Where theme and view settings are kept between sessions; null keeps them for this session only. */
+    val settings: SettingsStore? = null,
 )
 
 // ------------------------------------------------------------ small parts
@@ -98,6 +100,76 @@ fun MonoMenuItem(text: String, onClick: () -> Unit, checked: Boolean? = null, en
         enabled = enabled,
         onClick = onClick,
     )
+}
+
+/**
+ * The top-bar menu: jump straight to the glyph list, projects, the font overview or (on a phone, where they live
+ * in sheets) the Preview, Ghosts and Guides panels, and flip every view setting without opening anything.
+ * [goTo] is null where those panels are always on screen.
+ */
+@Composable
+fun EditorMenuButton(
+    app: AppState,
+    host: EditorHost,
+    openBrowser: () -> Unit,
+    openFontOverview: () -> Unit,
+    goTo: ((String) -> Unit)?,
+    size: Int = 44,
+) {
+    var open by remember { mutableStateOf(false) }
+    var projectsOpen by remember { mutableStateOf(false) }
+    val v = app.view
+    @Composable fun section(title: String) = MonoMenuItem(title.uppercase(), {}, enabled = false)
+    Box {
+        IconAction(MIcons.More, "Menu", { open = true }, size = size)
+        MonoMenu(open, { open = false }) {
+            section("Go to")
+            MonoMenuItem("Glyphs and files…", { open = false; openBrowser() })
+            if (host.projects != null) MonoMenuItem("Projects…", { open = false; projectsOpen = true })
+            MonoMenuItem("Font overview", { open = false; openFontOverview() })
+            if (goTo != null) {
+                MonoMenuItem("Preview", { open = false; goTo("preview") })
+                MonoMenuItem("Ghosts", { open = false; goTo("ghosts") })
+                MonoMenuItem("Guides and metrics", { open = false; goTo("guides") })
+            }
+            section("Theme")
+            MonoMenuItem("Dark", { ThemeState.dark = true }, checked = ThemeState.dark)
+            MonoMenuItem("Light", { ThemeState.dark = false }, checked = !ThemeState.dark)
+            section("View and settings")
+            MonoMenuItem("Snap", { v.snap = !v.snap }, checked = v.snap)
+            MonoMenuItem("Metrics", { v.showMetrics = !v.showMetrics }, checked = v.showMetrics)
+            MonoMenuItem("Rulers", { v.showRulers = !v.showRulers }, checked = v.showRulers)
+            MonoMenuItem("Guides", { v.showGuides = !v.showGuides }, checked = v.showGuides)
+            MonoMenuItem("Measurements", { v.showMeasure = !v.showMeasure }, checked = v.showMeasure)
+            MonoMenuItem("Ghosts", { v.showGhosts = !v.showGhosts }, checked = v.showGhosts)
+            MonoMenuItem("Travel paths", { v.showTravel = !v.showTravel }, checked = v.showTravel)
+            MonoMenuItem("Move circle", { app.setNodeMoveCircleEnabled(!app.nodeMoveCircleEnabled) }, checked = app.nodeMoveCircleEnabled)
+            MonoMenuItem("Grid", { v.showGrid = !v.showGrid }, checked = v.showGrid)
+            section("Grid step")
+            for (step in GRID_STEPS) MonoMenuItem("${step.toInt()} units", { v.gridStep = step }, checked = v.gridStep == step)
+        }
+    }
+    host.projects?.let { actions ->
+        if (projectsOpen) ProjectsDialog(app, actions, onDismiss = { projectsOpen = false }, onSwitched = { projectsOpen = false })
+    }
+}
+
+/**
+ * The three ways to bring the three states of the open axis into line, in one menu: cut the denser ones down to
+ * the fewest nodes, add the nodes the sparser ones are missing, or put Regular back halfway between the extremes.
+ */
+@Composable
+fun StatesMenuButton(app: AppState, size: Int = 42) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconAction(MIcons.States, "Match the three states", { open = true }, size = size, enabled = app.activeGhost == null)
+        MonoMenu(open, { open = false }) {
+            MonoMenuItem(app.nodeCountSummary().ifEmpty { "Nothing drawn yet" }, {}, enabled = false)
+            MonoMenuItem("Match nodes to the fewest", { open = false; app.matchToFewestNodes() }, enabled = app.statesDiffer())
+            MonoMenuItem("Add missing nodes (match the most)", { open = false; app.addMissingNodes() }, enabled = app.statesDiffer())
+            MonoMenuItem("Reset Regular to the middle", { open = false; app.resetRegularToNaturalPath() }, enabled = app.regularCanReset())
+        }
+    }
 }
 
 /** A toggle chip: filled ink when on, hairline when off. */
@@ -392,7 +464,7 @@ fun PreviewSection(app: AppState, previewHeight: Int = 170) {
         SectionHead("Preview")
         PreviewCanvas(
             app,
-            Modifier.fillMaxWidth().height(previewHeight.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF0D0D0D))
+            Modifier.fillMaxWidth().height(previewHeight.dp).clip(RoundedCornerShape(14.dp)).background(Mono.previewGround)
                 .border(1.dp, Mono.border, RoundedCornerShape(14.dp)).padding(10.dp),
         )
         AxisSliders(app)
@@ -773,6 +845,8 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
         mod && e.key == Key.X -> app.cutSelection()
         mod && e.key == Key.V -> app.paste()
         mod && e.key == Key.A -> t.selectAll()
+        mod && e.key == Key.Z && e.isShiftPressed -> app.redo()
+        mod && e.key == Key.Y -> app.redo()
         mod && e.key == Key.Z -> app.undo()
         e.key == Key.Delete || e.key == Key.Backspace -> app.trashSelection()
         e.key == Key.Escape -> when {

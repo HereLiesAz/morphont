@@ -34,27 +34,27 @@ import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.pow
 
-private val bgColor = Mono.ground
-private val glowColor = Color(0xFF161616)
-private val outlineFill = Color(0xFFD9D9D9).copy(alpha = 0.92f)
-private val outlineStroke = Color(0xFFD9D9D9)
-private val baselineColor = Color(0xFF2C2C2C)
-private val metricColor = Color(0xFF1C1C1C)
-private val gridColor = Color(0xFF121212)
-private val ctrlLineColor = Color(0xFF3A3A3A)
-private val nodeRing = Color(0xFFBDBDBD)
-private val offCurveColor = Color(0xFF7A7A7A)
-private val selectedFill = Color.White
-private val rubberFill = Color.White.copy(alpha = 0.06f)
-private val rubberStroke = Color.White.copy(alpha = 0.6f)
-private val pathCurveColor = Color(0xFF6A6A6A)
-private val guideColor = Color.White.copy(alpha = 0.35f)
-private val snapColor = Color.White
-private val ghostFill = Color.White.copy(alpha = 0.04f)
-private val ghostStroke = Color(0xFF5A5A5A)
-private val ghostActive = Color(0xFFBDBDBD)
-private val rulerBg = Color(0xFF0A0A0A)
-private val measureColor = Color(0xFF9A9A9A)
+private val bgColor get() = Mono.ground
+private val glowColor get() = Mono.canvas.glow
+private val outlineFill get() = Mono.canvas.outline.copy(alpha = 0.92f)
+private val outlineStroke get() = Mono.canvas.outline
+private val baselineColor get() = Mono.canvas.baseline
+private val metricColor get() = Mono.canvas.metric
+private val gridColor get() = Mono.canvas.grid
+private val ctrlLineColor get() = Mono.canvas.ctrlLine
+private val nodeRing get() = Mono.canvas.nodeRing
+private val offCurveColor get() = Mono.canvas.offCurve
+private val selectedFill get() = Mono.mark
+private val rubberFill get() = Mono.mark.copy(alpha = 0.06f)
+private val rubberStroke get() = Mono.mark.copy(alpha = 0.6f)
+private val pathCurveColor get() = Mono.canvas.pathCurve
+private val guideColor get() = Mono.mark.copy(alpha = 0.35f)
+private val snapColor get() = Mono.mark
+private val ghostFill get() = Mono.mark.copy(alpha = 0.04f)
+private val ghostStroke get() = Mono.canvas.ghostStroke
+private val ghostActive get() = Mono.canvas.ghostActive
+private val rulerBg get() = Mono.canvas.rulerBg
+private val measureColor get() = Mono.canvas.measure
 private val labelFamily = androidx.compose.ui.text.font.FontFamily.Monospace
 
 /** A "nice" ruler/grid step (1, 2 or 5 x 10^n font units) at least [minPx] wide on screen. */
@@ -281,7 +281,7 @@ fun AnchorCanvas(
         if (reduction != null) {
             // Original as a hairline, reduced shape filled: the gap between them is the loss.
             val original = buildOutlinePath(anchor.glyph.contours, map)
-            drawPath(original, color = Color.White, style = Stroke(width = hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f * uiScale, 3f * uiScale))))
+            drawPath(original, color = Mono.mark, style = Stroke(width = hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f * uiScale, 3f * uiScale))))
             val reduced = reducedGlyph(anchor.glyph, reduction.removed)
             val path = buildOutlinePath(reduced.contours, map)
             drawPath(path, color = outlineFill)
@@ -337,18 +337,18 @@ fun AnchorCanvas(
             val box = androidx.compose.ui.graphics.Path().apply {
                 moveTo(c0.x, c0.y); lineTo(c1.x, c1.y); lineTo(c2.x, c2.y); lineTo(c3.x, c3.y); close()
             }
-            drawPath(box, Color.White.copy(alpha = 0.5f), style = Stroke(width = hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f * uiScale, 4f * uiScale))))
-            drawLine(Color.White.copy(alpha = 0.5f), Offset((c1.x + c2.x) / 2f, c1.y), h.rotate, hair)
+            drawPath(box, Mono.mark.copy(alpha = 0.5f), style = Stroke(width = hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f * uiScale, 4f * uiScale))))
+            drawLine(Mono.mark.copy(alpha = 0.5f), Offset((c1.x + c2.x) / 2f, c1.y), h.rotate, hair)
             for (c in h.corners) {
                 drawRect(bgColor, topLeft = c - Offset(4.5f * uiScale, 4.5f * uiScale), size = Size(9f * uiScale, 9f * uiScale))
-                drawRect(Color.White, topLeft = c - Offset(4.5f * uiScale, 4.5f * uiScale), size = Size(9f * uiScale, 9f * uiScale), style = Stroke(width = 1.4f * uiScale))
+                drawRect(Mono.mark, topLeft = c - Offset(4.5f * uiScale, 4.5f * uiScale), size = Size(9f * uiScale, 9f * uiScale), style = Stroke(width = 1.4f * uiScale))
             }
             for (c in h.edges) {
                 drawRect(bgColor, topLeft = c - Offset(3.5f * uiScale, 3.5f * uiScale), size = Size(7f * uiScale, 7f * uiScale))
-                drawRect(Color.White, topLeft = c - Offset(3.5f * uiScale, 3.5f * uiScale), size = Size(7f * uiScale, 7f * uiScale), style = Stroke(width = 1.4f * uiScale))
+                drawRect(Mono.mark, topLeft = c - Offset(3.5f * uiScale, 3.5f * uiScale), size = Size(7f * uiScale, 7f * uiScale), style = Stroke(width = 1.4f * uiScale))
             }
             drawCircle(bgColor, radius = 5.5f * uiScale, center = h.rotate)
-            drawCircle(Color.White, radius = 5.5f * uiScale, center = h.rotate, style = Stroke(width = 1.4f * uiScale))
+            drawCircle(Mono.mark, radius = 5.5f * uiScale, center = h.rotate, style = Stroke(width = 1.4f * uiScale))
         }
 
         feedback.rubberRect?.let { (start, current) ->
@@ -362,13 +362,13 @@ fun AnchorCanvas(
 
         f.proxyCenter?.let { pad ->
             boundsOfSelection(target.glyph, target.selection)?.let { b ->
-                drawLine(Color.White.copy(alpha = 0.45f), map(b.cx, b.cy), pad, hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f * density, 4f * density)))
+                drawLine(Mono.mark.copy(alpha = 0.45f), map(b.cx, b.cy), pad, hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f * density, 4f * density)))
             }
-            drawCircle(Color.White.copy(alpha = 0.06f), radius = f.proxyRadiusPx, center = pad)
-            drawCircle(Color.White, radius = f.proxyRadiusPx, center = pad, style = Stroke(width = 1.5f * density))
+            drawCircle(Mono.mark.copy(alpha = 0.06f), radius = f.proxyRadiusPx, center = pad)
+            drawCircle(Mono.mark, radius = f.proxyRadiusPx, center = pad, style = Stroke(width = 1.5f * density))
             val arm = f.proxyRadiusPx * 0.45f
-            drawLine(Color.White, pad - Offset(arm, 0f), pad + Offset(arm, 0f), 1.5f * density)
-            drawLine(Color.White, pad - Offset(0f, arm), pad + Offset(0f, arm), 1.5f * density)
+            drawLine(Mono.mark, pad - Offset(arm, 0f), pad + Offset(arm, 0f), 1.5f * density)
+            drawLine(Mono.mark, pad - Offset(0f, arm), pad + Offset(0f, arm), 1.5f * density)
         }
 
         if (view.showRulers) drawRulers(mapper, rulerPx, textMeasurer, labelStyle)
@@ -487,10 +487,10 @@ private fun DrawScope.drawMeasurements(
         hBar(b, measureColor, 14f * uiScale + (i % 3) * 14f * uiScale)
         vBar(b, measureColor)
     }
-    for (g in app.ghosts) if (g.visible) boundsOfContours(app.ghostContours(g, anchorName))?.let { hBar(it, Color(0xFF6A6A6A), 56f * uiScale) }
+    for (g in app.ghosts) if (g.visible) boundsOfContours(app.ghostContours(g, anchorName))?.let { hBar(it, pathCurveColor, 56f * uiScale) }
     if (target.selection.size >= 2) boundsOfSelection(target.glyph, target.selection)?.let {
-        hBar(it, Color.White, 8f * uiScale)
-        vBar(it, Color.White)
+        hBar(it, Mono.mark, 8f * uiScale)
+        vBar(it, Mono.mark)
     }
 }
 
@@ -519,6 +519,6 @@ private fun DrawScope.drawRulers(mapper: SpaceMapper, rulerPx: Float, tm: TextMe
         y += minor
     }
     drawRect(rulerBg, size = Size(rulerPx, rulerPx))
-    drawLine(Color(0xFF1A1A1A), Offset(0f, rulerPx), Offset(size.width, rulerPx), 1f)
-    drawLine(Color(0xFF1A1A1A), Offset(rulerPx, 0f), Offset(rulerPx, size.height), 1f)
+    drawLine(Mono.canvas.rulerLine, Offset(0f, rulerPx), Offset(size.width, rulerPx), 1f)
+    drawLine(Mono.canvas.rulerLine, Offset(rulerPx, 0f), Offset(rulerPx, size.height), 1f)
 }

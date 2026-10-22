@@ -41,9 +41,11 @@ fun main() = application {
 
 @Composable
 fun DesktopApp() {
+    // Read before the theme composes, so a saved light theme never flashes dark first.
+    val saved = remember { DesktopStorage.settings.load().also { ThemeState.dark = it.dark } }
     MorphontTheme {
         ConveySystem {
-            val app = remember { AppState().apply { glyphLookup = { DesktopStorage.loadGlyph(it) } } }
+            val app = remember { AppState().apply { glyphLookup = { DesktopStorage.loadGlyph(it) }; applySettings(saved) } }
             val focus = remember { FocusRequester() }
             val scope = rememberCoroutineScope()
 
@@ -203,6 +205,7 @@ fun DesktopApp() {
                     ),
                     projects = ProjectActions(::createProject, ::openProject, ::renameProject, ::deleteProject),
                     touchScale = 1.3f,
+                    settings = DesktopStorage.settings,
                 )
             }
 

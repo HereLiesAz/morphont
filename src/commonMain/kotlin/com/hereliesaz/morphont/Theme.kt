@@ -38,6 +38,9 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -62,54 +65,107 @@ import compose.conveyance.tokens.conveyTypeFontFamily
  * hierarchy enforcement via [compose.conveyance.conveyWeight]. Icons are
  * drawn in-house ([MIcons]) rather than pulled from an icon library.
  */
+/** Every colour the UI and the canvas draw with, for one theme. */
+class Palette(
+    val ground: Color, val panel: Color, val panelHeader: Color, val border: Color, val borderBright: Color,
+    val ink: Color, val inkDim: Color, val inkFaint: Color,
+    val primary: Color, val onPrimary: Color, val secondary: Color, val onSecondary: Color,
+    val tertiary: Color, val onTertiary: Color, val error: Color, val onError: Color,
+    // The drawing canvas.
+    val glow: Color, val outline: Color, val baseline: Color, val metric: Color, val grid: Color,
+    val ctrlLine: Color, val nodeRing: Color, val offCurve: Color, val pathCurve: Color,
+    val ghostStroke: Color, val ghostActive: Color, val rulerBg: Color, val rulerLine: Color, val measure: Color,
+    /** The mark colour for selection boxes, snap lines and the like: white on dark, near-black on light. */
+    val mark: Color,
+    val hairline: Color, val previewGround: Color,
+)
+
+val DarkPalette = Palette(
+    ground = Color(0xFF070707), panel = Color(0xFF121212), panelHeader = Color(0xFF1C1C1C),
+    border = Color(0xFF262626), borderBright = Color(0xFF3A3A3A),
+    ink = Color(0xFFEDEDED), inkDim = Color(0xFF8C8C8C), inkFaint = Color(0xFF4A4A4A),
+    primary = Color(0xFFEDEDED), onPrimary = Color(0xFF070707),
+    secondary = Color(0xFF7A7A7A), onSecondary = Color(0xFF070707),
+    tertiary = Color(0xFFBDBDBD), onTertiary = Color(0xFF070707),
+    error = Color(0xFFE4573D), onError = Color(0xFF1A0704),
+    glow = Color(0xFF161616), outline = Color(0xFFD9D9D9), baseline = Color(0xFF2C2C2C), metric = Color(0xFF1C1C1C),
+    grid = Color(0xFF121212), ctrlLine = Color(0xFF3A3A3A), nodeRing = Color(0xFFBDBDBD), offCurve = Color(0xFF7A7A7A),
+    pathCurve = Color(0xFF6A6A6A), ghostStroke = Color(0xFF5A5A5A), ghostActive = Color(0xFFBDBDBD),
+    rulerBg = Color(0xFF0A0A0A), rulerLine = Color(0xFF1A1A1A), measure = Color(0xFF9A9A9A),
+    mark = Color.White, hairline = Color(0xFF181818), previewGround = Color(0xFF0D0D0D),
+)
+
+/**
+ * "Light": a dark grey, not paper. Lifted well off the near-black of [DarkPalette] but still dark enough for
+ * white text and icons, so the same ink, marks and hairlines work on both.
+ */
+val LightPalette = Palette(
+    ground = Color(0xFF2E2E2E), panel = Color(0xFF3A3A3A), panelHeader = Color(0xFF454545),
+    border = Color(0xFF4E4E4E), borderBright = Color(0xFF626262),
+    ink = Color(0xFFF2F2F2), inkDim = Color(0xFFB4B4B4), inkFaint = Color(0xFF7E7E7E),
+    primary = Color(0xFFF2F2F2), onPrimary = Color(0xFF2E2E2E),
+    secondary = Color(0xFF9A9A9A), onSecondary = Color(0xFF2E2E2E),
+    tertiary = Color(0xFFD2D2D2), onTertiary = Color(0xFF2E2E2E),
+    error = Color(0xFFEE6A50), onError = Color(0xFF1A0704),
+    glow = Color(0xFF3E3E3E), outline = Color(0xFFE8E8E8), baseline = Color(0xFF5A5A5A), metric = Color(0xFF444444),
+    grid = Color(0xFF383838), ctrlLine = Color(0xFF6A6A6A), nodeRing = Color(0xFFD0D0D0), offCurve = Color(0xFF9E9E9E),
+    pathCurve = Color(0xFF909090), ghostStroke = Color(0xFF909090), ghostActive = Color(0xFFD2D2D2),
+    rulerBg = Color(0xFF292929), rulerLine = Color(0xFF3C3C3C), measure = Color(0xFFB4B4B4),
+    mark = Color.White, hairline = Color(0xFF3A3A3A), previewGround = Color(0xFF262626),
+)
+
+/** Which theme is showing. One value for the whole app, so the canvas and every panel switch together. */
+object ThemeState {
+    var dark by mutableStateOf(true)
+}
+
 object Mono {
+    private val p: Palette get() = if (ThemeState.dark) DarkPalette else LightPalette
+
     // Grounds, darkest first. The canvas is the room; everything else floats on it.
-    val ground = Color(0xFF070707)
-    val panel = Color(0xFF121212)
-    val panelHeader = Color(0xFF1C1C1C)
-    val border = Color(0xFF262626)
-    val borderBright = Color(0xFF3A3A3A)
-    val ink = Color(0xFFEDEDED)
-    val inkDim = Color(0xFF8C8C8C)
-    val inkFaint = Color(0xFF4A4A4A)
+    val ground get() = p.ground
+    val panel get() = p.panel
+    val panelHeader get() = p.panelHeader
+    val border get() = p.border
+    val borderBright get() = p.borderBright
+    val ink get() = p.ink
+    val inkDim get() = p.inkDim
+    val inkFaint get() = p.inkFaint
 
     /**
      * Monochrome by design: "primary" is the brightest ink, not a hue. Selection,
      * the active tool and the anchor being edited are white on near-black; the
      * hierarchy is carried by light, not colour.
      */
-    val primary = Color(0xFFEDEDED)
-    val onPrimary = Color(0xFF070707)
+    val primary get() = p.primary
+    val onPrimary get() = p.onPrimary
 
     /** Off-curve handles and other secondary marks: a mid grey. */
-    val secondary = Color(0xFF7A7A7A)
-    val onSecondary = Color(0xFF070707)
+    val secondary get() = p.secondary
+    val onSecondary get() = p.onSecondary
 
     /** Ghosts and reference material: a quieter grey than the glyph itself. */
-    val tertiary = Color(0xFFBDBDBD)
-    val onTertiary = Color(0xFF070707)
+    val tertiary get() = p.tertiary
+    val onTertiary get() = p.onTertiary
 
     /** The only colour in the palette, kept for genuine errors. */
-    val error = Color(0xFFE4573D)
-    val onError = Color(0xFF1A0704)
+    val error get() = p.error
+    val onError get() = p.onError
+
+    /** Canvas and layout colours that aren't ink. */
+    val canvas: Palette get() = p
+    val mark get() = p.mark
+    val hairline get() = p.hairline
+    val previewGround get() = p.previewGround
 }
 
-val MorphontColorScheme = darkColorScheme(
-    primary = Mono.primary,
-    onPrimary = Mono.onPrimary,
-    secondary = Mono.secondary,
-    onSecondary = Mono.onSecondary,
-    tertiary = Mono.tertiary,
-    onTertiary = Mono.onTertiary,
-    background = Mono.ground,
-    onBackground = Mono.ink,
-    surface = Mono.panel,
-    onSurface = Mono.ink,
-    surfaceVariant = Mono.panelHeader,
-    onSurfaceVariant = Mono.inkDim,
-    outline = Mono.border,
-    error = Mono.error,
-    onError = Mono.onError,
+/** Both themes are dark enough for white-on-dark, so one dark-based scheme serves both, fed by the live palette. */
+@Composable
+private fun morphontColorScheme() = darkColorScheme(
+    primary = Mono.primary, onPrimary = Mono.onPrimary, secondary = Mono.secondary, onSecondary = Mono.onSecondary,
+    tertiary = Mono.tertiary, onTertiary = Mono.onTertiary, background = Mono.ground, onBackground = Mono.ink,
+    surface = Mono.panel, onSurface = Mono.ink, surfaceVariant = Mono.panelHeader, onSurfaceVariant = Mono.inkDim,
+    outline = Mono.border, error = Mono.error, onError = Mono.onError,
 )
 
 /**
@@ -275,7 +331,7 @@ fun MorphontTheme(content: @Composable () -> Unit) {
     // No more of a stretch for this library's "official typeface" than it is for Morphont, a
     // tool for shaping that exact font, to use it as its own UI typeface too.
     val typography = typographyIn(conveyTypeFontFamily(ConveyTypePreset.Regular))
-    MaterialTheme(colorScheme = MorphontColorScheme, typography = typography, content = content)
+    MaterialTheme(colorScheme = morphontColorScheme(), typography = typography, content = content)
 }
 
 /**

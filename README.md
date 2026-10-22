@@ -126,6 +126,26 @@ so anchors can then be reshaped without adding or removing points.
   (or, with a mouse, just outside a corner) to rotate about the centre. Shift
   keeps proportions / snaps rotation to 15°, Alt pivots on the centre, and
   Ctrl/Cmd on an edge skews. Each drag is one undo step (no separate commit).
+- **Menu.** The ⋯ at the top opens a menu instead of the glyph list. **Go to**:
+  Glyphs and files, Projects, Font overview and (on a phone, where they are
+  sheets) Preview, Ghosts, Guides and metrics. **Theme**: Dark or Light.
+  **View and settings**: Snap, Metrics, Rulers, Guides, Measurements, Ghosts,
+  Travel paths, Move circle and Grid, each a checkable item that leaves the menu
+  open so several can be flipped at once, then **Grid step** (10, 25, 50 or 100
+  units). The desktop top bar has the same menu without the panel shortcuts
+  (those panels are always on screen there).
+- **Settings are remembered.** Theme, every view toggle, the grid and its step,
+  the glyph opacity and the Move circle choice are saved as they change and
+  restored at launch: Android in its preferences, desktop in `settings.json`
+  beside the project list, the web build in localStorage. The Light theme is a dark grey (a step up from
+  the near-black Dark one), still dark enough for white text and icons, so both
+  themes share the same ink, marks and hairlines; on Android the status and
+  navigation bar icons stay light on both.
+- **Redo.** The arrow next to Undo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y) steps forward
+  through what Undo stepped back from: outlines (all linked states together),
+  guides, metrics and ghosts. A redo is an ordinary edit, so it can itself be
+  undone; any new edit forgets what was left to redo, and so does opening
+  another glyph.
 - **Reset to the natural path.** On Regular, once the three states of the open
   axis match point for point, the suggestion **Reset to the natural path** moves
   every Regular point to exactly halfway between the two extremes, so each
@@ -317,6 +337,13 @@ so anchors can then be reshaped without adding or removing points.
   (unpaired contours are dropped, and the status says so), are cut down by the
   shape-preserving simplifier, turned to run the same way round and started at
   the node that lines up best with the template's. One undo step.
+  **Add missing nodes** goes the other way: the densest state is the template
+  and each sparser one gains nodes (splitting its longest segments, so its
+  outline doesn't move) up to that count; it refuses if the states have
+  different numbers of contours. Both, and **Reset Regular to the middle**
+  (every Regular point back halfway between the extremes), live in the
+  dock's **states** menu (three-line icon, with each state's node count at
+  the top) as well as in the sparkle suggestions.
 - **Snapping.** Light: within ~7px a dragged point (or a selection's edges/
   centre) pulls onto metrics, guides, ghost nodes and (more weakly) the grid,
   and lines up -- vertically or horizontally -- with other **nodes** (when

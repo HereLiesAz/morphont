@@ -36,12 +36,15 @@ object MIcons {
     val AddNode = icon("addNode", listOf("M10 6 3 15l3 6h8l3-6z", "M18 3v6M15 6h6"))
     val SubtractNode = icon("subtractNode", listOf("M10 6 3 15l3 6h8l3-6z", "M15 6h6"))
     val ConvertNode = icon("convertNode", listOf("M4 20 12 5l8 15", "M8.5 13c2-1.4 5-1.4 7 0"))
+    // Three states, one row each, with their nodes at different places -- the thing the menu lines up.
+    val States = icon("states", listOf("M3 6h18M3 12h18M3 18h18"), listOf(circle(8f, 6f, 1.8f), circle(15f, 12f, 1.8f), circle(11f, 18f, 1.8f)))
     val Guides = icon("guides", listOf("M3 3h18v6H9v12H3z", "M7 3v3M11 3v3M15 3v3M3 13h3M3 17h3"))
     val Measure = icon("measure", listOf("M4 12h16M4 8v8M20 8v8"))
     // A ghost, not a copy: the silhouette with a ragged hem and two eyes.
     val Ghost = icon("ghost", listOf("M5 21V11a7 7 0 0 1 14 0v10l-2.3-2-2.4 2-2.3-2-2.3 2-2.4-2z"), listOf(circle(9.5f, 11f, 1.2f), circle(14.5f, 11f, 1.2f)))
     val Simplify = icon("simplify", listOf("M3 18c4-10 14-10 18 0"), listOf(circle(3f, 18f, 1.6f), circle(21f, 18f, 1.6f)))
     val Undo = icon("undo", listOf("M9 14 4 9l5-5", "M4 9h10a6 6 0 0 1 0 12h-3"))
+    val Redo = icon("redo", listOf("M15 14l5-5-5-5", "M20 9H10a6 6 0 0 0 0 12h3"))
     val More = icon("more", emptyList(), listOf(circle(5f, 12f, 1.6f), circle(12f, 12f, 1.6f), circle(19f, 12f, 1.6f)))
     val Copy = icon("copy", listOf("M10 8h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z", "M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"))
     val Paste = icon("paste", listOf("M9 4h6v3H9z", "M15 5h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h3"))
