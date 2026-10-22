@@ -206,6 +206,7 @@ fun DesktopApp() {
                     projects = ProjectActions(::createProject, ::openProject, ::renameProject, ::deleteProject),
                     touchScale = 1.3f,
                     settings = DesktopStorage.settings,
+                    fontStore = DesktopFontStore.host,
                 )
             }
 

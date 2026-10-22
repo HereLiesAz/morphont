@@ -34,6 +34,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,6 +81,8 @@ class EditorHost(
     val touchScale: Float = 1.3f,
     /** Where theme and view settings are kept between sessions; null keeps them for this session only. */
     val settings: SettingsStore? = null,
+    /** The azphalt font store and this device's installed fonts; null on a surface without one. */
+    val fontStore: FontStoreHost? = null,
 )
 
 // ------------------------------------------------------------ small parts
@@ -118,6 +124,8 @@ fun EditorMenuButton(
 ) {
     var open by remember { mutableStateOf(false) }
     var projectsOpen by remember { mutableStateOf(false) }
+    var storeOpen by remember { mutableStateOf(false) }
+    var ghostFont by remember { mutableStateOf<String?>(null) }
     val v = app.view
     @Composable fun section(title: String) = MonoMenuItem(title.uppercase(), {}, enabled = false)
     Box {
@@ -127,6 +135,7 @@ fun EditorMenuButton(
             MonoMenuItem("Glyphs and files…", { open = false; openBrowser() })
             if (host.projects != null) MonoMenuItem("Projects…", { open = false; projectsOpen = true })
             MonoMenuItem("Font overview", { open = false; openFontOverview() })
+            if (host.fontStore != null) MonoMenuItem("Font store…", { open = false; storeOpen = true })
             if (goTo != null) {
                 MonoMenuItem("Preview", { open = false; goTo("preview") })
                 MonoMenuItem("Ghosts", { open = false; goTo("ghosts") })
@@ -152,6 +161,10 @@ fun EditorMenuButton(
     host.projects?.let { actions ->
         if (projectsOpen) ProjectsDialog(app, actions, onDismiss = { projectsOpen = false }, onSwitched = { projectsOpen = false })
     }
+    host.fontStore?.let { store ->
+        if (storeOpen) FontStoreDialog(app, store, onUseAsGhost = { storeOpen = false; ghostFont = it }) { storeOpen = false }
+    }
+    ghostFont?.let { name -> FontCharacterPicker(app, host, initialFont = name) { ghostFont = null } }
 }
 
 /**
@@ -476,6 +489,8 @@ fun GhostsSection(app: AppState, host: EditorHost) {
     var addOpen by remember { mutableStateOf(false) }
     var glyphPicker by remember { mutableStateOf(false) }
     var fontPicker by remember { mutableStateOf(false) }
+    var pickerFont by remember { mutableStateOf<String?>(null) }
+    var storeOpen by remember { mutableStateOf(false) }
     var ghostAxisId by remember { mutableStateOf<Int?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SectionHead("Ghosts") {
@@ -486,6 +501,7 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                     val m = app.metrics
                     MonoMenuItem("Glyph from this project…", { addOpen = false; glyphPicker = true })
                     MonoMenuItem("Character from a font file…", { addOpen = false; fontPicker = true })
+                    if (host.fontStore != null) MonoMenuItem("Character from the font store…", { addOpen = false; storeOpen = true })
                     for (kind in ShapeKind.entries) MonoMenuItem(kind.label, {
                         addOpen = false
                         val w = maxOf(glyph.width, m.unitsPerEm * 0.5f)
@@ -551,7 +567,10 @@ fun GhostsSection(app: AppState, host: EditorHost) {
         }
     }
     if (glyphPicker) ProjectGlyphPicker(app, host) { glyphPicker = false }
-    if (fontPicker) FontCharacterPicker(app, host) { fontPicker = false }
+    if (fontPicker) FontCharacterPicker(app, host, initialFont = pickerFont) { fontPicker = false; pickerFont = null }
+    host.fontStore?.let { store ->
+        if (storeOpen) FontStoreDialog(app, store, onUseAsGhost = { storeOpen = false; pickerFont = it; fontPicker = true }) { storeOpen = false }
+    }
     val ghost = app.ghosts.firstOrNull { it.id == ghostAxisId }
     if (ghost != null) GhostAxesDialog(app, ghost) { ghostAxisId = null }
 }
@@ -783,10 +802,14 @@ private fun ProjectGlyphPicker(app: AppState, host: EditorHost, onDismiss: () ->
 }
 
 @Composable
-private fun FontCharacterPicker(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
+private fun FontCharacterPicker(app: AppState, host: EditorHost, initialFont: String? = null, onDismiss: () -> Unit) {
     var chars by remember { mutableStateOf("") }
-    var fontName by remember { mutableStateOf(app.referenceFonts.keys.firstOrNull()) }
+    var fontName by remember { mutableStateOf(initialFont ?: app.referenceFonts.keys.firstOrNull()) }
     var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val store = host.fontStore
+    var shelf by remember { mutableStateOf<List<InstalledFont>>(emptyList()) }
+    if (store != null) LaunchedEffect(store) { shelf = runCatching { store.shelf.list() }.getOrDefault(emptyList()) }
     MonoDialog("Ghost from a font", onDismiss, actions = {
         MonoButton(onClick = {
             val font = fontName?.let { app.referenceFonts[it] }
@@ -804,6 +827,18 @@ private fun FontCharacterPicker(app: AppState, host: EditorHost, onDismiss: () -
     }) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for (name in app.referenceFonts.keys) Chip(name, name == fontName) { fontName = name }
+            // Installed store fonts not loaded yet: a tap reads the face from this device.
+            if (store != null) for (font in shelf) for (face in font.faces.filter { it.readable }) {
+                val label = if (font.faces.size > 1) "${font.family} ${face.style ?: face.fileName}" else font.family
+                if (app.referenceFonts.containsKey(label)) continue
+                Chip(label, false) {
+                    scope.launch {
+                        try { fontName = loadInstalledFace(app, store, font, face); error = null }
+                        catch (e: CancellationException) { throw e }
+                        catch (e: Exception) { error = e.message }
+                    }
+                }
+            }
             Chip("Load .ttf…", false) {
                 host.pickFontBytes({ bytes ->
                     try {

@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import compose.conveyance.ConveySystem
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +34,8 @@ class AndroidFileActions(
     val openJson: (onLoaded: (String) -> Unit, onError: (String) -> Unit) -> Unit,
     val saveJson: (filename: String, text: String, onSaved: () -> Unit, onError: (String) -> Unit) -> Unit,
     val openTtf: (onLoaded: (ByteArray) -> Unit, onError: (String) -> Unit) -> Unit,
+    /** Writes a font file where the user picks; onError also when they cancel. */
+    val saveFont: (filename: String, bytes: ByteArray, onSaved: () -> Unit, onError: (String) -> Unit) -> Unit,
 )
 
 private enum class OpenGlyphOutcome { OPENED, EMPTY, UNREADABLE }
@@ -60,6 +63,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
             val keyboardFocus = remember { FocusRequester() }
             val scope = rememberCoroutineScope()
             val haptics = LocalHapticFeedback.current
+            val context = LocalContext.current
             var importingFont by remember { mutableStateOf(false) }
             var initialized by remember { mutableStateOf(false) }
 
@@ -271,6 +275,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                     projects = ProjectActions(::createProject, ::openProject, ::renameProject, ::deleteProject),
                     touchScale = 1.35f,
                     settings = storage.settings,
+                    fontStore = AndroidFontStore.host(context, files),
                 )
             }
 

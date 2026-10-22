@@ -214,6 +214,7 @@ fun App() {
                     ),
                     touchScale = 1.3f,
                     settings = Storage.settings,
+                    fontStore = WebFontStore.host,
                 )
             }
 
