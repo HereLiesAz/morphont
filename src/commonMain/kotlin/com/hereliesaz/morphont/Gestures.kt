@@ -607,6 +607,37 @@ private fun snapTargetsFor(f: CanvasFrame, target: AnchorState, exclude: Set<Poi
 }
 
 /**
+ * A handle that has just lined up with another handle -- on the vertical line x = [line] ([vertical]) or the
+ * horizontal line y = [line] -- also takes that handle's length (its distance to its own node) or its angle,
+ * whichever puts it somewhere on the same line close to where it is. [node] is the dragged handle's node,
+ * [matched] the handle it lined up with and [matchedNode] that handle's node; ([cx], [cy]) is where the
+ * dragged handle is now. Returns the new position, or null when neither is within [tolerance] (font units).
+ */
+internal fun matchedHandleSnap(
+    node: Offset, matched: Offset, matchedNode: Offset, vertical: Boolean, line: Float, cx: Float, cy: Float, tolerance: Float,
+): Offset? {
+    val vx = matched.x - matchedNode.x; val vy = matched.y - matchedNode.y
+    val length = hypot(vx, vy)
+    if (length < 1e-3f) return null
+    val candidates = mutableListOf<Offset>()
+    val off = if (vertical) line - node.x else line - node.y
+    // The same distance from the node, on the line.
+    if (length >= abs(off)) {
+        val along = sqrt(length * length - off * off)
+        if (vertical) { candidates.add(Offset(line, node.y + along)); candidates.add(Offset(line, node.y - along)) }
+        else { candidates.add(Offset(node.x + along, line)); candidates.add(Offset(node.x - along, line)) }
+    }
+    // The same angle from the node, on the line.
+    val ux = vx / length; val uy = vy / length
+    val component = if (vertical) ux else uy
+    if (abs(component) > 1e-4f) {
+        val t = off / component
+        if (t > 0f) candidates.add(Offset(node.x + t * ux, node.y + t * uy))
+    }
+    return candidates.minByOrNull { hypot(it.x - cx, it.y - cy) }?.takeIf { hypot(it.x - cx, it.y - cy) <= tolerance }
+}
+
+/**
  * Points a dragged handle must not snap to: the handles being dragged, and -- on a mirrored node only --
  * the twin that moves with them. On a corner node the other handle stays put, so it is a target: a handle
  * lines up vertically or horizontally with its own node's other handle.
@@ -668,6 +699,27 @@ private suspend fun AwaitPointerEventScope.dragSelection(
             val r = snapDelta(movingXs, movingYs, dx, dy, targets, snapTolerance(f))
             dx = r.dx; dy = r.dy
             feedback.snapX = r.xLine; feedback.snapY = r.yLine
+            // Lined up with another handle on one axis: also take its length / angle to its node.
+            if (handleMode && primaryPt != null && !primaryPt.onCurve && (r.xLine == null) != (r.yLine == null)) {
+                val own = primary?.let { (ci, pi) -> origGlyph.contours.getOrNull(ci)?.points?.let { pts -> armOwner(pts, pi)?.let { pts[it] } } }
+                val vertical = r.xLine != null
+                val line = r.xLine ?: r.yLine!!
+                var matched: Pair<Pt, Pt>? = null
+                var nearest = Float.POSITIVE_INFINITY
+                for ((ci, c) in origGlyph.contours.withIndex()) for ((pi, p) in c.points.withIndex()) {
+                    if (p.onCurve || (ci to pi) in skip || isRetracted(c.points, pi)) continue
+                    if (abs((if (vertical) p.x else p.y) - line) > 0.01f) continue
+                    val owner = armOwner(c.points, pi)?.let { c.points[it] } ?: continue
+                    val d = hypot(p.x - (primaryPt.x + dx), p.y - (primaryPt.y + dy))
+                    if (d < nearest) { nearest = d; matched = p to owner }
+                }
+                if (own != null && matched != null) {
+                    matchedHandleSnap(
+                        Offset(own.x, own.y), Offset(matched.first.x, matched.first.y), Offset(matched.second.x, matched.second.y),
+                        vertical, line, primaryPt.x + dx, primaryPt.y + dy, snapTolerance(f) * 1.6f,
+                    )?.let { dx = it.x - primaryPt.x; dy = it.y - primaryPt.y }
+                }
+            }
         }
         target.replaceGlyph(dragPoints(origGlyph, keys, dx, dy))
     }
