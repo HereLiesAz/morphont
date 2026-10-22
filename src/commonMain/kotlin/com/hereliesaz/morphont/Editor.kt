@@ -240,6 +240,7 @@ private fun CompactEditor(
             }
             SuggestionsButton(app, suggestions)
             IconAction(MIcons.Undo, "Undo", { app.undo() })
+            IconAction(MIcons.Redo, "Redo", { app.redo() }, enabled = app.canRedo)
             IconAction(MIcons.More, "Glyphs and file", openBrowser)
         }
         AnchorFilmstrip(app, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 6.dp), compact = true)
@@ -325,6 +326,7 @@ private fun WideEditor(
             ZoomControl(app.view)
             IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = 40)
             IconAction(MIcons.Undo, "Undo", { app.undo() }, size = 40)
+        IconAction(MIcons.Redo, "Redo", { app.redo() }, size = 40, enabled = app.canRedo)
             MonoButton(onClick = openBrowser, selected = true) { Text("Glyphs & file", fontSize = 13.sp) }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))

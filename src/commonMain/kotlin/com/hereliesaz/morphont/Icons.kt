@@ -44,6 +44,7 @@ object MIcons {
     val Ghost = icon("ghost", listOf("M5 21V11a7 7 0 0 1 14 0v10l-2.3-2-2.4 2-2.3-2-2.3 2-2.4-2z"), listOf(circle(9.5f, 11f, 1.2f), circle(14.5f, 11f, 1.2f)))
     val Simplify = icon("simplify", listOf("M3 18c4-10 14-10 18 0"), listOf(circle(3f, 18f, 1.6f), circle(21f, 18f, 1.6f)))
     val Undo = icon("undo", listOf("M9 14 4 9l5-5", "M4 9h10a6 6 0 0 1 0 12h-3"))
+    val Redo = icon("redo", listOf("M15 14l5-5-5-5", "M20 9H10a6 6 0 0 0 0 12h3"))
     val More = icon("more", emptyList(), listOf(circle(5f, 12f, 1.6f), circle(12f, 12f, 1.6f), circle(19f, 12f, 1.6f)))
     val Copy = icon("copy", listOf("M10 8h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z", "M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"))
     val Paste = icon("paste", listOf("M9 4h6v3H9z", "M15 5h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h3"))

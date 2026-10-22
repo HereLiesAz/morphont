@@ -126,6 +126,11 @@ so anchors can then be reshaped without adding or removing points.
   (or, with a mouse, just outside a corner) to rotate about the centre. Shift
   keeps proportions / snaps rotation to 15°, Alt pivots on the centre, and
   Ctrl/Cmd on an edge skews. Each drag is one undo step (no separate commit).
+- **Redo.** The arrow next to Undo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y) steps forward
+  through what Undo stepped back from: outlines (all linked states together),
+  guides, metrics and ghosts. A redo is an ordinary edit, so it can itself be
+  undone; any new edit forgets what was left to redo, and so does opening
+  another glyph.
 - **Reset to the natural path.** On Regular, once the three states of the open
   axis match point for point, the suggestion **Reset to the natural path** moves
   every Regular point to exactly halfway between the two extremes, so each

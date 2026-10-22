@@ -791,6 +791,8 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
         mod && e.key == Key.X -> app.cutSelection()
         mod && e.key == Key.V -> app.paste()
         mod && e.key == Key.A -> t.selectAll()
+        mod && e.key == Key.Z && e.isShiftPressed -> app.redo()
+        mod && e.key == Key.Y -> app.redo()
         mod && e.key == Key.Z -> app.undo()
         e.key == Key.Delete || e.key == Key.Backspace -> app.trashSelection()
         e.key == Key.Escape -> when {

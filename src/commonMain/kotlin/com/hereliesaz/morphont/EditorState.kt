@@ -397,6 +397,21 @@ class AppState {
     private class UndoEntry(val owners: MutableList<Any>, val action: () -> Unit)
     private val undoActions = mutableListOf<UndoEntry>()
     private var recording = true
+
+    /** Everything Undo and Redo move between: the outlines, guides, metrics and ghosts at one moment. */
+    private class EditorSnapshot(
+        val corners: Map<String, GlyphCorner>,
+        val guides: List<Guide>,
+        val metrics: FontMetrics,
+        val ghosts: List<GhostData>,
+    )
+
+    /** States Undo stepped back from, newest last; Redo steps forward to them. Cleared by any new edit. */
+    private val redoStack = mutableStateListOf<EditorSnapshot>()
+    private var redoing = false
+
+    /** Whether there is anything to Redo. */
+    val canRedo: Boolean get() = redoStack.isNotEmpty()
     /** Increment before bulk imports so pending autosaves cannot overwrite newly imported records. */
     var autosaveEpoch by mutableStateOf(0)
         private set
@@ -412,6 +427,7 @@ class AppState {
 
     private fun recordUndo(owners: List<Any>, action: () -> Unit) {
         if (!recording) return
+        if (!redoing) redoStack.clear() // a new edit ends the line Redo would have followed
         undoActions.add(UndoEntry(owners.toMutableList(), action))
         if (undoActions.size > 150) {
             // Keep the owner's private history in step with the evicted global entry.
@@ -664,10 +680,77 @@ class AppState {
             setStatus("Apply or cancel Simplify before undoing.", true)
             return
         }
+        val before = snapshot()
         val action = undoActions.removeAt(undoActions.lastIndex).action
         val previous = recording
         recording = false
         try { action() } finally { recording = previous }
+        redoStack.add(before)
+        if (redoStack.size > 150) redoStack.removeAt(0)
+    }
+
+    private fun snapshot() = EditorSnapshot(
+        corners = anchors.mapValues { it.value.glyph.deepCopy() },
+        guides = guides.toList(),
+        metrics = metrics,
+        ghosts = ghosts.map { it.toData() },
+    )
+
+    private fun ghostFromData(it: GhostData) = GhostLayer(
+        nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph,
+        it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside,
+        it.axisOverrides, it.referenceCorners, it.supportedAxes, it.solid, it.color,
+    )
+
+    private fun setGhosts(list: List<GhostData>) {
+        activeGhostId = null
+        ghosts.clear()
+        for (d in list) {
+            val layer = ghostFromData(d)
+            attachGhost(layer)
+            ghosts.add(layer)
+            d.sourceGlyph?.let { src -> cacheLinked(src) }
+        }
+    }
+
+    /**
+     * Redo the edit Undo last stepped back from: moves outlines, guides, metrics and ghosts to how they were,
+     * as ordinary edits of their own (so the redo can itself be undone). Any new edit forgets what was left.
+     */
+    fun redo() {
+        if (reduction != null) {
+            setStatus("Apply or cancel Simplify before redoing.", true)
+            return
+        }
+        val target = redoStack.removeLastOrNull() ?: run { setStatus("Nothing to redo."); return }
+        val now = snapshot()
+        redoing = true
+        try {
+            val changed = ANCHORS.filter { target.corners[it] != now.corners[it] }
+            if (changed.isNotEmpty()) {
+                val owners = changed.map { anchors.getValue(it) }
+                groupUndo(
+                    owners = owners,
+                    block = { for (n in changed) anchors.getValue(n).replaceWithHistory(target.corners.getValue(n).deepCopy()) },
+                    undo = { owners.forEach { it.undo() } },
+                )
+            }
+            if (target.guides != now.guides) {
+                val before = now.guides
+                recordUndo { guides.clear(); guides.addAll(before) }
+                guides.clear(); guides.addAll(target.guides)
+            }
+            if (target.metrics != now.metrics) {
+                val before = now.metrics
+                recordUndo { metrics = before }
+                metrics = target.metrics
+            }
+            if (target.ghosts != now.ghosts) {
+                val before = now.ghosts
+                recordUndo { setGhosts(before) }
+                setGhosts(target.ghosts)
+            }
+        } finally { redoing = false }
     }
 
     /** Switches the active ghost between placement and node editing; node editing bakes/detaches first. */
@@ -747,17 +830,14 @@ class AppState {
         ghosts.clear()
         linkedGlyphs.clear()
         glyph.ghosts.forEach {
-            val layer = GhostLayer(
-                nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph,
-                it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside,
-                it.axisOverrides, it.referenceCorners, it.supportedAxes, it.solid, it.color,
-            )
+            val layer = ghostFromData(it)
             attachGhost(layer)
             ghosts.add(layer)
             it.sourceGlyph?.let { src -> cacheLinked(src) }
         }
         metrics = glyph.metrics ?: FontMetrics()
         undoActions.clear()
+        redoStack.clear()
         activeGhostId = null
         reduction = null
         activeAnchor = "regular"
@@ -779,6 +859,7 @@ class AppState {
         reduction = null
         metrics = FontMetrics()
         undoActions.clear()
+        redoStack.clear()
     }
 
     fun toGlyph(): Glyph = Glyph(
