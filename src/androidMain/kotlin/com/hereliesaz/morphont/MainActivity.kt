@@ -3,9 +3,11 @@ package com.hereliesaz.morphont
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.SideEffect
 
 class MainActivity : ComponentActivity() {
     private val storage by lazy { AndroidStorage(this) }
@@ -92,6 +94,12 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
+            // The system bars' icons follow the app's theme, not the phone's: dark icons over the light theme.
+            val dark = ThemeState.dark
+            SideEffect {
+                val style = if (dark) SystemBarStyle.dark(0) else SystemBarStyle.light(0, 0)
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            }
             AndroidApp(storage = storage, files = files)
         }
     }

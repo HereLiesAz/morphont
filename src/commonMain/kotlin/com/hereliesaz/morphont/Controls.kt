@@ -75,6 +75,8 @@ class EditorHost(
     val projects: ProjectActions? = null,
     /** Handle/hit-target scale for touch-first surfaces. */
     val touchScale: Float = 1.3f,
+    /** Where theme and view settings are kept between sessions; null keeps them for this session only. */
+    val settings: SettingsStore? = null,
 )
 
 // ------------------------------------------------------------ small parts
@@ -130,6 +132,9 @@ fun EditorMenuButton(
                 MonoMenuItem("Ghosts", { open = false; goTo("ghosts") })
                 MonoMenuItem("Guides and metrics", { open = false; goTo("guides") })
             }
+            section("Theme")
+            MonoMenuItem("Dark", { ThemeState.dark = true }, checked = ThemeState.dark)
+            MonoMenuItem("Light", { ThemeState.dark = false }, checked = !ThemeState.dark)
             section("View and settings")
             MonoMenuItem("Snap", { v.snap = !v.snap }, checked = v.snap)
             MonoMenuItem("Metrics", { v.showMetrics = !v.showMetrics }, checked = v.showMetrics)
@@ -139,15 +144,9 @@ fun EditorMenuButton(
             MonoMenuItem("Ghosts", { v.showGhosts = !v.showGhosts }, checked = v.showGhosts)
             MonoMenuItem("Travel paths", { v.showTravel = !v.showTravel }, checked = v.showTravel)
             MonoMenuItem("Move circle", { app.setNodeMoveCircleEnabled(!app.nodeMoveCircleEnabled) }, checked = app.nodeMoveCircleEnabled)
-            MonoMenuItem(if (v.showGrid) "Grid ${v.gridStep.toInt()} (tap for next)" else "Grid", {
-                // Off, 50, 25, 10, 100, off: the same cycle as the Guides panel.
-                val cycle = listOf(50f, 25f, 10f, 100f)
-                if (!v.showGrid) { v.showGrid = true; v.gridStep = cycle[0] }
-                else {
-                    val i = cycle.indexOf(v.gridStep)
-                    if (i < 0 || i == cycle.lastIndex) v.showGrid = false else v.gridStep = cycle[i + 1]
-                }
-            }, checked = v.showGrid)
+            MonoMenuItem("Grid", { v.showGrid = !v.showGrid }, checked = v.showGrid)
+            section("Grid step")
+            for (step in GRID_STEPS) MonoMenuItem("${step.toInt()} units", { v.gridStep = step }, checked = v.gridStep == step)
         }
     }
     host.projects?.let { actions ->
@@ -465,7 +464,7 @@ fun PreviewSection(app: AppState, previewHeight: Int = 170) {
         SectionHead("Preview")
         PreviewCanvas(
             app,
-            Modifier.fillMaxWidth().height(previewHeight.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF0D0D0D))
+            Modifier.fillMaxWidth().height(previewHeight.dp).clip(RoundedCornerShape(14.dp)).background(Mono.previewGround)
                 .border(1.dp, Mono.border, RoundedCornerShape(14.dp)).padding(10.dp),
         )
         AxisSliders(app)

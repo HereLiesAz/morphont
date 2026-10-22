@@ -75,7 +75,7 @@ import androidx.compose.ui.unit.sp
 /** Below this width the editor is the phone layout (one canvas, axis strip, dock); above it, the desktop layout. */
 private val COMPACT_BREAKPOINT = 900.dp
 
-private val hairline = Color(0xFF181818)
+private val hairline get() = Mono.hairline
 
 private enum class Sheet { GUIDES, GHOSTS, PREVIEW }
 
@@ -90,6 +90,12 @@ fun EditorScreen(app: AppState, host: EditorHost, modifier: Modifier = Modifier)
     var browserOpen by remember { mutableStateOf(false) }
     var fontOverviewOpen by remember { mutableStateOf(false) }
     var rootOrigin by remember { mutableStateOf(Offset.Zero) }
+    // Whatever changes in the settings is written back, so the next launch starts as this one left off.
+    host.settings?.let { store ->
+        androidx.compose.runtime.LaunchedEffect(store, app) {
+            androidx.compose.runtime.snapshotFlow { app.settings() }.collect { store.save(it) }
+        }
+    }
     BoxWithConstraints(
         modifier.fillMaxSize().background(Mono.ground).statusBarsPadding().navigationBarsPadding()
             .onGloballyPositioned { rootOrigin = it.positionInRoot() }

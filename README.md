@@ -128,11 +128,18 @@ so anchors can then be reshaped without adding or removing points.
   Ctrl/Cmd on an edge skews. Each drag is one undo step (no separate commit).
 - **Menu.** The ⋯ at the top opens a menu instead of the glyph list. **Go to**:
   Glyphs and files, Projects, Font overview and (on a phone, where they are
-  sheets) Preview, Ghosts, Guides and metrics. **View and settings**: Snap,
-  Metrics, Rulers, Guides, Measurements, Ghosts, Travel paths, Move circle and
-  the Grid cycle, each a checkable item that leaves the menu open so several can
-  be flipped at once. The desktop top bar has the same menu without the panel
-  shortcuts (those panels are always on screen there).
+  sheets) Preview, Ghosts, Guides and metrics. **Theme**: Dark or Light.
+  **View and settings**: Snap, Metrics, Rulers, Guides, Measurements, Ghosts,
+  Travel paths, Move circle and Grid, each a checkable item that leaves the menu
+  open so several can be flipped at once, then **Grid step** (10, 25, 50 or 100
+  units). The desktop top bar has the same menu without the panel shortcuts
+  (those panels are always on screen there).
+- **Settings are remembered.** Theme, every view toggle, the grid and its step,
+  the glyph opacity and the Move circle choice are saved as they change and
+  restored at launch: Android in its preferences, desktop in `settings.json`
+  beside the project list, the web build in localStorage. The Light theme is the
+  same hairline, monochrome look on paper (near-white ground, near-black ink);
+  on Android the status and navigation bar icons follow it.
 - **Redo.** The arrow next to Undo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y) steps forward
   through what Undo stepped back from: outlines (all linked states together),
   guides, metrics and ghosts. A redo is an ordinary edit, so it can itself be

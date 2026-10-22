@@ -174,9 +174,11 @@ private fun importVariableFontIntoApp(app: AppState) {
 
 @Composable
 fun App() {
+    // Read before the theme composes, so a saved light theme never flashes dark first.
+    val saved = remember { Storage.settings.load().also { ThemeState.dark = it.dark } }
     MorphontTheme {
         ConveySystem {
-            val app = remember { AppState().apply { glyphLookup = { Storage.loadGlyph(it) } } }
+            val app = remember { AppState().apply { glyphLookup = { Storage.loadGlyph(it) }; applySettings(saved) } }
             val focus = remember { FocusRequester() }
             val scope = rememberCoroutineScope()
             val host = remember {
@@ -211,6 +213,7 @@ fun App() {
                         delete = { deleteProject(app, scope, it) },
                     ),
                     touchScale = 1.3f,
+                    settings = Storage.settings,
                 )
             }
 

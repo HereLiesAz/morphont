@@ -593,6 +593,25 @@ class AppState {
     /** While the circle is being dragged: its fixed offset from the selection, in canvas pixels. */
     var moveCircleHold: Offset? = null
 
+    /** What persists between sessions, read off the live state. */
+    fun settings() = AppSettings(
+        dark = ThemeState.dark, snap = view.snap, showMetrics = view.showMetrics, showRulers = view.showRulers,
+        showGuides = view.showGuides, showMeasure = view.showMeasure, showGhosts = view.showGhosts,
+        showTravel = view.showTravel, showGrid = view.showGrid, gridStep = view.gridStep,
+        glyphOpacity = view.glyphOpacity, moveCircle = nodeMoveCircleOverride,
+    )
+
+    /** Puts saved [s] back: theme, view toggles, grid step, glyph opacity and the move-circle choice. */
+    fun applySettings(s: AppSettings) {
+        ThemeState.dark = s.dark
+        view.snap = s.snap; view.showMetrics = s.showMetrics; view.showRulers = s.showRulers
+        view.showGuides = s.showGuides; view.showMeasure = s.showMeasure; view.showGhosts = s.showGhosts
+        view.showTravel = s.showTravel; view.showGrid = s.showGrid
+        view.gridStep = s.gridStep.takeIf { it > 0f } ?: 50f
+        view.glyphOpacity = s.glyphOpacity.coerceIn(0.1f, 1f)
+        nodeMoveCircleOverride = s.moveCircle
+    }
+
     fun setNodeMoveCircleEnabled(enabled: Boolean) {
         nodeMoveCircleOverride = enabled
     }

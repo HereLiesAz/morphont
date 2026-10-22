@@ -44,6 +44,8 @@ private enum class OpenGlyphOutcome { OPENED, EMPTY, UNREADABLE }
  */
 @Composable
 fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
+    // Read before the theme composes, so a saved light theme never flashes dark first.
+    val saved = remember { storage.settings.load().also { ThemeState.dark = it.dark } }
     MorphontTheme {
         ConveySystem {
             // Android starts in touch-first mode; a hardware mouse or stylus
@@ -52,6 +54,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                 AppState().apply {
                     glyphLookup = { storage.loadGlyph(it) }
                     touchInput = true
+                    applySettings(saved)
                 }
             }
             val keyboardFocus = remember { FocusRequester() }
@@ -267,6 +270,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions) {
                     },
                     projects = ProjectActions(::createProject, ::openProject, ::renameProject, ::deleteProject),
                     touchScale = 1.35f,
+                    settings = storage.settings,
                 )
             }
 

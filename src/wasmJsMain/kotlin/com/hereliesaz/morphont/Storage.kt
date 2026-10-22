@@ -91,6 +91,12 @@ object Storage {
         write = { text -> try { window.localStorage.setItem(PROJECT_REGISTRY_KEY, text) } catch (_: Throwable) { } },
     )
 
+    /** Theme and view settings: a few dozen bytes, kept in localStorage next to the project list. */
+    val settings = SettingsStore(
+        read = { try { window.localStorage.getItem("morphont-settings") } catch (_: Throwable) { null } },
+        write = { text -> try { window.localStorage.setItem("morphont-settings", text) } catch (_: Throwable) { } },
+    )
+
     private var projectId: String? = null
     private var database: Database? = null
     private var initialized = false

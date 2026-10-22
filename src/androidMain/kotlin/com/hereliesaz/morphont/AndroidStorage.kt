@@ -8,6 +8,7 @@ import java.io.File
 private const val PREFS_NAME = "morphont"
 private const val PROJECT_KEY = "project"
 private const val PROJECT_INDEX_KEY = "project_index"
+private const val SETTINGS_KEY = "settings"
 private const val LAST_GLYPH_KEY = "last_glyph"
 private const val SELECTED_AXIS_KEY = "selected_axis"
 private const val MOBILE_PANE_KEY = "mobile_pane"
@@ -36,6 +37,12 @@ class AndroidStorage(context: Context) {
     val registry = ProjectRegistry(
         read = { prefs.getString(PROJECT_INDEX_KEY, null) },
         write = { prefs.edit().putString(PROJECT_INDEX_KEY, it).apply() },
+    )
+
+    /** Theme and view settings, kept with the rest of the app's preferences. */
+    val settings = SettingsStore(
+        read = { prefs.getString(SETTINGS_KEY, null) },
+        write = { prefs.edit().putString(SETTINGS_KEY, it).apply() },
     )
 
     private var projectId: String? = null
