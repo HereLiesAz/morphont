@@ -189,6 +189,9 @@ object DesktopStorage {
         )
     }
 
+    /** Fonts installed from the azphalt store ([DesktopFontStore]). */
+    val fontShelfDir: File get() = File(base, "fonts")
+
     private val settingsFile: File get() = File(base, "settings.json")
 
     /** Theme and view settings, one small JSON file next to the project list. */

@@ -127,7 +127,7 @@ so anchors can then be reshaped without adding or removing points.
   keeps proportions / snaps rotation to 15°, Alt pivots on the centre, and
   Ctrl/Cmd on an edge skews. Each drag is one undo step (no separate commit).
 - **Menu.** The ⋯ at the top opens a menu instead of the glyph list. **Go to**:
-  Glyphs and files, Projects, Font overview and (on a phone, where they are
+  Glyphs and files, Projects, Font overview, **Font store** and (on a phone, where they are
   sheets) Preview, Ghosts, Guides and metrics. **Theme**: Dark or Light.
   **View and settings**: Snap, Metrics, Rulers, Guides, Measurements, Ghosts,
   Travel paths, Move circle and Grid, each a checkable item that leaves the menu
@@ -353,13 +353,27 @@ so anchors can then be reshaped without adding or removing points.
   takes that handle's length or angle (distance and direction from its own
   node), whichever lands closer on the same line. It applies to the move circle too. The line it caught flashes.
   View → Snap toggles it.
+- **Font store.** Menu → Font store (or Ghosts → + → Character from the
+  font store) browses the `kind: "font"` packages on
+  [azphalt.store](https://azphalt.store): search, then **Install**. A package
+  is checked before anything is kept -- zip paths, sizes, and every file's
+  SHA-256 against its manifest -- and its faces are stored on this device.
+  Under **Installed**: **Use as ghost** (TrueType faces) opens the character
+  picker on that font; **Install on this computer** copies it into the user's
+  font folder on desktop (`~/Library/Fonts`, `~/.local/share/fonts/morphont`
+  + `fc-cache`, or the per-user Windows font folder and its registry entry);
+  Android saves the file through the system picker and the web downloads it,
+  since neither lets an app install fonts; **Remove**. Package signatures
+  aren't checked yet (the store is reached over HTTPS), and paid fonts are
+  bought in the store itself.
 - **Ghost look.** While any ghost is showing the working glyph's fill is
   see-through (Ghosts panel → Glyph opacity, default 50%) so ghosts read
   underneath it. Each ghost's outline is dotted or solid and one of six
   colours, chosen on its row in the Ghosts panel; both save with the glyph.
 - **Ghosts.** Reference outlines behind every panel: primitive shapes, a
   character from any TrueType file (static or variable, scaled to this
-  project's UPM; loaded per session), or a glyph from this project. A
+  project's UPM; loaded per session) or from a font installed from the
+  store, or a glyph from this project. A
   project glyph is ghosted **live**: each panel shows that glyph's own same
   anchor and the Preview interpolates it at the same slider values, so it
   always matches the working character's weight, width, and every other
@@ -428,6 +442,8 @@ so anchors can then be reshaped without adding or removing points.
 - `commonTest/TrueTypeImportTest.kt` -- independently constructed SFNT fixture for damaged-glyph recovery, table bounds, and end-of-buffer reads
 - `desktopMain/UfoImport.kt` -- secure XML plist/GLIF parser and directory/ZIP UFO package import; component expansion and curve conversion
 - `desktopTest/UfoImportTest.kt` -- UFO/UFOZ, geometry, metrics, component, filename-safety regression tests
+- `Azp.kt` / `Inflate.kt` / `Sha256.kt` -- reading azphalt `.azp` packages on every target: zip with a plain-Kotlin inflater, path and size limits, `manifest.files` digest checks, the `font` block
+- `FontStore.kt` / `FontStoreUi.kt` -- the store client (Repository API search and download), the installed-font shelf over a platform `BlobStore`, and the store dialog; `DesktopFontStore.kt`, `AndroidFontStore.kt` and `WebFontStore.kt` supply HTTP, storage and install-to-system; `desktopTest/AzpTest.kt` and `commonTest/Sha256Test.kt` cover them
 - `Format.kt` / `commonTest/FormatTest.kt` -- Unicode presentation for legacy production names, independent of glyph identity
 
 ## Design
@@ -474,8 +490,9 @@ of the way until needed.
 - The clipboard is in-app only (not the OS clipboard). Android's root now
   receives keyboard focus for editor shortcuts; actual hardware combinations
   still need device-level verification.
-- Reference fonts for ghosts are held for the session only and must be
-  TrueType-outline (`glyf`); CFF/OTF isn't parsed.
+- Reference fonts loaded from a file are held for the session only (install
+  from the store to keep one); either way they must be TrueType-outline
+  (`glyf`); CFF/OTF isn't parsed.
 - Metrics are stored per glyph (so imported fonts' values travel with each
   glyph); glyphs without saved metrics use the default FontMetrics instead
   of leaking the previously opened glyph's values. Guides, metrics,

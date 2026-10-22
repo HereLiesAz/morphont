@@ -18,6 +18,9 @@ class MainActivity : ComponentActivity() {
     private var pendingSaveText: String? = null
     private var pendingSaveDone: (() -> Unit)? = null
     private var pendingSaveError: ((String) -> Unit)? = null
+    private var pendingFontBytes: ByteArray? = null
+    private var pendingFontDone: (() -> Unit)? = null
+    private var pendingFontError: ((String) -> Unit)? = null
 
     private val openJsonLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) {
@@ -69,6 +72,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val saveFontLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("font/ttf"),
+    ) { uri ->
+        val done = pendingFontDone
+        val fail = pendingFontError
+        val bytes = pendingFontBytes
+        pendingFontBytes = null
+        pendingFontDone = null
+        pendingFontError = null
+        if (uri == null) {
+            fail?.invoke("Not saved.")
+            return@registerForActivityResult
+        }
+        try {
+            contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes ?: error("Nothing queued to save")) }
+                ?: error("No writable stream returned")
+            done?.invoke()
+        } catch (e: Exception) {
+            fail?.invoke("Couldn't save the font: ${e.message}")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Both themes are dark, so the system bars always carry light icons, whatever the phone's own theme.
@@ -90,6 +115,14 @@ class MainActivity : ComponentActivity() {
                 pendingTtfLoaded = onLoaded
                 pendingTtfError = onError
                 openTtfLauncher.launch(arrayOf("font/ttf", "application/x-font-ttf", "application/octet-stream", "*/*"))
+            },
+            saveFont = { filename, bytes, onSaved, onError ->
+                // A save still waiting on the picker loses to the newer one, and says so.
+                pendingFontError?.invoke("Not saved.")
+                pendingFontBytes = bytes
+                pendingFontDone = onSaved
+                pendingFontError = onError
+                saveFontLauncher.launch(filename)
             },
         )
 
