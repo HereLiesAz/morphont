@@ -239,7 +239,6 @@ private fun CompactEditor(
                 Caps("${ANCHOR_LABELS[app.activeAnchor]} · ${nodeCount(app)} nodes")
             }
             SuggestionsButton(app, suggestions)
-            IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, enabled = app.activeGhost == null)
             IconAction(MIcons.Undo, "Undo", { app.undo() })
             IconAction(MIcons.More, "Glyphs and file", openBrowser)
         }
@@ -273,6 +272,7 @@ private fun CompactEditor(
             ToolIcon(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = 48)
             ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 48, enabled = app.activeGhost == null)
             StatesMenuButton(app, size = 48)
+            IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 48, enabled = app.activeGhost == null)
             }
             Scrollbar(dockScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
         }
