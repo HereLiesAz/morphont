@@ -95,20 +95,23 @@ val DarkPalette = Palette(
     mark = Color.White, hairline = Color(0xFF181818), previewGround = Color(0xFF0D0D0D),
 )
 
-/** The same hairline, monochrome look on paper: near-white ground, near-black ink. */
+/**
+ * "Light": a dark grey, not paper. Lifted well off the near-black of [DarkPalette] but still dark enough for
+ * white text and icons, so the same ink, marks and hairlines work on both.
+ */
 val LightPalette = Palette(
-    ground = Color(0xFFF2F2F2), panel = Color(0xFFFFFFFF), panelHeader = Color(0xFFE8E8E8),
-    border = Color(0xFFD4D4D4), borderBright = Color(0xFFBDBDBD),
-    ink = Color(0xFF161616), inkDim = Color(0xFF666666), inkFaint = Color(0xFFB4B4B4),
-    primary = Color(0xFF161616), onPrimary = Color(0xFFF2F2F2),
-    secondary = Color(0xFF888888), onSecondary = Color(0xFFF2F2F2),
-    tertiary = Color(0xFF4A4A4A), onTertiary = Color(0xFFF2F2F2),
-    error = Color(0xFFC8381E), onError = Color(0xFFFFFFFF),
-    glow = Color(0xFFFFFFFF), outline = Color(0xFF222222), baseline = Color(0xFFCFCFCF), metric = Color(0xFFE2E2E2),
-    grid = Color(0xFFEAEAEA), ctrlLine = Color(0xFFBDBDBD), nodeRing = Color(0xFF4A4A4A), offCurve = Color(0xFF8A8A8A),
-    pathCurve = Color(0xFF8A8A8A), ghostStroke = Color(0xFFA0A0A0), ghostActive = Color(0xFF4A4A4A),
-    rulerBg = Color(0xFFECECEC), rulerLine = Color(0xFFD8D8D8), measure = Color(0xFF666666),
-    mark = Color(0xFF161616), hairline = Color(0xFFE2E2E2), previewGround = Color(0xFFEAEAEA),
+    ground = Color(0xFF2E2E2E), panel = Color(0xFF3A3A3A), panelHeader = Color(0xFF454545),
+    border = Color(0xFF4E4E4E), borderBright = Color(0xFF626262),
+    ink = Color(0xFFF2F2F2), inkDim = Color(0xFFB4B4B4), inkFaint = Color(0xFF7E7E7E),
+    primary = Color(0xFFF2F2F2), onPrimary = Color(0xFF2E2E2E),
+    secondary = Color(0xFF9A9A9A), onSecondary = Color(0xFF2E2E2E),
+    tertiary = Color(0xFFD2D2D2), onTertiary = Color(0xFF2E2E2E),
+    error = Color(0xFFEE6A50), onError = Color(0xFF1A0704),
+    glow = Color(0xFF3E3E3E), outline = Color(0xFFE8E8E8), baseline = Color(0xFF5A5A5A), metric = Color(0xFF444444),
+    grid = Color(0xFF383838), ctrlLine = Color(0xFF6A6A6A), nodeRing = Color(0xFFD0D0D0), offCurve = Color(0xFF9E9E9E),
+    pathCurve = Color(0xFF909090), ghostStroke = Color(0xFF909090), ghostActive = Color(0xFFD2D2D2),
+    rulerBg = Color(0xFF292929), rulerLine = Color(0xFF3C3C3C), measure = Color(0xFFB4B4B4),
+    mark = Color.White, hairline = Color(0xFF3A3A3A), previewGround = Color(0xFF262626),
 )
 
 /** Which theme is showing. One value for the whole app, so the canvas and every panel switch together. */
@@ -156,13 +159,9 @@ object Mono {
     val previewGround get() = p.previewGround
 }
 
+/** Both themes are dark enough for white-on-dark, so one dark-based scheme serves both, fed by the live palette. */
 @Composable
-private fun morphontColorScheme() = if (ThemeState.dark) darkColorScheme(
-    primary = Mono.primary, onPrimary = Mono.onPrimary, secondary = Mono.secondary, onSecondary = Mono.onSecondary,
-    tertiary = Mono.tertiary, onTertiary = Mono.onTertiary, background = Mono.ground, onBackground = Mono.ink,
-    surface = Mono.panel, onSurface = Mono.ink, surfaceVariant = Mono.panelHeader, onSurfaceVariant = Mono.inkDim,
-    outline = Mono.border, error = Mono.error, onError = Mono.onError,
-) else androidx.compose.material3.lightColorScheme(
+private fun morphontColorScheme() = darkColorScheme(
     primary = Mono.primary, onPrimary = Mono.onPrimary, secondary = Mono.secondary, onSecondary = Mono.onSecondary,
     tertiary = Mono.tertiary, onTertiary = Mono.onTertiary, background = Mono.ground, onBackground = Mono.ink,
     surface = Mono.panel, onSurface = Mono.ink, surfaceVariant = Mono.panelHeader, onSurfaceVariant = Mono.inkDim,

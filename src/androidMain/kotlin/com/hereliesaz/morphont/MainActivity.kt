@@ -7,7 +7,6 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.SideEffect
 
 class MainActivity : ComponentActivity() {
     private val storage by lazy { AndroidStorage(this) }
@@ -72,7 +71,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // Both themes are dark, so the system bars always carry light icons, whatever the phone's own theme.
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(0), navigationBarStyle = SystemBarStyle.dark(0))
 
         val files = AndroidFileActions(
             openJson = { onLoaded, onError ->
@@ -94,12 +94,6 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
-            // The system bars' icons follow the app's theme, not the phone's: dark icons over the light theme.
-            val dark = ThemeState.dark
-            SideEffect {
-                val style = if (dark) SystemBarStyle.dark(0) else SystemBarStyle.light(0, 0)
-                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
-            }
             AndroidApp(storage = storage, files = files)
         }
     }

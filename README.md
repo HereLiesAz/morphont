@@ -137,9 +137,10 @@ so anchors can then be reshaped without adding or removing points.
 - **Settings are remembered.** Theme, every view toggle, the grid and its step,
   the glyph opacity and the Move circle choice are saved as they change and
   restored at launch: Android in its preferences, desktop in `settings.json`
-  beside the project list, the web build in localStorage. The Light theme is the
-  same hairline, monochrome look on paper (near-white ground, near-black ink);
-  on Android the status and navigation bar icons follow it.
+  beside the project list, the web build in localStorage. The Light theme is a dark grey (a step up from
+  the near-black Dark one), still dark enough for white text and icons, so both
+  themes share the same ink, marks and hairlines; on Android the status and
+  navigation bar icons stay light on both.
 - **Redo.** The arrow next to Undo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y) steps forward
   through what Undo stepped back from: outlines (all linked states together),
   guides, metrics and ghosts. A redo is an ordinary edit, so it can itself be
