@@ -17,16 +17,19 @@
 </head>
 <body><main>
 <h1>Morphont Privacy Policy</h1>
-<p><em>Effective 5 October 2026. Applies to Morphont on Android, Windows, macOS, Linux and the web (PWA).</em></p>
+<p><em>Effective 22 October 2026. Applies to Morphont on Android, Windows, macOS, Linux and the web (PWA).</em></p>
 <p>Morphont is a glyph editor. It collects nothing.</p>
 <h2>What Morphont stores</h2>
 <p>Everything you make — glyphs, their anchors, guides, ghosts and metrics — is stored <strong>only on your device</strong>:</p>
 <ul><li><strong>Android:</strong> the app&#x27;s private storage.</li><li><strong>Desktop:</strong> your user app-data folder (<code>%APPDATA%\Morphont</code> on Windows, <code>~/Library/Application Support/Morphont</code> on macOS, <code>~/.local/share/morphont</code> on Linux).</li><li><strong>Web:</strong> your browser&#x27;s IndexedDB for this site.</li></ul>
+<p>Fonts you install from the font store are kept in the same place (a <code>fonts</code> folder, or a separate IndexedDB database on the web) until you remove them.</p>
 <p>Uninstalling the app (or clearing the site&#x27;s data in your browser) deletes it.</p>
 <h2>What Morphont sends</h2>
-<p>Nothing. Morphont has no accounts, no analytics, no advertising, no crash reporting and no telemetry, and the Android app requests no permissions — not even internet access. The web version is served as static files by GitHub Pages; after it loads, it works offline and sends nothing back. GitHub&#x27;s own handling of page requests is covered by <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub&#x27;s privacy statement</a>.</p>
+<p>Nothing about you or your work. Morphont has no accounts, no analytics, no advertising, no crash reporting and no telemetry. The web version is served as static files by GitHub Pages; after it loads, it works offline. GitHub&#x27;s own handling of page requests is covered by <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub&#x27;s privacy statement</a>.</p>
+<p><strong>Update check.</strong> When it starts, and when you choose Check for updates, the Android and desktop apps ask where they were installed from whether a newer Morphont exists: a copy from Google Play asks Google Play; any other copy reads the public list of Morphont releases on <a href="https://github.com/HereLiesAz/morphont/releases">GitHub</a>. The request carries nothing from your projects; GitHub&#x27;s and Google&#x27;s handling of it is covered by their own privacy statements.</p>
+<p>The other network feature is the <strong>font store</strong>, and it runs only when you open it. Browsing and installing fetch the catalog and the font packages you choose from <a href="https://azphalt.store">azphalt.store</a> — ordinary web requests carrying your search text and the package you asked for, and nothing from your projects. These two are why the Android app asks for internet access. The store&#x27;s own handling of requests is covered by its operator&#x27;s terms.</p>
 <h2>Files you open or save</h2>
-<p>When you import a font or project, or export a glyph or project, Morphont reads or writes only the file you pick in your system&#x27;s file dialog. Fonts you load as reference ghosts stay in memory for that session and are not stored or transmitted.</p>
+<p>When you import a font or project, or export a glyph or project, Morphont reads or writes only the file you pick in your system&#x27;s file dialog. Fonts you load as reference ghosts stay in memory for that session and are not stored or transmitted. "Install on this computer" copies an installed store font into your user font folder; on Android and the web, "Save font file" and "Download font file" write it where you choose.</p>
 <h2>Children</h2>
 <p>Morphont collects no personal information from anyone, including children.</p>
 <h2>Changes</h2>

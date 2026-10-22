@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 
 class MainActivity : ComponentActivity() {
     private val storage by lazy { AndroidStorage(this) }
+    private val updates by lazy { AndroidUpdates(this) }
 
     private var pendingJsonLoaded: ((String) -> Unit)? = null
     private var pendingJsonError: ((String) -> Unit)? = null
@@ -127,7 +128,7 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
-            AndroidApp(storage = storage, files = files)
+            AndroidApp(storage = storage, files = files, updates = updates.checker)
         }
     }
 

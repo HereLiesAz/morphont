@@ -353,6 +353,15 @@ so anchors can then be reshaped without adding or removing points.
   takes that handle's length or angle (distance and direction from its own
   node), whichever lands closer on the same line. It applies to the move circle too. The line it caught flashes.
   View → Snap toggles it.
+- **Updates.** On launch Morphont looks for a newer version on the channel it
+  was installed from, and says so only if there is one; Menu → Check for
+  updates… asks on demand and always answers. A copy installed by **Google
+  Play** asks Play (its in-app update API) and opens the Play listing. Any
+  other Android copy (the GitHub APK, sideloaded) and the desktop apps look at
+  the GitHub Releases for the newest non-prerelease carrying their own
+  installer (`.apk`; `.msi`, `.dmg`, or `.deb`/`.rpm`) and open that release.
+  Desktop compares major.minor.patch, since installers carry a run number the
+  app doesn't. The web app updates itself on reload and has no check.
 - **Font store.** Menu → Font store (or Ghosts → + → Character from the
   font store) browses the `kind: "font"` packages on
   [azphalt.store](https://azphalt.store): search, then **Install**. A package
@@ -442,6 +451,7 @@ so anchors can then be reshaped without adding or removing points.
 - `commonTest/TrueTypeImportTest.kt` -- independently constructed SFNT fixture for damaged-glyph recovery, table bounds, and end-of-buffer reads
 - `desktopMain/UfoImport.kt` -- secure XML plist/GLIF parser and directory/ZIP UFO package import; component expansion and curve conversion
 - `desktopTest/UfoImportTest.kt` -- UFO/UFOZ, geometry, metrics, component, filename-safety regression tests
+- `Updates.kt` / `UpdatesUi.kt` -- version comparison, the GitHub Releases lookup and the update prompts; `DesktopUpdates.kt` and `AndroidUpdates.kt` (Play install source and in-app update API) supply each platform's check; `commonTest/UpdatesTest.kt` covers it
 - `Azp.kt` / `Inflate.kt` / `Sha256.kt` -- reading azphalt `.azp` packages on every target: zip with a plain-Kotlin inflater, path and size limits, `manifest.files` digest checks, the `font` block
 - `FontStore.kt` / `FontStoreUi.kt` -- the store client (Repository API search and download), the installed-font shelf over a platform `BlobStore`, and the store dialog; `DesktopFontStore.kt`, `AndroidFontStore.kt` and `WebFontStore.kt` supply HTTP, storage and install-to-system; `desktopTest/AzpTest.kt` and `commonTest/Sha256Test.kt` cover them
 - `Format.kt` / `commonTest/FormatTest.kt` -- Unicode presentation for legacy production names, independent of glyph identity

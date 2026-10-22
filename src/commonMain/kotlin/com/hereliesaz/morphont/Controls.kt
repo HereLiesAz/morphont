@@ -83,6 +83,8 @@ class EditorHost(
     val settings: SettingsStore? = null,
     /** The azphalt font store and this device's installed fonts; null on a surface without one. */
     val fontStore: FontStoreHost? = null,
+    /** Looks for a newer Morphont on the channel this copy came from; null where the app updates itself. */
+    val updates: UpdateChecker? = null,
 )
 
 // ------------------------------------------------------------ small parts
@@ -126,6 +128,7 @@ fun EditorMenuButton(
     var projectsOpen by remember { mutableStateOf(false) }
     var storeOpen by remember { mutableStateOf(false) }
     var ghostFont by remember { mutableStateOf<String?>(null) }
+    var updatesOpen by remember { mutableStateOf(false) }
     val v = app.view
     @Composable fun section(title: String) = MonoMenuItem(title.uppercase(), {}, enabled = false)
     Box {
@@ -156,6 +159,10 @@ fun EditorMenuButton(
             MonoMenuItem("Grid", { v.showGrid = !v.showGrid }, checked = v.showGrid)
             section("Grid step")
             for (step in GRID_STEPS) MonoMenuItem("${step.toInt()} units", { v.gridStep = step }, checked = v.gridStep == step)
+            if (host.updates != null) {
+                section("Morphont")
+                MonoMenuItem("Check for updates…", { open = false; updatesOpen = true })
+            }
         }
     }
     host.projects?.let { actions ->
@@ -165,6 +172,7 @@ fun EditorMenuButton(
         if (storeOpen) FontStoreDialog(app, store, onUseAsGhost = { storeOpen = false; ghostFont = it }) { storeOpen = false }
     }
     ghostFont?.let { name -> FontCharacterPicker(app, host, initialFont = name) { ghostFont = null } }
+    host.updates?.let { checker -> if (updatesOpen) UpdateCheckDialog(checker) { updatesOpen = false } }
 }
 
 /**
