@@ -126,6 +126,13 @@ so anchors can then be reshaped without adding or removing points.
   (or, with a mouse, just outside a corner) to rotate about the centre. Shift
   keeps proportions / snaps rotation to 15°, Alt pivots on the centre, and
   Ctrl/Cmd on an edge skews. Each drag is one undo step (no separate commit).
+- **Menu.** The ⋯ at the top opens a menu instead of the glyph list. **Go to**:
+  Glyphs and files, Projects, Font overview and (on a phone, where they are
+  sheets) Preview, Ghosts, Guides and metrics. **View and settings**: Snap,
+  Metrics, Rulers, Guides, Measurements, Ghosts, Travel paths, Move circle and
+  the Grid cycle, each a checkable item that leaves the menu open so several can
+  be flipped at once. The desktop top bar has the same menu without the panel
+  shortcuts (those panels are always on screen there).
 - **Redo.** The arrow next to Undo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y) steps forward
   through what Undo stepped back from: outlines (all linked states together),
   guides, metrics and ghosts. A redo is an ordinary edit, so it can itself be

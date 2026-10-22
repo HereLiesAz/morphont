@@ -241,7 +241,7 @@ private fun CompactEditor(
             SuggestionsButton(app, suggestions)
             IconAction(MIcons.Undo, "Undo", { app.undo() })
             IconAction(MIcons.Redo, "Redo", { app.redo() }, enabled = app.canRedo)
-            IconAction(MIcons.More, "Glyphs and file", openBrowser)
+            EditorMenuButton(app, host, openBrowser, openFontOverview, goTo = { sheet = when (it) { "preview" -> Sheet.PREVIEW; "ghosts" -> Sheet.GHOSTS; else -> Sheet.GUIDES } })
         }
         AnchorFilmstrip(app, Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 6.dp), compact = true)
         Stage(app, host, host.touchScale, Modifier.weight(1f).fillMaxWidth(), suggestions) {
@@ -327,6 +327,7 @@ private fun WideEditor(
             IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = 40)
             IconAction(MIcons.Undo, "Undo", { app.undo() }, size = 40)
         IconAction(MIcons.Redo, "Redo", { app.redo() }, size = 40, enabled = app.canRedo)
+        EditorMenuButton(app, host, openBrowser, openFontOverview, goTo = null, size = 40)
             MonoButton(onClick = openBrowser, selected = true) { Text("Glyphs & file", fontSize = 13.sp) }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))

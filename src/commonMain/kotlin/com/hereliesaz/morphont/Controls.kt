@@ -101,6 +101,61 @@ fun MonoMenuItem(text: String, onClick: () -> Unit, checked: Boolean? = null, en
 }
 
 /**
+ * The top-bar menu: jump straight to the glyph list, projects, the font overview or (on a phone, where they live
+ * in sheets) the Preview, Ghosts and Guides panels, and flip every view setting without opening anything.
+ * [goTo] is null where those panels are always on screen.
+ */
+@Composable
+fun EditorMenuButton(
+    app: AppState,
+    host: EditorHost,
+    openBrowser: () -> Unit,
+    openFontOverview: () -> Unit,
+    goTo: ((String) -> Unit)?,
+    size: Int = 44,
+) {
+    var open by remember { mutableStateOf(false) }
+    var projectsOpen by remember { mutableStateOf(false) }
+    val v = app.view
+    @Composable fun section(title: String) = MonoMenuItem(title.uppercase(), {}, enabled = false)
+    Box {
+        IconAction(MIcons.More, "Menu", { open = true }, size = size)
+        MonoMenu(open, { open = false }) {
+            section("Go to")
+            MonoMenuItem("Glyphs and files…", { open = false; openBrowser() })
+            if (host.projects != null) MonoMenuItem("Projects…", { open = false; projectsOpen = true })
+            MonoMenuItem("Font overview", { open = false; openFontOverview() })
+            if (goTo != null) {
+                MonoMenuItem("Preview", { open = false; goTo("preview") })
+                MonoMenuItem("Ghosts", { open = false; goTo("ghosts") })
+                MonoMenuItem("Guides and metrics", { open = false; goTo("guides") })
+            }
+            section("View and settings")
+            MonoMenuItem("Snap", { v.snap = !v.snap }, checked = v.snap)
+            MonoMenuItem("Metrics", { v.showMetrics = !v.showMetrics }, checked = v.showMetrics)
+            MonoMenuItem("Rulers", { v.showRulers = !v.showRulers }, checked = v.showRulers)
+            MonoMenuItem("Guides", { v.showGuides = !v.showGuides }, checked = v.showGuides)
+            MonoMenuItem("Measurements", { v.showMeasure = !v.showMeasure }, checked = v.showMeasure)
+            MonoMenuItem("Ghosts", { v.showGhosts = !v.showGhosts }, checked = v.showGhosts)
+            MonoMenuItem("Travel paths", { v.showTravel = !v.showTravel }, checked = v.showTravel)
+            MonoMenuItem("Move circle", { app.setNodeMoveCircleEnabled(!app.nodeMoveCircleEnabled) }, checked = app.nodeMoveCircleEnabled)
+            MonoMenuItem(if (v.showGrid) "Grid ${v.gridStep.toInt()} (tap for next)" else "Grid", {
+                // Off, 50, 25, 10, 100, off: the same cycle as the Guides panel.
+                val cycle = listOf(50f, 25f, 10f, 100f)
+                if (!v.showGrid) { v.showGrid = true; v.gridStep = cycle[0] }
+                else {
+                    val i = cycle.indexOf(v.gridStep)
+                    if (i < 0 || i == cycle.lastIndex) v.showGrid = false else v.gridStep = cycle[i + 1]
+                }
+            }, checked = v.showGrid)
+        }
+    }
+    host.projects?.let { actions ->
+        if (projectsOpen) ProjectsDialog(app, actions, onDismiss = { projectsOpen = false }, onSwitched = { projectsOpen = false })
+    }
+}
+
+/**
  * The three ways to bring the three states of the open axis into line, in one menu: cut the denser ones down to
  * the fewest nodes, add the nodes the sparser ones are missing, or put Regular back halfway between the extremes.
  */
