@@ -317,6 +317,13 @@ so anchors can then be reshaped without adding or removing points.
   (unpaired contours are dropped, and the status says so), are cut down by the
   shape-preserving simplifier, turned to run the same way round and started at
   the node that lines up best with the template's. One undo step.
+  **Add missing nodes** goes the other way: the densest state is the template
+  and each sparser one gains nodes (splitting its longest segments, so its
+  outline doesn't move) up to that count; it refuses if the states have
+  different numbers of contours. Both, and **Reset Regular to the middle**
+  (every Regular point back halfway between the extremes), live in the
+  dock's **states** menu (three-line icon, with each state's node count at
+  the top) as well as in the sparkle suggestions.
 - **Snapping.** Light: within ~7px a dragged point (or a selection's edges/
   centre) pulls onto metrics, guides, ghost nodes and (more weakly) the grid,
   and lines up -- vertically or horizontally -- with other **nodes** (when

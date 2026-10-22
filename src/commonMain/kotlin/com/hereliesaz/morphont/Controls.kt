@@ -100,6 +100,24 @@ fun MonoMenuItem(text: String, onClick: () -> Unit, checked: Boolean? = null, en
     )
 }
 
+/**
+ * The three ways to bring the three states of the open axis into line, in one menu: cut the denser ones down to
+ * the fewest nodes, add the nodes the sparser ones are missing, or put Regular back halfway between the extremes.
+ */
+@Composable
+fun StatesMenuButton(app: AppState, size: Int = 42) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconAction(MIcons.States, "Match the three states", { open = true }, size = size, enabled = app.activeGhost == null)
+        MonoMenu(open, { open = false }) {
+            MonoMenuItem(app.nodeCountSummary().ifEmpty { "Nothing drawn yet" }, {}, enabled = false)
+            MonoMenuItem("Match nodes to the fewest", { open = false; app.matchToFewestNodes() }, enabled = app.statesDiffer())
+            MonoMenuItem("Add missing nodes (match the most)", { open = false; app.addMissingNodes() }, enabled = app.statesDiffer())
+            MonoMenuItem("Reset Regular to the middle", { open = false; app.resetRegularToNaturalPath() }, enabled = app.regularCanReset())
+        }
+    }
+}
+
 /** A toggle chip: filled ink when on, hairline when off. */
 @Composable
 fun Chip(label: String, on: Boolean, onClick: () -> Unit) {

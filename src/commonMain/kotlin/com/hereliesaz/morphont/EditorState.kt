@@ -945,14 +945,15 @@ class AppState {
         drawnTriple().joinToString(" · ") { n -> "${ANCHOR_LABELS[n] ?: n} ${anchors.getValue(n).glyph.contours.sumOf { c -> c.points.count { it.onCurve } }}" }
 
     /**
-     * Rebuilds the states of [axisTriple] on one shared structure with only as many nodes as the sparsest
-     * has (see [matchToFewest]), as one undo step. Says why when it can't.
+     * Rebuilds the states of [axisTriple] on one shared structure (see [matchToFewest]) as one undo step: with only
+     * as many nodes as the sparsest has, or, with [most], with as many as the densest has (nodes added to the
+     * others). Says why when it can't.
      */
-    fun matchToFewestNodes() {
+    private fun matchStates(most: Boolean) {
         if (activeGhost != null || reduction != null) return
         val names = drawnTriple()
         val before = names.associateWith { anchors.getValue(it).glyph }
-        val out = matchToFewest(before)
+        val out = matchToFewest(before, mostNodes = most)
         val glyphs = out.glyphs ?: run { setStatus(out.problem ?: "Couldn't match them.", true); return }
         val targets = names.filter { glyphs[it] != before[it] }.map { anchors.getValue(it) }
         if (targets.isEmpty()) { setStatus("They already match."); return }
@@ -962,8 +963,13 @@ class AppState {
             undo = { targets.forEach { it.undo() } },
         )
         val lost = out.dropped.entries.joinToString(", ") { "${ANCHOR_LABELS[it.key] ?: it.key} -${it.value} contour(s)" }
-        setStatus("Matched to the fewest nodes: " + nodeCountSummary() + (if (lost.isEmpty()) "" else ". Dropped: $lost") + ". Undo puts it back.")
+        setStatus((if (most) "Added the missing nodes: " else "Matched to the fewest nodes: ") + nodeCountSummary() + (if (lost.isEmpty()) "" else ". Dropped: $lost") + ". Undo puts it back.")
     }
+
+    fun matchToFewestNodes() = matchStates(most = false)
+
+    /** Gives every sparser state the nodes it is missing, up to the densest state's count. */
+    fun addMissingNodes() = matchStates(most = true)
 
     fun copySelection() {
         if (nodeEditsLocked) return
