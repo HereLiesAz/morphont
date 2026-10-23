@@ -234,7 +234,6 @@ fun App() {
                     pickFontBytes = { onLoaded, onError -> Storage.pickTtfBytes(onLoaded, onError) },
                     openGlyph = { name -> Storage.loadGlyph(name)?.let { app.loadGlyph(name, it) } },
                     createGlyph = { name -> createGlyph(app, name) },
-                    createGlyphFrom = { name, glyph -> createGlyph(app, name, glyph) },
                     listGlyphNames = { Storage.listGlyphNames().also { app.glyphNames = it } },
                     fileActions = listOf(
                         "Import a TrueType font (.ttf)" to { importVariableFontIntoApp(app, scope) },
@@ -250,7 +249,7 @@ fun App() {
                             val name = app.currentGlyphName ?: "imported"
                             Storage.importGlyph(
                                 name = name,
-                                onLoaded = { glyph -> app.loadGlyph(name, glyph) },
+                                onLoaded = { glyph -> app.loadGlyph(name, glyph); app.setStatus("Replaced \"$name\" from the file.") },
                                 onError = { msg -> app.setStatus(msg, isError = true) },
                             )
                         },
@@ -264,6 +263,15 @@ fun App() {
                     touchScale = 1.3f,
                     settings = Storage.settings,
                     fontStore = WebFontStore.host,
+                    createGlyphFrom = { name, glyph -> createGlyph(app, name, glyph) },
+                    glyphFiles = GlyphFiles(
+                        exists = Storage::glyphExists,
+                        load = Storage::loadGlyph,
+                        save = Storage::saveGlyph,
+                        delete = Storage::deleteGlyph,
+                        list = Storage::listGlyphNames,
+                    ),
+                    confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
                 )
             }
 

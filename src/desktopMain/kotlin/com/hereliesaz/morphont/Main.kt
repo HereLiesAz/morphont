@@ -224,7 +224,6 @@ fun DesktopApp() {
                     pickFontBytes = { onLoaded, onError -> DesktopStorage.pickBytes("Choose a font", listOf(".ttf"), onLoaded, onError) },
                     openGlyph = { open(it) },
                     createGlyph = { createGlyph(it) },
-                    createGlyphFrom = { name, glyph -> createGlyph(name, glyph) },
                     listGlyphNames = { DesktopStorage.listGlyphNames().also { app.glyphNames = it } },
                     fileActions = listOf(
                         "Import a TrueType font (.ttf)" to { importFont() },
@@ -243,12 +242,37 @@ fun DesktopApp() {
                             if (name != null) DesktopStorage.saveText("Export glyph", "$name.morphont.json", ProjectCodec.encodeGlyph(app.toGlyph()),
                                 { app.setStatus("Exported \"$name\".") }, { app.setStatus(it, true) })
                         },
+                        "Replace this glyph from .json" to {
+                            val name = app.currentGlyphName
+                            if (name != null) DesktopStorage.pickText("Replace this glyph", { text ->
+                                try {
+                                    val glyph = ProjectCodec.decodeGlyph(text)
+                                    PendingSave.name = null
+                                    PendingSave.glyph = null
+                                    app.beginBulkImport()
+                                    DesktopStorage.saveGlyph(name, glyph)
+                                    app.loadGlyph(name, glyph)
+                                    app.setStatus("Replaced \"$name\" from the file.")
+                                } catch (e: Exception) {
+                                    app.setStatus("Import failed: ${e.message}", true)
+                                }
+                            }, { app.setStatus(it, true) })
+                        },
                     ),
                     projects = ProjectActions(::createProject, ::openProject, ::renameProject, ::deleteProject),
                     touchScale = 1.3f,
                     settings = DesktopStorage.settings,
                     fontStore = DesktopFontStore.host,
                     updates = DesktopUpdates.checker,
+                    createGlyphFrom = { name, glyph -> createGlyph(name, glyph) },
+                    glyphFiles = GlyphFiles(
+                        exists = DesktopStorage::glyphExists,
+                        load = DesktopStorage::loadGlyph,
+                        save = { name, glyph -> PendingSave.name = null; PendingSave.glyph = null; DesktopStorage.saveGlyph(name, glyph) },
+                        delete = { name -> PendingSave.name = null; PendingSave.glyph = null; DesktopStorage.deleteGlyph(name) },
+                        list = DesktopStorage::listGlyphNames,
+                    ),
+                    confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
                 )
             }
 

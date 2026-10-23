@@ -226,8 +226,11 @@ object DesktopStorage {
         recoverProjectDirectory(projectsRoot, glyphs)
         glyphs.mkdirs()
         migrateLegacyGlyphFileNames(glyphs)
-        projectId = id
-        projectDir = glyphs
+        // Switched under the same lock [saveNewGlyphs] checks it with.
+        synchronized(this) {
+            projectId = id
+            projectDir = glyphs
+        }
     }
 
     /** Removes a project's glyphs from disk. Closes it first if it is the open one. */
@@ -248,11 +251,13 @@ object DesktopStorage {
 
     fun loadGlyph(name: String): Glyph? = if (projectDir == null) null else runCatching { ProjectCodec.decodeGlyph(readableFileFor(name).readText()) }.getOrNull()
 
-    fun saveGlyph(name: String, glyph: Glyph) {
-        val target = fileFor(name)
+    fun saveGlyph(name: String, glyph: Glyph) = saveGlyphIn(dir, name, glyph)
+
+    private fun saveGlyphIn(directory: File, name: String, glyph: Glyph) {
+        val target = File(directory, desktopGlyphFileName(name))
         // Unique temp files make simultaneous imports/autosaves safe, unlike
         // the shared <glyph>.json.tmp filename.
-        val temp = Files.createTempFile(dir.toPath(), "morphont-glyph-", ".tmp")
+        val temp = Files.createTempFile(directory.toPath(), "morphont-glyph-", ".tmp")
         try {
             Files.writeString(temp, ProjectCodec.encodeGlyph(glyph))
             try {
@@ -266,7 +271,12 @@ object DesktopStorage {
         }
     }
 
-    /** Never overwrite an existing glyph when importing another font. */
+    /** Removes a glyph's file (current or legacy name) from the open project. */
+    fun deleteGlyph(name: String) {
+        if (projectDir == null) return
+        for (file in listOf(fileFor(name), readableFileFor(name))) check(!file.exists() || file.delete()) { "Couldn't delete \"$name\"." }
+    }
+
     /** The project glyph operations go to, or null before one is opened. */
     val openProjectId: String? get() = projectId
 
@@ -277,11 +287,16 @@ object DesktopStorage {
      * the import cleanly instead of leaving it half saved.
      */
     fun saveNewGlyphs(glyphs: Map<String, Glyph>, forProject: String? = null): List<String> {
-        check(forProject == null || forProject == projectId) { "You opened another project while it was importing, so nothing was saved. Import it again." }
-        val collisions = glyphs.keys.filter(::glyphExists)
+        // The project is checked and its directory taken in one step, and every collision test and write
+        // after that uses that directory -- so opening another project mid-import can't redirect the rest.
+        val directory = synchronized(this) {
+            check(forProject == null || forProject == projectId) { "You opened another project while it was importing, so nothing was saved. Import it again." }
+            dir
+        }
+        val collisions = glyphs.keys.filter { resolveGlyphFile(directory, it).exists() }
         glyphs.forEach { (name, glyph) -> if (name !in collisions) ProjectCodec.encodeGlyph(glyph) }
         glyphs.forEach { (name, glyph) ->
-            if (name !in collisions) saveGlyph(name, glyph)
+            if (name !in collisions) saveGlyphIn(directory, name, glyph)
         }
         return collisions
     }

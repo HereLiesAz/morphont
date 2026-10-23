@@ -92,7 +92,8 @@ class AndroidStorage(context: Context) {
 
     /** Points every glyph operation at project [id], creating its folder if needed. */
     fun useProject(id: String) {
-        projectId = id
+        // Switched under the same lock [saveNewGlyphs] checks it with.
+        synchronized(this) { projectId = id }
         liveDirectory()
     }
 
@@ -263,16 +264,27 @@ class AndroidStorage(context: Context) {
         writeGlyphFile(liveDirectory(), name, glyph)
     }
 
+    /** Removes a glyph's file from the open project. */
+    fun deleteGlyph(name: String) {
+        if (projectId == null) return
+        val file = glyphFile(liveDirectory(), name)
+        check(!file.exists() || file.delete()) { "Couldn't delete \"$name\"." }
+    }
+
     /**
      * An imported font never silently overwrites an existing project glyph. [forProject] is the project
      * the import started in; if another was opened meanwhile nothing is written. Every glyph is encoded
      * before the first is written, so an unencodable one aborts cleanly instead of half saving.
      */
     fun saveNewGlyphs(glyphs: Map<String, Glyph>, forProject: String? = null): List<String> {
-        check(forProject == null || forProject == projectId) { "You opened another project while it was importing, so nothing was saved. Import it again." }
+        // The project is checked and its directory taken in one step; the collision tests and writes all
+        // use that directory, so opening another project meanwhile can't redirect any of them.
+        val directory = synchronized(this) {
+            check(forProject == null || forProject == projectId) { "You opened another project while it was importing, so nothing was saved. Import it again." }
+            liveDirectory()
+        }
         glyphs.values.forEach { ProjectCodec.encodeGlyph(it) }
-        val directory = liveDirectory()
-        val existing = glyphs.keys.filter(::glyphExists)
+        val existing = glyphs.keys.filter { glyphFile(directory, it).isFile }
         for ((name, glyph) in glyphs) {
             if (name !in existing) writeGlyphFile(directory, name, glyph)
         }

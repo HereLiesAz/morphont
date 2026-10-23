@@ -8,6 +8,8 @@ import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.time.Duration
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -28,7 +30,12 @@ internal fun readCapped(input: java.io.InputStream, limit: Int = MAX_DOWNLOAD_BY
     }
 }
 
+/** How long a whole response body may take to arrive, after its headers. */
+private const val BODY_TIMEOUT_SECONDS = 120L
+
 object DesktopFontStore {
+    private val deadlines = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "morphont-download-deadline").apply { isDaemon = true } }
+
     private val client: HttpClient by lazy {
         HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(20)).build()
     }
@@ -44,7 +51,16 @@ object DesktopFontStore {
             }
             response.body().use { body ->
                 check(response.statusCode() in 200..299) { "The store answered ${response.statusCode()}." }
-                readCapped(body)
+                // The request timeout ends once headers arrive; a server that then stalls would block the read
+                // forever. Closing the stream at the deadline unblocks it with an error instead.
+                val watchdog = deadlines.schedule({ runCatching { body.close() } }, BODY_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                try {
+                    readCapped(body)
+                } catch (e: java.io.IOException) {
+                    if (watchdog.isDone) throw IllegalStateException("The store stopped sending the download.") else throw e
+                } finally {
+                    watchdog.cancel(false)
+                }
             }
         }
     }

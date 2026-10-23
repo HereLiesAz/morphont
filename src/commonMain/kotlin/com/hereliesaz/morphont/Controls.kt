@@ -91,6 +91,10 @@ class EditorHost(
     val updates: UpdateChecker? = null,
     /** Like [createGlyph] but starting from a drawn glyph (the sample); null where the shell can't. */
     val createGlyphFrom: ((String, Glyph) -> Boolean)? = null,
+    /** The open project's glyph files, for renaming and deleting glyphs; null where the shell can't. */
+    val glyphFiles: GlyphFiles? = null,
+    /** File actions (by label) that ask first, with the question: those that overwrite without undo. */
+    val confirmBefore: Map<String, String> = emptyMap(),
 )
 
 // ------------------------------------------------------------ small parts
@@ -760,8 +764,16 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var showReport by remember { mutableStateOf(false) }
     var showProjects by remember { mutableStateOf(false) }
+    var confirming by remember { mutableStateOf<String?>(null) }
     val names = app.glyphNames
-    MonoDialog("Glyphs", onDismiss) {
+    confirming?.let { label ->
+        ConfirmDialog(label, host.confirmBefore.getValue(label), confirmLabel = "Replace", onDismiss = { confirming = null }) {
+            confirming = null
+            onDismiss()
+            host.fileActions.firstOrNull { it.first == label }?.second?.invoke()
+        }
+    }
+    MonoDialog("Glyphs and files", onDismiss) {
         host.projects?.let { projectActions ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f)) {
@@ -773,6 +785,8 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
             if (showProjects) ProjectsDialog(app, projectActions, onDismiss = { showProjects = false }, onSwitched = { showProjects = false; onDismiss() })
         }
         NewGlyphRow(name, { name = it }) { if (host.createGlyph(name)) onDismiss() }
+        val current = app.currentGlyphName
+        if (host.glyphFiles != null && current != null) ThisGlyphRow(app, host, host.glyphFiles, current)
         Box(Modifier.heightIn(max = 340.dp)) {
             val gridScroll = rememberScrollState()
             Column(Modifier.verticalScroll(gridScroll).padding(end = 10.dp)) {
@@ -795,7 +809,11 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
                         label,
                         fontSize = 15.sp,
                         color = Mono.ink,
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onDismiss(); action() }.padding(vertical = 10.dp, horizontal = 4.dp),
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                            .clickable(role = Role.Button) {
+                                if (label in host.confirmBefore) confirming = label else { onDismiss(); action() }
+                            }
+                            .padding(vertical = 12.dp, horizontal = 4.dp),
                     )
                 }
             }
@@ -803,6 +821,53 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
     }
     if (showReport) MonoDialog("Latest report", { showReport = false }) {
         Text(app.lastReport, color = Mono.ink, fontSize = 13.sp)
+    }
+}
+
+/** The open glyph's own actions: rename it in place, or delete it after asking. */
+@Composable
+private fun ThisGlyphRow(app: AppState, host: EditorHost, files: GlyphFiles, current: String) {
+    var renaming by remember(current) { mutableStateOf(false) }
+    var newName by remember(current) { mutableStateOf(current) }
+    var deleting by remember(current) { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Caps("This glyph")
+        when {
+            renaming -> {
+                MonoField(newName, { newName = it }, "Glyph name", Modifier.fillMaxWidth(),
+                    onDone = { if (renameGlyph(app, files, current, newName)) renaming = false })
+                Text(GLYPH_NAME_HINT, fontSize = 12.sp, color = Mono.inkDim)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MonoButton(onClick = { renaming = false }, outlined = true) { Text("Cancel") }
+                    MonoButton(onClick = { if (renameGlyph(app, files, current, newName)) renaming = false },
+                        selected = true, enabled = newName.isNotBlank()) { Text("Rename") }
+                }
+            }
+            deleting -> {
+                Text("Delete \"${displayGlyphName(current)}\" and every anchor drawn for it? This can't be undone, and " +
+                    "ghosts of it in other glyphs stop following it.", fontSize = 14.sp, color = Mono.ink)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MonoButton(onClick = { deleting = false }, outlined = true) { Text("Cancel") }
+                    MonoButton(onClick = { deleting = false; deleteGlyph(app, files, current, host.openGlyph) }, selected = true) { Text("Delete") }
+                }
+            }
+            else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(displayGlyphName(current), fontSize = 16.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                MonoButton(onClick = { newName = current; renaming = true }, outlined = true) { Text("Rename") }
+                MonoButton(onClick = { deleting = true }, outlined = true) { Text("Delete") }
+            }
+        }
+    }
+}
+
+/** Asks before something that can't be undone: Cancel first, the named action last. */
+@Composable
+fun ConfirmDialog(title: String, message: String, confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    MonoDialog(title, onDismiss, actions = {
+        MonoButton(onClick = onDismiss, outlined = true) { Text("Cancel") }
+        MonoButton(onClick = onConfirm, selected = true) { Text(confirmLabel) }
+    }) {
+        Text(message, fontSize = 14.sp, color = Mono.ink)
     }
 }
 

@@ -252,7 +252,6 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                     pickFontBytes = { onLoaded, onError -> files.openTtf(onLoaded, onError) },
                     openGlyph = { name -> storage.loadGlyph(name)?.let { loadPersistentGlyph(name, it) } },
                     createGlyph = { createGlyphNamed(it) },
-                    createGlyphFrom = { name, glyph -> createGlyphNamed(name, glyph) },
                     listGlyphNames = { storage.listGlyphNames().also { app.glyphNames = it } },
                     fileActions = listOf(
                         "Import a TrueType font (.ttf)" to { importVariableFontIntoApp() },
@@ -286,6 +285,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                                         try {
                                             val glyph = withContext(Dispatchers.IO) { storage.importGlyphText(targetName, text) }
                                             loadPersistentGlyph(targetName, glyph)
+                                            app.setStatus("Replaced \"$targetName\" from the file.")
                                         } catch (e: Exception) {
                                             app.setStatus("Import failed: ${e.message}", true)
                                         }
@@ -304,6 +304,15 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                     settings = storage.settings,
                     fontStore = AndroidFontStore.host(context, files),
                     updates = updates,
+                    createGlyphFrom = { name, glyph -> createGlyphNamed(name, glyph) },
+                    glyphFiles = GlyphFiles(
+                        exists = storage::glyphExists,
+                        load = storage::loadGlyph,
+                        save = { name, glyph -> storage.saveGlyph(name, glyph) },
+                        delete = { name -> storage.deleteGlyph(name); if (storage.lastGlyphName() == name) storage.setLastGlyphName(null) },
+                        list = storage::listGlyphNames,
+                    ),
+                    confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
                 )
             }
 

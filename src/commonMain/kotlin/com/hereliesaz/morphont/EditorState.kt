@@ -436,6 +436,11 @@ class AppState {
     /** [owners] are the objects whose private history holds one snapshot for this entry (several for a grouped edit). */
     private class UndoEntry(val owners: MutableList<Any>, val action: () -> Unit)
     private val undoActions = mutableListOf<UndoEntry>()
+
+    private companion object {
+        /** As long as the undo history ([undoActions] keeps 150): no older retired ghost can be asked for. */
+        const val MAX_RETIRED_GHOSTS = 150
+    }
     private var recording = true
 
     /** Everything Undo and Redo move between: the outlines, guides, metrics and ghosts at one moment. */
@@ -776,9 +781,11 @@ class AppState {
 
     /**
      * Ghost layers taken off the list by [setGhosts], kept by id: older undo entries still point at them,
-     * so bringing one back must bring back that same object, not a lookalike.
+     * so bringing one back must bring back that same object, not a lookalike. Oldest first, and capped at
+     * the undo history's own length ([MAX_RETIRED_GHOSTS]): a layer retired longer ago than that has no
+     * history entry left that could bring it back, so remove/undo/redo cycles can't grow memory forever.
      */
-    private val retiredGhosts = mutableMapOf<Int, GhostLayer>()
+    private val retiredGhosts = LinkedHashMap<Int, GhostLayer>()
 
     /** Makes the ghost list [list], reusing the layers -- shown or retired -- whose ids are in [ids] (see [GhostLayer.applyData]). */
     private fun setGhosts(list: List<GhostData>, ids: List<Int>) {
@@ -788,8 +795,9 @@ class AppState {
             ids.getOrNull(i)?.let { known[it] }?.also { it.applyData(d) }
                 ?: ghostFromData(d).also { attachGhost(it) }
         }
-        for (g in ghosts) if (next.none { it === g }) retiredGhosts[g.id] = g
+        for (g in ghosts) if (next.none { it === g }) { retiredGhosts.remove(g.id); retiredGhosts[g.id] = g }
         for (g in next) retiredGhosts.remove(g.id)
+        while (retiredGhosts.size > MAX_RETIRED_GHOSTS) retiredGhosts.remove(retiredGhosts.keys.first())
         ghosts.clear()
         ghosts.addAll(next)
         for (d in list) d.sourceGlyph?.let { src -> cacheLinked(src) }

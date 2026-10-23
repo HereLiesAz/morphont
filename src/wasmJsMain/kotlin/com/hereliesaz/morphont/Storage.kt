@@ -3,6 +3,7 @@
 package com.hereliesaz.morphont
 
 import com.juul.indexeddb.Database
+import com.juul.indexeddb.Key
 import com.juul.indexeddb.KeyPath
 import com.juul.indexeddb.deleteDatabase
 import com.juul.indexeddb.openDatabase
@@ -199,11 +200,34 @@ object Storage {
      * couldn't be saved, or a list that was cleared or damaged) as "Recovered <id>", the same way the
      * desktop and Android builds adopt orphaned project folders.
      */
+    /**
+     * Projects whose deletion was asked for but may not have finished: a delete another tab is blocking
+     * stays queued in the browser after Morphont stops waiting for it. Orphan recovery must not bring
+     * those back (the queued delete would then erase the "recovered" copy), so they're remembered here
+     * until a delete is seen through.
+     */
+    private const val DELETING_KEY = "morphont:deleting"
+
+    private fun deleting(): Set<String> = try {
+        window.localStorage.getItem(DELETING_KEY)?.split('\n')?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
+    } catch (_: Throwable) { emptySet() }
+
+    private fun setDeleting(ids: Set<String>) {
+        try {
+            if (ids.isEmpty()) window.localStorage.removeItem(DELETING_KEY)
+            else window.localStorage.setItem(DELETING_KEY, ids.joinToString("\n"))
+        } catch (_: Throwable) {}
+    }
+
     suspend fun adoptOrphanProjects() {
         val names = runCatching { databaseNames().await<JsArray<JsString>>().toList().map { it.toString() } }.getOrDefault(emptyList())
+        val pending = deleting()
+        // A queued delete that has since finished leaves no database behind; forget it.
+        val stillThere = pending.filter { "morphont-$it" in names }.toSet()
+        if (stillThere != pending) setDeleting(stillThere)
         for (name in names) {
             val id = name.removePrefix("morphont-").takeIf { name.startsWith("morphont-") && it.isNotEmpty() } ?: continue
-            if (id == "fonts" || registry.find(id) != null) continue
+            if (id == "fonts" || registry.find(id) != null || id in pending) continue
             runCatching { registry.create(unusedProjectName(registry, "Recovered $id"), id) }
         }
     }
@@ -257,7 +281,9 @@ object Storage {
             }
         }
         if (id == LEGACY_PROJECT_ID) clearLegacyProject()
+        setDeleting(deleting() + id)
         deleteDatabase(databaseName(id))
+        setDeleting(deleting() - id)
     }
 
     fun listGlyphNames(): List<String> = project.keys.sorted()
@@ -275,6 +301,18 @@ object Storage {
             writeMutex.withLock {
                 requireDatabase().writeTransaction(GLYPH_STORE) {
                     objectStore(GLYPH_STORE).put(storedGlyph(name, glyph))
+                }
+            }
+        }
+    }
+
+    /** Removes a glyph from the open project (the store's key is the glyph name). */
+    fun deleteGlyph(name: String) {
+        project.remove(name)
+        persistAsync("Couldn't delete the glyph") {
+            writeMutex.withLock {
+                requireDatabase().writeTransaction(GLYPH_STORE) {
+                    objectStore(GLYPH_STORE).delete(Key(name.toJsString()))
                 }
             }
         }
