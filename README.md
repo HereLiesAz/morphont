@@ -135,6 +135,27 @@ so anchors can then be reshaped without adding or removing points.
   open so several can be flipped at once, then **Grid step** (10, 25, 50 or 100
   units). The desktop top bar has the same menu without the panel shortcuts
   (those panels are always on screen there).
+- **Getting started.** The start screens open with the idea in a line and a
+  **How Morphont works** button (also under **Help** in the menu): three
+  thumbnails of one axis, and the anchors, Regular and Match steps in plain
+  words. A project's first screen offers **Import a TrueType font**, **Import
+  UFO** (desktop) and **Open a Morphont project** straight away -- each makes
+  its own project -- and an open, empty project offers **Try the sample**, an
+  "o" already drawn on every anchor so the Preview moves at once. **Help →
+  Keys and gestures** lists every key and the touch gestures no button shows.
+- **Every control names itself.** Hover (or long-press) any icon for its name;
+  a disabled one says why ("select a node first", "finish the contour first").
+  Icon buttons come in three sizes (28, 40, 48 dp; the phone dock is all 48),
+  take keyboard focus with a ring, and report their selected state to screen
+  readers; anchors, glyph tiles, chips and segmented controls carry button,
+  tab or switch roles, and the canvas describes the anchor it shows. The
+  Match menu explains each item and says when there's nothing to do.
+- **Rename and delete glyphs.** **Glyphs and files** has a **This glyph** row
+  for the open glyph: **Rename** (the new name keeps the edits and undo
+  history; an existing name is refused) and **Delete** (asks first; the next
+  glyph opens). **Replace this glyph from .json**, **Remove** in the font
+  store and **Delete** project all ask before they overwrite something undo
+  can't bring back.
 - **Settings are remembered.** Theme, every view toggle, the grid and its step,
   the glyph opacity and the Move circle choice are saved as they change and
   restored at launch: Android in its preferences, desktop in `settings.json`
@@ -278,7 +299,7 @@ so anchors can then be reshaped without adding or removing points.
   key and is still used for opening, linking and export; older imports are
   displayed correctly without deleting or renaming any glyphs. Non-printing,
   invalid and alternate names remain literal.
-- **UFO import (desktop).** In **Glyphs & file → Import UFO**, select a
+- **UFO import (desktop).** In **Glyphs and files → Import UFO**, select a
   `.ufo` directory (not a GLIF by itself) or `.ufoz` ZIP archive. Reads UFO
   2/3 default-layer `glyphs/contents.plist`, GLIF glyph names, per-glyph
   advances, font metrics, closed cubic/quadratic contours and nested affine
@@ -444,7 +465,8 @@ so anchors can then be reshaped without adding or removing points.
 - `Outline.kt` -- the cubic node/arm model: arm lookup, mirrored drags, corner/smooth, line/curve, valid deletion, pen nodes, exact quadratic-to-cubic conversion
 - `Editing.kt` -- UI-free editing geometry: bounds, affine transforms, ghost shapes, clipboard extraction, snapping, node-reduction order
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)
-- `Editor.kt` -- the shared editor screen (phone and wide layouts) and the welcome screen, used by both shells
+- `Editor.kt` -- the shared editor screen (phone and wide layouts) and the welcome screen, used by all shells
+- `Onboarding.kt` -- the sample glyph, "How Morphont works", the shared start-screen head and the keys-and-gestures list; `GlyphFiles.kt` -- rename and delete for glyphs, written once over each shell's storage
 - `AnchorCanvas.kt` / `Panels.kt` / `Controls.kt` -- the canvas renderer, preview/thumbnail canvases, and the floating parts (ghost bar, simplify card, axis strip, filmstrip, inspector sections, dialogs, keyboard shortcuts)
 - `Icons.kt` -- the monoline icon set
 - `Suggestions.kt` -- the suggested-edits engine (outline offset, stem measurement, and each suggestion)

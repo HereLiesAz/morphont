@@ -69,6 +69,7 @@ fun FontStoreDialog(app: AppState, store: FontStoreHost, onUseAsGhost: (String) 
     var installed by remember { mutableStateOf<List<InstalledFont>>(emptyList()) }
     var busy by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var removing by remember { mutableStateOf<InstalledFont?>(null) }
 
     fun run(label: String, block: suspend () -> Unit) {
         if (busy != null) return
@@ -83,6 +84,21 @@ fun FontStoreDialog(app: AppState, store: FontStoreHost, onUseAsGhost: (String) 
                 message = (e.message ?: "Something went wrong.") to true
             } finally {
                 busy = null
+            }
+        }
+    }
+
+    removing?.let { font ->
+        ConfirmDialog(
+            "Remove ${font.family}?",
+            "It's deleted from this device, and any ghost made from it stops following it. You can install it again from the store.",
+            confirmLabel = "Remove", onDismiss = { removing = null },
+        ) {
+            removing = null
+            run("Removing…") {
+                store.shelf.remove(font.id)
+                unloadInstalledFonts(app, store, font.id)
+                installed = store.shelf.list()
             }
         }
     }
@@ -157,13 +173,7 @@ fun FontStoreDialog(app: AppState, store: FontStoreHost, onUseAsGhost: (String) 
                                 message = lines.joinToString(" ") to failed
                             }
                         }, enabled = busy == null, outlined = true) { Text(store.installLabel, fontSize = 12.sp) }
-                        MonoButton(onClick = {
-                            run("Removing…") {
-                                store.shelf.remove(font.id)
-                                unloadInstalledFonts(app, store, font.id)
-                                installed = store.shelf.list()
-                            }
-                        }, enabled = busy == null, outlined = true) { Text("Remove", fontSize = 12.sp) }
+                        MonoButton(onClick = { removing = font }, enabled = busy == null, outlined = true) { Text("Remove", fontSize = 12.sp) }
                     }
                 }
             }

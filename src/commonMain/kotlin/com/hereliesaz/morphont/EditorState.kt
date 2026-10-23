@@ -1111,12 +1111,12 @@ class AppState {
     fun resetRegularToNaturalPath() {
         if (activeGhost != null || reduction != null) return
         val natural = naturalRegular()
-        if (natural == null) { setStatus("The three states must match point for point first (Match nodes to the fewest).", true); return }
+        if (natural == null) { setStatus("The three anchors must have matching nodes first -- use \"Match the three anchors\".", true); return }
         anchors.getValue("regular").replaceWithHistory(natural)
         setStatus("Regular reset to halfway between ${ANCHOR_LABELS[axisTriple()[0]]} and ${ANCHOR_LABELS[axisTriple()[2]]}. Undo puts it back.")
     }
 
-    /** The three states of the axis being worked on: its low extreme, Regular, its high extreme. */
+    /** The three anchors of the axis being worked on: its low extreme, Regular, its high extreme. */
     fun axisTriple(): List<String> {
         val axis = Axis.ALL.firstOrNull { it.lo == activeAnchor || it.hi == activeAnchor } ?: selectedAxis
         return listOf(axis.lo, "regular", axis.hi)

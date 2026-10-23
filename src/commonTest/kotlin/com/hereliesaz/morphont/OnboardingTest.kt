@@ -58,3 +58,22 @@ class OnboardingTest {
         assertTrue(createdMessage("a", Glyph()).contains("Regular first"))
     }
 }
+
+class MetricsProblemTest {
+    @Test
+    fun goodMetricsHaveNoProblem() {
+        assertNull(metricsProblem("1000", "800", "700", "500", "-200"))
+    }
+
+    @Test
+    fun anEmptyOrNonNumericFieldNamesItself() {
+        assertEquals("Ascender needs a number.", metricsProblem("1000", "", "700", "500", "-200"))
+        assertEquals("x-height needs a number.", metricsProblem("1000", "800", "700", "--", "-200"))
+    }
+
+    @Test
+    fun unitsPerEmAndTheAscenderAreChecked() {
+        assertTrue(metricsProblem("8", "800", "700", "500", "-200")!!.contains("at least 16"))
+        assertTrue(metricsProblem("1000", "-300", "700", "500", "-200")!!.contains("above the descender"))
+    }
+}

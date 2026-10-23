@@ -284,9 +284,9 @@ private fun CompactEditor(
             IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = IconSize.LARGE)
             IconAction(MIcons.Guides, "Guides", { sheet = Sheet.GUIDES }, size = IconSize.LARGE)
             ToolIcon(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = IconSize.LARGE)
-            ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = IconSize.LARGE, enabled = app.activeGhost == null)
+            ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = IconSize.LARGE, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
             StatesMenuButton(app, size = IconSize.LARGE)
-            IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = IconSize.LARGE, enabled = app.activeGhost == null)
+            IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = IconSize.LARGE, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
             }
             Scrollbar(dockScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
         }
@@ -341,7 +341,7 @@ private fun WideEditor(
             IconAction(MIcons.Undo, "Undo", { app.undo() }, size = IconSize.MEDIUM)
         IconAction(MIcons.Redo, "Redo", { app.redo() }, size = IconSize.MEDIUM, enabled = app.canRedo)
         EditorMenuButton(app, host, openBrowser, openFontOverview, goTo = null, size = IconSize.MEDIUM)
-            MonoButton(onClick = openBrowser, selected = true) { Text("Glyphs & file", fontSize = 13.sp) }
+            MonoButton(onClick = openBrowser, selected = true) { Text("Glyphs and files") }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
         Row(Modifier.weight(1f).fillMaxWidth()) {
@@ -353,9 +353,9 @@ private fun WideEditor(
                 ToolIcon(MIcons.SubtractNode, "Subtract node (D)", { nodeToolSelect(app, NodeTool.SUBTRACT) }, selected = app.nodeTool == NodeTool.SUBTRACT, size = IconSize.MEDIUM, name = "Subtract")
                 ToolIcon(MIcons.ConvertNode, "Convert node (C)", { nodeToolSelect(app, NodeTool.CONVERT) }, selected = app.nodeTool == NodeTool.CONVERT, size = IconSize.MEDIUM, name = "Convert")
                 NodeActions(app, size = IconSize.MEDIUM)
-                ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = IconSize.MEDIUM, enabled = app.activeGhost == null)
+                ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = IconSize.MEDIUM, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
                 StatesMenuButton(app, size = IconSize.MEDIUM)
-                IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = IconSize.MEDIUM, enabled = app.activeGhost == null)
+                IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = IconSize.MEDIUM, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
                 SuggestionsButton(app, suggestions, size = IconSize.MEDIUM)
                 IconAction(MIcons.ResetView, "Reset zoom and pan (0)", { app.view.resetView() }, size = IconSize.MEDIUM)
             }
