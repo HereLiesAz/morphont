@@ -12,6 +12,7 @@ fun main() {
     MainScope().launch {
         try {
             Storage.adoptLegacyProject()
+            Storage.adoptOrphanProjects()
         } catch (e: Throwable) {
             val detail = e.message?.takeIf { it.isNotBlank() } ?: e::class.simpleName ?: "storage error"
             window.alert(

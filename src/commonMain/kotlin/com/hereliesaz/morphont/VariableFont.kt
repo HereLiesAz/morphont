@@ -73,6 +73,9 @@ private data class CompositeComponent(
     val xx: Float = 1f, val xy: Float = 0f, val yx: Float = 0f, val yy: Float = 1f,
 )
 
+/** Upper bound on cmap entries read: every Unicode code point once (see the cmap reader). */
+private const val MAX_CMAP_MAPPINGS = 0x110000L
+
 private const val MAX_COMPOSITE_DEPTH = 1
 
 private data class TupleVariation(
@@ -736,6 +739,14 @@ private fun parseCmap(r: Reader, cmapOffset: Int, cmapLength: Int, numGlyphs: In
     require(bestOffset >= 0) { "TrueType cmap contains no supported Unicode subtable" }
     fun inSub(at: Int, count: Int) = r.check(at, count, bestEnd)
     val result = LinkedHashMap<Int, Int>()
+    // Overlapping segments can make a 64 KB table describe half a billion mappings. No real font needs
+    // more than every Unicode code point once, so cap the work there. Surrogates name no character.
+    var work = 0L
+    fun map(c: Int, gid: Int) {
+        require(++work <= MAX_CMAP_MAPPINGS) { "TrueType cmap is implausibly large" }
+        if (c in 0xD800..0xDFFF) return
+        result[c] = gid
+    }
     when (bestFormat) {
         4 -> {
             inSub(bestOffset, 16)
@@ -761,7 +772,7 @@ private fun parseCmap(r: Reader, cmapOffset: Int, cmapLength: Int, numGlyphs: In
                         val raw = r.u16(addr.toInt())
                         if (raw == 0) 0 else (raw + delta) and 0xFFFF
                     }
-                    if (gid in 1 until numGlyphs) result[c] = gid
+                    if (gid in 1 until numGlyphs) map(c, gid)
                 }
             }
         }
@@ -780,7 +791,7 @@ private fun parseCmap(r: Reader, cmapOffset: Int, cmapLength: Int, numGlyphs: In
                 val length = minOf(end - start, numGlyphs.toLong() - 1 - gidStart)
                 for (d in 0..length) {
                     val gid = (gidStart + d).toInt()
-                    if (gid != 0) result[(start + d).toInt()] = gid
+                    if (gid != 0) map((start + d).toInt(), gid)
                 }
             }
         }

@@ -26,13 +26,28 @@ class DesktopStorageTest {
     fun interruptedSwapRecoversPriorDirectoryAtStartup() {
         val root = Files.createTempDirectory("morphont-recovery-test-")
         try {
-            val backup = Files.createDirectory(root.resolve("morphont-backup-crash"))
+            val backup = Files.createDirectory(root.resolve("morphont-backup-glyphs-crash"))
             Files.writeString(backup.resolve("Existing.json"), "preserve this glyph")
             val live = root.resolve("glyphs")
             assertFalse(Files.exists(live))
             recoverProjectDirectory(root.toFile(), live.toFile())
             assertEquals("preserve this glyph", Files.readString(live.resolve("Existing.json")))
             assertFalse(Files.exists(backup))
+        } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test
+    fun anotherProjectsBackupIsNeverAdopted() {
+        val root = Files.createTempDirectory("morphont-recovery-test-")
+        try {
+            // Project A crashed mid-swap; project C is new and has no folder yet.
+            val aBackup = Files.createDirectory(root.resolve("morphont-backup-A-crash"))
+            Files.writeString(aBackup.resolve("Existing.json"), "A's glyph")
+            val c = root.resolve("C")
+            recoverProjectDirectory(root.toFile(), c.toFile())
+            assertFalse(Files.exists(c), "C must not receive A's glyphs")
+            recoverProjectDirectory(root.toFile(), root.resolve("A").toFile())
+            assertEquals("A's glyph", Files.readString(root.resolve("A").resolve("Existing.json")))
         } finally { root.toFile().deleteRecursively() }
     }
 

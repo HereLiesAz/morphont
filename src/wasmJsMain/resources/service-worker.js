@@ -1,8 +1,9 @@
-// Minimal offline cache: SHELL_FILES are precached on install; everything else
-// (including the compiled morphont.js/.wasm app bundle) is cached opportunistically
-// the first time it's fetched over the network, then served from cache when offline.
-// Bump CACHE_NAME to force an update.
-const CACHE_NAME = "morphont-v1";
+// Minimal offline cache, network first: SHELL_FILES are precached on install; everything else from this
+// site (including the compiled morphont.js/.wasm bundle) is cached the first time it's fetched, then served
+// from the cache only when the network is unreachable. Only good same-origin responses are cached, so a
+// transient 404/5xx can't replace a working offline copy, and other sites' requests (the font store, the
+// update check) pass straight through.
+const CACHE_NAME = "morphont-v2";
 const SHELL_FILES = ["./", "index.html", "manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -22,14 +23,18 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+  const request = event.request;
+  if (request.method !== "GET") return;
+  if (new URL(request.url).origin !== self.location.origin) return;
   event.respondWith(
-    fetch(event.request)
+    fetch(request)
       .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
+        if (response.ok && response.type === "basic") {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
+        }
         return response;
       })
-      .catch(() => caches.match(event.request)),
+      .catch(() => caches.match(request)),
   );
 });

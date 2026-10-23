@@ -77,7 +77,8 @@ internal fun replaceProjectDirectory(directory: File, project: Map<String, Glyph
     require(directory.isDirectory || directory.mkdirs()) { "Cannot create glyph storage directory" }
     val parent = directory.parentFile.toPath()
     val stage = Files.createTempDirectory(parent, "morphont-stage-")
-    val backup = Files.createTempDirectory(parent, "morphont-backup-")
+    // The backup is named for its project, so crash recovery can only ever hand it back to that project.
+    val backup = Files.createTempDirectory(parent, backupPrefix(directory))
     Files.delete(backup)
     var backedUp = false
     var installed = false
@@ -102,11 +103,18 @@ internal fun replaceProjectDirectory(directory: File, project: Map<String, Glyph
     }
 }
 
-/** Crash recovery for a directory import interrupted between its two renames. */
+/** The backup-folder prefix for [directory]'s swap: `morphont-backup-<folder name>-`. */
+internal fun backupPrefix(directory: File) = "morphont-backup-${directory.name}-"
+
+/**
+ * Crash recovery for a directory import interrupted between its two renames: [glyphs] is missing and its
+ * own backup is still there. Only a backup made for this folder is restored -- never another
+ * project's, and never an older unnamed one -- so a leftover can't become some other project's glyphs.
+ */
 internal fun recoverProjectDirectory(base: File, glyphs: File) {
     if (glyphs.exists()) return
     val backup = base.listFiles().orEmpty()
-        .filter { it.isDirectory && it.name.startsWith("morphont-backup-") }
+        .filter { it.isDirectory && it.name.startsWith(backupPrefix(glyphs)) }
         .maxByOrNull { it.lastModified() }
     if (backup != null) Files.move(backup.toPath(), glyphs.toPath())
 }
@@ -259,8 +267,19 @@ object DesktopStorage {
     }
 
     /** Never overwrite an existing glyph when importing another font. */
-    fun saveNewGlyphs(glyphs: Map<String, Glyph>): List<String> {
+    /** The project glyph operations go to, or null before one is opened. */
+    val openProjectId: String? get() = projectId
+
+    /**
+     * Saves imported glyphs that don't collide with existing ones. [forProject] is the project the import
+     * started in: if another was opened meanwhile, nothing is written (the glyphs would land in the wrong
+     * project). Every glyph is encoded before the first file is written, so one unencodable glyph aborts
+     * the import cleanly instead of leaving it half saved.
+     */
+    fun saveNewGlyphs(glyphs: Map<String, Glyph>, forProject: String? = null): List<String> {
+        check(forProject == null || forProject == projectId) { "You opened another project while it was importing, so nothing was saved. Import it again." }
         val collisions = glyphs.keys.filter(::glyphExists)
+        glyphs.forEach { (name, glyph) -> if (name !in collisions) ProjectCodec.encodeGlyph(glyph) }
         glyphs.forEach { (name, glyph) ->
             if (name !in collisions) saveGlyph(name, glyph)
         }

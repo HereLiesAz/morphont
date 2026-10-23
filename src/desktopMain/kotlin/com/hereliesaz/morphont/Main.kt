@@ -27,10 +27,36 @@ import org.jetbrains.compose.resources.painterResource
 
 private const val AUTOSAVE_DEBOUNCE_MS = 400L
 
+/**
+ * The autosave not yet written (it waits [AUTOSAVE_DEBOUNCE_MS] for typing to settle). Closing the
+ * window writes it first, so the last edit before quitting is never lost.
+ */
+private object PendingSave {
+    var name: String? = null
+    var glyph: Glyph? = null
+    var onError: (String) -> Unit = {}
+
+    fun write(name: String, glyph: Glyph) {
+        try {
+            DesktopStorage.saveGlyph(name, glyph)
+        } catch (e: Exception) {
+            onError("Couldn't save \"$name\": ${e.message ?: e::class.simpleName}. Your edits are still open; save the whole project to keep a copy.")
+        }
+    }
+
+    fun flush() {
+        val n = name ?: return
+        val g = glyph ?: return
+        name = null
+        glyph = null
+        write(n, g)
+    }
+}
+
 /** Desktop entry point: one window around the shared [EditorScreen]. */
 fun main() = application {
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = { PendingSave.flush(); exitApplication() },
         title = "Morphont",
         icon = painterResource(Res.drawable.morphont_logo),
         state = rememberWindowState(width = 1440.dp, height = 900.dp),
@@ -48,6 +74,7 @@ fun DesktopApp() {
             val app = remember { AppState().apply { glyphLookup = { DesktopStorage.loadGlyph(it) }; applySettings(saved) } }
             val focus = remember { FocusRequester() }
             val scope = rememberCoroutineScope()
+            PendingSave.onError = { app.setStatus(it, true) }
 
             fun open(name: String) { DesktopStorage.loadGlyph(name)?.let { app.loadGlyph(name, it) } }
 
@@ -72,8 +99,9 @@ fun DesktopApp() {
                 scope.launch {
                     try {
                         app.setStatus("Importing TrueType font…")
+                        val forProject = DesktopStorage.openProjectId
                         val result = withContext(Dispatchers.Default) { buildFamilyFromVariableFont(bytes) }
-                        val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs) }
+                        val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs, forProject) }
                         val inserted = result.glyphs.keys.filterNot { it in collisions }
                         app.glyphNames = DesktopStorage.listGlyphNames()
                         inserted.firstOrNull()?.let(::open)
@@ -93,8 +121,9 @@ fun DesktopApp() {
                 scope.launch {
                     try {
                         app.setStatus("Importing UFO…")
+                        val forProject = DesktopStorage.openProjectId
                         val result = withContext(Dispatchers.IO) { importUfoFile(file) }
-                        val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs) }
+                        val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs, forProject) }
                         val inserted = result.glyphs.keys.filterNot { it in collisions }
                         app.glyphNames = DesktopStorage.listGlyphNames()
                         inserted.firstOrNull()?.let(::open)
@@ -115,8 +144,11 @@ fun DesktopApp() {
 
             /** Saves the open glyph into the project that's open now -- must run before storage is pointed elsewhere. */
             fun flushOpenGlyph() {
+                // Whatever autosave still holds belongs to this project; write it now, never later.
+                PendingSave.name = null
+                PendingSave.glyph = null
                 if (app.currentProject == null) return
-                app.currentGlyphName?.let { DesktopStorage.saveGlyph(it, app.toGlyph()) }
+                app.currentGlyphName?.let { PendingSave.write(it, app.toGlyph()) }
             }
 
             fun openProject(id: String) {
@@ -234,17 +266,19 @@ fun DesktopApp() {
                             val oldGlyph = pendingGlyph
                             if (oldName != null && oldGlyph != null) {
                                 saveJob?.cancel()
-                                DesktopStorage.saveGlyph(oldName, oldGlyph)
+                                PendingSave.write(oldName, oldGlyph)
                             }
                         }
                         pendingEpoch = epoch
                         pendingName = name
                         pendingGlyph = glyph
+                        PendingSave.name = name
+                        PendingSave.glyph = glyph
                         if (name == null) return@collect
                         saveJob?.cancel()
                         saveJob = launch {
                             delay(AUTOSAVE_DEBOUNCE_MS)
-                            if (epoch == app.autosaveEpoch) DesktopStorage.saveGlyph(name, glyph)
+                            if (epoch == app.autosaveEpoch) PendingSave.flush()
                         }
                     }
                 

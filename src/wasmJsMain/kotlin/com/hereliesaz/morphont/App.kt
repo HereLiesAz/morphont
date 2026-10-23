@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -16,10 +17,17 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import compose.conveyance.ConveySystem
+import kotlinx.browser.document
+import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
+import org.w3c.dom.events.Event
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** `document.visibilityState == "hidden"` (not in this kotlinx-browser's Document). */
+private fun pageHidden(): Boolean = js("document.visibilityState === 'hidden'")
 
 /** How long an edit has to sit still before autosave writes it -- coalesces a whole drag gesture's frame-by-frame updates into one write. */
 private const val AUTOSAVE_DEBOUNCE_MS = 400L
@@ -75,12 +83,15 @@ private suspend fun enterProject(app: AppState, info: ProjectInfo, message: Stri
     app.projects = Storage.registry.projects
     app.glyphNames = names
     openFirstAvailableGlyph(app, names)
-    app.setStatus(message)
+    val unreadable = Storage.unreadableOnLoad
+    if (unreadable.isEmpty()) app.setStatus(message)
+    else app.setStatus("$message ${unreadable.size} glyph record(s) couldn't be read and are left out: ${unreadable.joinToString()}.", isError = true)
 }
 
 private fun openProject(app: AppState, scope: CoroutineScope, id: String, message: (ProjectInfo) -> String = { "Opened \"${it.name}\"." }) {
     if (app.currentProject?.id == id) return
-    val info = Storage.registry.open(id) ?: return
+    // Remembering it as the last-opened project can fail (storage full); opening it shouldn't.
+    val info = runCatching { Storage.registry.open(id) }.getOrNull() ?: Storage.registry.find(id) ?: return
     app.projects = Storage.registry.projects
     closeOpenProject(app)
     scope.launch {
@@ -94,7 +105,10 @@ private fun openProject(app: AppState, scope: CoroutineScope, id: String, messag
 
 private fun createProject(app: AppState, scope: CoroutineScope, raw: String): Boolean {
     Storage.registry.nameProblem(raw)?.let { app.setStatus(it, isError = true); return false }
-    val info = Storage.registry.create(raw)
+    val info = try { Storage.registry.create(raw) } catch (e: Exception) {
+        app.setStatus("Couldn't start the project: ${e.message}", isError = true)
+        return false
+    }
     app.projects = Storage.registry.projects
     openProject(app, scope, info.id) { "Started \"${it.name}\". Create a glyph or import a font; everything saves as you work." }
     return true
@@ -102,19 +116,28 @@ private fun createProject(app: AppState, scope: CoroutineScope, raw: String): Bo
 
 private fun renameProject(app: AppState, id: String, raw: String): Boolean {
     Storage.registry.nameProblem(raw, exceptId = id)?.let { app.setStatus(it, isError = true); return false }
-    val renamed = Storage.registry.rename(id, raw) ?: return false
+    val renamed = try { Storage.registry.rename(id, raw) } catch (e: Exception) {
+        app.setStatus("Couldn't rename the project: ${e.message}", isError = true)
+        return false
+    } ?: return false
     if (app.currentProject?.id == id) app.currentProject = renamed
     app.projects = Storage.registry.projects
     return true
 }
 
 private fun deleteProject(app: AppState, scope: CoroutineScope, id: String) {
+    try { Storage.registry.delete(id) } catch (e: Exception) {
+        app.setStatus("Couldn't delete the project: ${e.message}", isError = true)
+        return
+    }
     if (app.currentProject?.id == id) closeOpenProject(app)
-    Storage.registry.delete(id)
     app.projects = Storage.registry.projects
     scope.launch {
         try {
-            Storage.deleteProjectData(id)
+            // Another Morphont tab holding the database open blocks the delete indefinitely.
+            if (withTimeoutOrNull(8_000) { Storage.deleteProjectData(id) } == null) {
+                app.setStatus("The project's data is still in use by another Morphont tab; close it and the data will be erased.", isError = true)
+            }
         } catch (e: Throwable) {
             app.setStatus("Could not erase the project's data: ${e.message ?: e::class.simpleName}", isError = true)
         }
@@ -223,7 +246,7 @@ fun App() {
             LaunchedEffect(Unit) {
                 app.projects = Storage.registry.projects
                 Storage.registry.last?.let { last ->
-                    val info = Storage.registry.open(last.id) ?: return@let
+                    val info = runCatching { Storage.registry.open(last.id) }.getOrNull() ?: Storage.registry.find(last.id) ?: return@let
                     try {
                         enterProject(app, info, "Opened \"${info.name}\".")
                     } catch (e: Throwable) {
@@ -266,6 +289,23 @@ fun App() {
                             if (epoch == app.autosaveEpoch) Storage.saveGlyph(name, glyph)
                         }
                     }
+            }
+
+            // Hiding or leaving the tab writes the open glyph now, so an edit still inside the debounce
+            // isn't lost when the tab is closed.
+            DisposableEffect(Unit) {
+                val flush: (Event) -> Unit = {
+                    if (pageHidden() || it.type == "pagehide") {
+                        val name = app.currentGlyphName
+                        if (name != null && app.currentProject != null) Storage.saveGlyph(name, app.toGlyph())
+                    }
+                }
+                document.addEventListener("visibilitychange", flush)
+                window.addEventListener("pagehide", flush)
+                onDispose {
+                    document.removeEventListener("visibilitychange", flush)
+                    window.removeEventListener("pagehide", flush)
+                }
             }
 
             Box(

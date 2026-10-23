@@ -201,7 +201,16 @@ class AndroidStorage(context: Context) {
         prefs.edit().remove(PROJECT_KEY).apply()
     }
 
-    fun listGlyphNames(): List<String> = if (projectId == null) emptyList() else projectSnapshot().keys.sorted()
+    /**
+     * The open project's glyph names, from the file names alone -- cheap enough for the main thread even
+     * with a whole font imported, and a damaged file still shows up (opening it says it can't be read)
+     * instead of silently vanishing from the list.
+     */
+    fun listGlyphNames(): List<String> = if (projectId == null) emptyList() else
+        liveDirectory().listFiles().orEmpty()
+            .filter { it.isFile && it.name.endsWith(".json") }
+            .mapNotNull { decodedName(it.name.removeSuffix(".json")) }
+            .sorted()
 
     fun loadGlyph(name: String): Glyph? =
         if (projectId == null) null else readGlyphFile(glyphFile(liveDirectory(), name))
@@ -254,8 +263,14 @@ class AndroidStorage(context: Context) {
         writeGlyphFile(liveDirectory(), name, glyph)
     }
 
-    /** An imported font never silently overwrites an existing project glyph. */
-    fun saveNewGlyphs(glyphs: Map<String, Glyph>): List<String> {
+    /**
+     * An imported font never silently overwrites an existing project glyph. [forProject] is the project
+     * the import started in; if another was opened meanwhile nothing is written. Every glyph is encoded
+     * before the first is written, so an unencodable one aborts cleanly instead of half saving.
+     */
+    fun saveNewGlyphs(glyphs: Map<String, Glyph>, forProject: String? = null): List<String> {
+        check(forProject == null || forProject == projectId) { "You opened another project while it was importing, so nothing was saved. Import it again." }
+        glyphs.values.forEach { ProjectCodec.encodeGlyph(it) }
         val directory = liveDirectory()
         val existing = glyphs.keys.filter(::glyphExists)
         for ((name, glyph) in glyphs) {
@@ -264,8 +279,11 @@ class AndroidStorage(context: Context) {
         return existing
     }
 
-    fun exportProjectText(unsaved: Pair<String, Glyph>? = null): String {
+    /** The whole project as text; [onSkipped] gets the names of glyph files too damaged to include. */
+    fun exportProjectText(unsaved: Pair<String, Glyph>? = null, onSkipped: (List<String>) -> Unit = {}): String {
         val project = if (projectId == null) mutableMapOf() else projectSnapshot().toMutableMap()
+        val skipped = listGlyphNames().filter { it !in project && it != unsaved?.first }
+        if (skipped.isNotEmpty()) onSkipped(skipped)
         unsaved?.let { (name, glyph) -> project[name] = glyph }
         return ProjectCodec.encodeProject(project)
     }

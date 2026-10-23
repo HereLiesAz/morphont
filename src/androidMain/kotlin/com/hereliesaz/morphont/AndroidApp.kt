@@ -41,6 +41,14 @@ class AndroidFileActions(
 private enum class OpenGlyphOutcome { OPENED, EMPTY, UNREADABLE }
 
 /**
+ * Writes the open glyph now. MainActivity calls it from onStop -- going to the background, rotating,
+ * being closed -- so an edit still inside the autosave debounce is never lost.
+ */
+object AndroidAutosave {
+    var flush: () -> Unit = {}
+}
+
+/**
  * Android shell: persistence, file pickers and haptics around the shared
  * [EditorScreen] -- the phone layout on phones, the desktop layout on wide
  * tablets, exactly as on the web.
@@ -99,11 +107,17 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
             val registry = storage.registry
             remember { app.projects = registry.projects }
 
+            fun reportSaveFailure(name: String, e: Throwable) =
+                app.setStatus("Couldn't save \"$name\": ${e.message ?: e::class.simpleName}. Your edits are still open; export the project to keep a copy.", true)
+
             /** Saves the open glyph into the project that's open now -- must run before storage is pointed elsewhere. */
             fun flushOpenGlyph() {
                 if (app.currentProject == null) return
-                app.currentGlyphName?.let { storage.saveGlyph(it, app.toGlyph()) }
+                app.currentGlyphName?.let { name ->
+                    try { storage.saveGlyph(name, app.toGlyph(), app.currentProject?.id) } catch (e: Exception) { reportSaveFailure(name, e) }
+                }
             }
+            AndroidAutosave.flush = { if (initialized) flushOpenGlyph() }
 
             fun openProject(id: String) {
                 if (app.currentProject?.id == id) return
@@ -191,12 +205,13 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                     { bytes ->
                         importingFont = true
                         app.setStatus("Importing TrueType font…")
+                        val forProject = app.currentProject?.id
                         scope.launch {
                             try {
                                 val result = withContext(Dispatchers.Default) {
                                     buildFamilyFromVariableFont(bytes)
                                 }
-                                val collisions = withContext(Dispatchers.IO) { storage.saveNewGlyphs(result.glyphs) }
+                                val collisions = withContext(Dispatchers.IO) { storage.saveNewGlyphs(result.glyphs, forProject) }
                                 app.glyphNames = withContext(Dispatchers.IO) { storage.listGlyphNames() }
                                 val inserted = result.glyphs.keys.filterNot { it in collisions }.sorted()
                                 val firstImportedName = inserted.firstOrNull()
@@ -237,8 +252,12 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                         "Export the whole project" to {
                             scope.launch {
                                 val unsaved = app.currentGlyphName?.let { it to app.toGlyph() }
-                                val text = withContext(Dispatchers.IO) { storage.exportProjectText(unsaved) }
-                                files.saveJson("morphont-project.json", text, { app.setStatus("Project exported.") }, { app.setStatus(it, true) })
+                                var skipped = emptyList<String>()
+                                val text = withContext(Dispatchers.IO) { storage.exportProjectText(unsaved) { skipped = it } }
+                                files.saveJson("morphont-project.json", text, {
+                                    if (skipped.isEmpty()) app.setStatus("Project exported.")
+                                    else app.setStatus("Project exported without ${skipped.size} unreadable glyph file(s): ${skipped.joinToString()}.", true)
+                                }, { app.setStatus(it, true) })
                             }
                             Unit
                         },
@@ -331,7 +350,8 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                             val outgoingGlyph = pendingGlyph
                             if (outgoingName != null && outgoingGlyph != null) {
                                 saveJob?.cancel()
-                                withContext(Dispatchers.IO) { storage.saveGlyph(outgoingName, outgoingGlyph, pendingProject) }
+                                val failure = withContext(Dispatchers.IO) { runCatching { storage.saveGlyph(outgoingName, outgoingGlyph, pendingProject) }.exceptionOrNull() }
+                                failure?.let { reportSaveFailure(outgoingName, it) }
                             }
                         }
                         pendingEpoch = epoch
@@ -342,8 +362,9 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                         saveJob?.cancel()
                         saveJob = launch {
                             delay(ANDROID_AUTOSAVE_DEBOUNCE_MS)
-                            if (epoch == app.autosaveEpoch) withContext(Dispatchers.IO) {
-                                storage.saveGlyph(name, glyph, projectId)
+                            if (epoch == app.autosaveEpoch) {
+                                val failure = withContext(Dispatchers.IO) { runCatching { storage.saveGlyph(name, glyph, projectId) }.exceptionOrNull() }
+                                failure?.let { reportSaveFailure(name, it) }
                             }
                         }
                     }

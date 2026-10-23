@@ -9,6 +9,7 @@ import com.juul.indexeddb.openDatabase
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -17,14 +18,21 @@ import org.khronos.webgl.DataView
 import org.w3c.dom.HTMLAnchorElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.events.Event
+import org.w3c.files.Blob
+import org.w3c.files.BlobPropertyBag
 import org.w3c.files.File
+import org.w3c.dom.url.URL
 import org.w3c.files.FileReader
 import kotlin.js.JsAny
 import kotlin.js.js
 import kotlin.js.toList
 
-/** Global JS `encodeURIComponent`, used to build a `data:` URL for export. */
+/** Global JS `encodeURIComponent`. */
 external fun encodeURIComponent(str: String): String
+
+/** The names of this site's IndexedDB databases; an empty list where the browser can't enumerate them. */
+private fun databaseNames(): kotlin.js.Promise<JsArray<JsString>> =
+    js("(globalThis.indexedDB && indexedDB.databases) ? indexedDB.databases().then(function (l) { return l.map(function (d) { return d.name || ''; }); }) : Promise.resolve([])")
 
 /**
  * Every project is its own IndexedDB database. The one browsers had before projects
@@ -88,7 +96,13 @@ object Storage {
      */
     val registry = ProjectRegistry(
         read = { try { window.localStorage.getItem(PROJECT_REGISTRY_KEY) } catch (_: Throwable) { null } },
-        write = { text -> try { window.localStorage.setItem(PROJECT_REGISTRY_KEY, text) } catch (_: Throwable) { } },
+        // A failed write throws (ProjectRegistry then keeps its old list), so the caller can say the
+        // project list couldn't be saved instead of showing a project that would vanish on reload.
+        write = { text ->
+            try { window.localStorage.setItem(PROJECT_REGISTRY_KEY, text) } catch (e: Throwable) {
+                throw IllegalStateException("The browser wouldn't save the project list (storage full or blocked).")
+            }
+        },
     )
 
     /** Theme and view settings: a few dozen bytes, kept in localStorage next to the project list. */
@@ -102,6 +116,10 @@ object Storage {
     private var initialized = false
     private var initializationError: Throwable? = null
     private var storageUnavailableWarned = false
+
+    /** Glyph records the last project open couldn't decode; they aren't in the project or its exports. */
+    var unreadableOnLoad: List<String> = emptyList()
+        private set
 
     /**
      * Opens durable browser storage and loads the project into memory.
@@ -127,14 +145,20 @@ object Storage {
             }
 
             try {
+                val unreadable = mutableListOf<String>()
                 val loaded = opened.transaction(GLYPH_STORE) {
                     objectStore(GLYPH_STORE).getAll()
                 }.toList().mapNotNull { raw ->
                     val record = raw as StoredGlyph
-                    // One undecodable record must not disable persistence for every other glyph.
-                    runCatching { record.name to ProjectCodec.decodeGlyph(record.json) }.getOrNull()
+                    // One undecodable record must not disable persistence for every other glyph -- but
+                    // it is reported (unreadableOnLoad), not silently left out of the project and its backups.
+                    val decoded = runCatching { record.name to ProjectCodec.decodeGlyph(record.json) }.getOrNull()
+                    if (decoded == null) runCatching { record.name }.getOrNull()?.let { unreadable.add(it) }
+                    decoded
                 }.toMap().toMutableMap()
 
+                unreadableOnLoad = unreadable.toList()
+                var legacyMigrated = false
                 if (loaded.isEmpty() && id == LEGACY_PROJECT_ID) {
                     val legacy = readLegacyProject()
                     if (legacy.isNotEmpty()) {
@@ -145,6 +169,7 @@ object Storage {
                             }
                         }
                         loaded.putAll(legacy)
+                        legacyMigrated = true
                     }
                 }
 
@@ -152,7 +177,8 @@ object Storage {
                 project.putAll(loaded)
                 database = opened
                 initialized = true
-                if (id == LEGACY_PROJECT_ID) clearLegacyProject()
+                // Only once its glyphs are safely in IndexedDB: an unreadable legacy copy is the user's only one.
+                if (legacyMigrated) clearLegacyProject()
                 listGlyphNames()
             } catch (t: Throwable) {
                 opened.close()
@@ -168,6 +194,20 @@ object Storage {
      * Registers the pre-projects database as "Untitled" if it holds anything. Safe to call on
      * every launch: it does nothing once that project is known (or was deleted and emptied).
      */
+    /**
+     * Registers every project database the list has lost track of (a project created while the list
+     * couldn't be saved, or a list that was cleared or damaged) as "Recovered <id>", the same way the
+     * desktop and Android builds adopt orphaned project folders.
+     */
+    suspend fun adoptOrphanProjects() {
+        val names = runCatching { databaseNames().await<JsArray<JsString>>().toList().map { it.toString() } }.getOrDefault(emptyList())
+        for (name in names) {
+            val id = name.removePrefix("morphont-").takeIf { name.startsWith("morphont-") && it.isNotEmpty() } ?: continue
+            if (id == "fonts" || registry.find(id) != null) continue
+            runCatching { registry.create(unusedProjectName(registry, "Recovered $id"), id) }
+        }
+    }
+
     suspend fun adoptLegacyProject() {
         if (registry.find(LEGACY_PROJECT_ID) != null) return
         val inDatabase = try {
@@ -380,7 +420,10 @@ object Storage {
                     storageUnavailableWarned = true
                     window.alert(storageMessage(label, e))
                 }
+                return@launch
             }
+            // A write got through again: the next failure is news, so it is reported again.
+            storageUnavailableWarned = false
         }
     }
 
@@ -394,8 +437,11 @@ object Storage {
         return "$prefix: $detail. Use Save project for a portable backup."
     }
 
+    /** Downloads [text] as [filename] through a Blob URL (a `data:` URL is capped at a few MB in some browsers). */
     private fun downloadText(filename: String, text: String) {
-        val href = "data:application/json;charset=utf-8," + encodeURIComponent(text)
+        val blob = Blob(arrayOf<JsAny?>(text.toJsString()).toJsArray(), BlobPropertyBag(type = "application/json;charset=utf-8"))
+        val href = URL.createObjectURL(blob)
+        window.setTimeout({ URL.revokeObjectURL(href); null }, 60_000)
         val anchor = document.createElement("a") as HTMLAnchorElement
         anchor.href = href
         anchor.download = filename
