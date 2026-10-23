@@ -367,12 +367,17 @@ so anchors can then be reshaped without adding or removing points.
 - **Font store.** Menu → Font store (or Ghosts → + → Character from the
   font store) browses the `kind: "font"` packages on
   [azphalt.store](https://azphalt.store): search, then **Install**. A package
-  is checked before anything is kept -- zip paths, sizes, and every file's
-  SHA-256 against its manifest -- and its faces are stored on this device.
+  is checked before anything is kept -- zip paths, sizes, every file's
+  SHA-256 against its manifest, and azphalt's font rules (faces under
+  `fonts/` in their declared format, nothing else but the licence) -- and its
+  faces are stored on this device, a new version beside the old until it's
+  complete.
   Under **Installed**: **Use as ghost** (TrueType faces) opens the character
   picker on that font; **Install on this computer** copies it into the user's
   font folder on desktop (`~/Library/Fonts`, `~/.local/share/fonts/morphont`
-  + `fc-cache`, or the per-user Windows font folder and its registry entry);
+  + `fc-cache`, or the per-user Windows font folder and its registry entry),
+  as `<package id>-<file>` so it never replaces a font of your own, and says
+  when the system didn't pick it up; only `.ttf`/`.otf` faces install;
   Android saves the file through the system picker and the web downloads it,
   since neither lets an app install fonts; **Remove**. Package signatures
   aren't checked yet (the store is reached over HTTPS), and paid fonts are

@@ -17,6 +17,8 @@ private sealed interface UpdateResult {
     data class Failed(val message: String) : UpdateResult
 }
 
+private object LaunchCheck { var done = false }
+
 /**
  * Looks for an update once, when the app starts, and says so only if there is one. Silent when
  * there isn't, or when the check can't reach its source (offline is normal for an editor).
@@ -26,6 +28,10 @@ fun AutoUpdatePrompt(checker: UpdateChecker?) {
     checker ?: return
     var found by remember { mutableStateOf<AvailableUpdate?>(null) }
     LaunchedEffect(checker) {
+        // Once per run of the app, however often this composes again (a recreated window or activity):
+        // "Later" means later, and GitHub's anonymous rate limit isn't spent on repeats.
+        if (LaunchCheck.done) return@LaunchedEffect
+        LaunchCheck.done = true
         found = try { checker.check() } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
     }
     found?.let { UpdateFoundDialog(it, checker) { found = null } }

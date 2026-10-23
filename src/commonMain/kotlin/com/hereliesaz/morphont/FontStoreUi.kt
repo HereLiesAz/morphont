@@ -30,8 +30,9 @@ import kotlinx.coroutines.launch
  * returns the name it is listed under. Throws when the face isn't TrueType or can't be read.
  */
 suspend fun loadInstalledFace(app: AppState, store: FontStoreHost, font: InstalledFont, face: ShelfFace): String {
-    val name = if (font.faces.size > 1) "${font.family} ${face.style ?: face.fileName}" else font.family
-    if (app.referenceFonts.containsKey(name)) return name
+    val name = shelfFaceLabel(font, face, store.shelf.list())
+    // Already loaded from this package (an update or removal unloads it, so it is the current version).
+    if (app.referenceFonts.containsKey(name) && name in store.loaded[font.id].orEmpty()) return name
     require(face.readable) { "${face.fileName} is ${face.format.uppercase()}; Morphont reads TrueType fonts." }
     val bytes = requireNotNull(store.shelf.bytes(face)) { "${face.fileName} is missing from this device; install it again." }
     app.referenceFonts[name] = try {
@@ -39,7 +40,13 @@ suspend fun loadInstalledFace(app: AppState, store: FontStoreHost, font: Install
     } catch (e: Exception) {
         throw IllegalArgumentException("${face.fileName} has no TrueType outlines Morphont can read (${e.message}).")
     }
+    store.loaded.getOrPut(font.id) { mutableSetOf() }.add(name)
     return name
+}
+
+/** Drops the reference fonts loaded from package [id], so a ghost picker never serves a removed or outdated version. */
+fun unloadInstalledFonts(app: AppState, store: FontStoreHost, id: String) {
+    store.loaded.remove(id)?.forEach { app.referenceFonts.remove(it) }
 }
 
 private fun StoreFont.detail(): String = listOfNotNull(
@@ -85,7 +92,7 @@ fun FontStoreDialog(app: AppState, store: FontStoreHost, onUseAsGhost: (String) 
     }
 
     LaunchedEffect(Unit) {
-        installed = runCatching { store.shelf.list() }.getOrDefault(emptyList())
+        try { installed = store.shelf.list() } catch (e: CancellationException) { throw e } catch (e: Exception) { message = (e.message ?: "Couldn't read the installed fonts.") to true }
         search()
     }
 
@@ -113,6 +120,7 @@ fun FontStoreDialog(app: AppState, store: FontStoreHost, onUseAsGhost: (String) 
                                 else -> MonoButton(onClick = {
                                     run("Installing ${f.family}…") {
                                         store.shelf.install(store.client.download(f))
+                                        unloadInstalledFonts(app, store, f.id)
                                         installed = store.shelf.list()
                                         message = "Installed ${f.family}." to false
                                     }
@@ -133,18 +141,26 @@ fun FontStoreDialog(app: AppState, store: FontStoreHost, onUseAsGhost: (String) 
                         }, enabled = busy == null, outlined = true) { Text("Use as ghost", fontSize = 12.sp) }
                         MonoButton(onClick = {
                             run("${store.installLabel}…") {
+                                // One face failing doesn't hide what happened to the others.
+                                var failed = false
                                 val lines = faces.map { face ->
-                                    val bytes = requireNotNull(store.shelf.bytes(face)) { "${face.fileName} is missing; install it again." }
-                                    store.installToSystem(face.fileName, bytes)
+                                    try {
+                                        val bytes = requireNotNull(store.shelf.bytes(face)) { "${face.fileName} is missing; install it again." }
+                                        store.installToSystem(font.id, face.fileName, bytes)
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        failed = true
+                                        "${face.fileName}: ${e.message ?: "failed"}."
+                                    }
                                 }
-                                message = lines.joinToString(" ") to false
+                                message = lines.joinToString(" ") to failed
                             }
                         }, enabled = busy == null, outlined = true) { Text(store.installLabel, fontSize = 12.sp) }
                         MonoButton(onClick = {
                             run("Removing…") {
                                 store.shelf.remove(font.id)
-                                app.referenceFonts.keys.filter { it == font.family || it.startsWith(font.family + " ") }
-                                    .forEach { app.referenceFonts.remove(it) }
+                                unloadInstalledFonts(app, store, font.id)
                                 installed = store.shelf.list()
                             }
                         }, enabled = busy == null, outlined = true) { Text("Remove", fontSize = 12.sp) }

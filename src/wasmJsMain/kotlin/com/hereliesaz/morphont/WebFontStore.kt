@@ -49,6 +49,7 @@ object WebFontStore {
             throw IllegalStateException("Couldn't reach the store: ${e.message ?: "network error"}")
         }
         check(response.ok) { "The store answered ${response.status}." }
+        response.headers.get("content-length")?.toLongOrNull()?.let { check(it <= MAX_DOWNLOAD_BYTES) { "The download is larger than Morphont accepts." } }
         Int8Array(response.arrayBuffer().await<ArrayBuffer>()).toByteArray()
     }
 
@@ -96,7 +97,7 @@ object WebFontStore {
             client = FontStoreClient(http),
             shelf = FontShelf(Blobs),
             installLabel = "Download font file",
-            installToSystem = { fileName, bytes ->
+            installToSystem = { _, fileName, bytes ->
                 download(fileName, bytes)
                 "Downloaded $fileName; open it to install it."
             },

@@ -33,7 +33,18 @@ object AndroidFontStore {
                     throw IllegalStateException("Couldn't reach the store: ${e.message ?: e::class.simpleName}")
                 }
                 check(code in 200..299) { "The store answered $code." }
-                connection.inputStream.use { it.readBytes() }
+                connection.inputStream.use { input ->
+                    // Capped, so a bad server can't exhaust the app's memory.
+                    val out = java.io.ByteArrayOutputStream()
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        check(out.size() + n <= MAX_DOWNLOAD_BYTES) { "The download is larger than Morphont accepts." }
+                        out.write(buf, 0, n)
+                    }
+                    out.toByteArray()
+                }
             } finally {
                 connection.disconnect()
             }
@@ -62,7 +73,9 @@ object AndroidFontStore {
         override suspend fun delete(key: String) = withContext(Dispatchers.IO) {
             val f = file(key)
             f.delete()
-            f.parentFile?.takeIf { it != root && it.list()?.isEmpty() == true }?.delete()
+            // Then the package's (and version's) folders, once their last face is gone.
+            var dir = f.parentFile
+            while (dir != null && dir != root && dir.list()?.isEmpty() == true) { dir.delete(); dir = dir.parentFile }
             Unit
         }
     }
@@ -71,7 +84,7 @@ object AndroidFontStore {
         client = FontStoreClient(http),
         shelf = FontShelf(FileBlobs(File(context.applicationContext.filesDir, "morphont-fonts"))),
         installLabel = "Save font file…",
-        installToSystem = { fileName, bytes ->
+        installToSystem = { _, fileName, bytes ->
             suspendCancellableCoroutine { cont ->
                 files.saveFont(fileName, bytes, { cont.resume("Saved $fileName.") }, { cont.resumeWithException(IllegalStateException(it)) })
             }

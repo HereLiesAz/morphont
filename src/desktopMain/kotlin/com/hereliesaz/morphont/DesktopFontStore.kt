@@ -16,6 +16,18 @@ import kotlinx.coroutines.withContext
  * and "Install on this computer" into the user's own font folder -- no administrator rights needed on
  * any of the three systems.
  */
+/** Reads [input] whole, refusing more than [MAX_DOWNLOAD_BYTES] so a bad server can't exhaust memory. */
+internal fun readCapped(input: java.io.InputStream, limit: Int = MAX_DOWNLOAD_BYTES): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buf = ByteArray(64 * 1024)
+    while (true) {
+        val n = input.read(buf)
+        if (n < 0) return out.toByteArray()
+        check(out.size() + n <= limit) { "The download is larger than Morphont accepts." }
+        out.write(buf, 0, n)
+    }
+}
+
 object DesktopFontStore {
     private val client: HttpClient by lazy {
         HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(20)).build()
@@ -26,12 +38,14 @@ object DesktopFontStore {
             val request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(60))
                 .header("User-Agent", "Morphont").GET().build()
             val response = try {
-                client.send(request, HttpResponse.BodyHandlers.ofByteArray())
+                client.send(request, HttpResponse.BodyHandlers.ofInputStream())
             } catch (e: Exception) {
                 throw IllegalStateException("Couldn't reach the store: ${e.message ?: e::class.simpleName}")
             }
-            check(response.statusCode() in 200..299) { "The store answered ${response.statusCode()}." }
-            response.body()
+            response.body().use { body ->
+                check(response.statusCode() in 200..299) { "The store answered ${response.statusCode()}." }
+                readCapped(body)
+            }
         }
     }
 
@@ -54,7 +68,9 @@ object DesktopFontStore {
             val f = file(key)
             f.delete()
             // Drop the package's folder once its last face is gone.
-            f.parentFile?.takeIf { it != root && it.list()?.isEmpty() == true }?.delete()
+            // Then the package's (and version's) folders, once their last face is gone.
+            var dir = f.parentFile
+            while (dir != null && dir != root && dir.list()?.isEmpty() == true) { dir.delete(); dir = dir.parentFile }
             Unit
         }
     }
@@ -63,31 +79,50 @@ object DesktopFontStore {
     internal fun userFontDir(os: String = System.getProperty("os.name").lowercase(), env: (String) -> String? = System::getenv): File {
         val home = System.getProperty("user.home")
         return when {
-            os.contains("win") -> File(env("LOCALAPPDATA") ?: "$home/AppData/Local", "Microsoft/Windows/Fonts")
+            os.contains("win") -> File(env("LOCALAPPDATA")?.takeIf { it.isNotBlank() } ?: "$home/AppData/Local", "Microsoft/Windows/Fonts")
             os.contains("mac") -> File(home, "Library/Fonts")
-            else -> File(env("XDG_DATA_HOME") ?: "$home/.local/share", "fonts/morphont")
+            // An empty or relative XDG_DATA_HOME is to be ignored (XDG Base Directory spec).
+            else -> File(env("XDG_DATA_HOME")?.takeIf { it.startsWith("/") } ?: "$home/.local/share", "fonts/morphont")
         }
     }
 
-    suspend fun installToSystem(fileName: String, bytes: ByteArray): String = withContext(Dispatchers.IO) {
-        val safe = fileName.substringAfterLast('/').substringAfterLast('\\').filter { it.isLetterOrDigit() || it in "-_. " }
-            .trimStart('.').ifEmpty { "font.ttf" }
+    /**
+     * The file name a store face is installed under: `<package id>-<face file>`, letters, digits and
+     * `-_.` only, ending in `.ttf` or `.otf`. The package prefix keeps it from ever replacing a font the
+     * user installed themselves (an `Arial.ttf` in a package lands as `com.acme.x-Arial.ttf`) or one
+     * from another package, and means no file can take a Windows device name such as `CON`.
+     */
+    internal fun systemFileName(packageId: String, fileName: String): String {
+        fun clean(s: String) = s.filter { it.isLetterOrDigit() || it in "-_." }.trim('.')
+        val face = clean(fileName.substringAfterLast('/').substringAfterLast('\\'))
+        val ext = face.substringAfterLast('.', "").lowercase()
+        require(ext == "ttf" || ext == "otf") { "Only TrueType and OpenType fonts (.ttf, .otf) can be installed on this computer, not .$ext." }
+        return "${clean(packageId).ifEmpty { "morphont" }}-${face.substringBeforeLast('.').ifEmpty { "font" }}.$ext"
+    }
+
+    private fun run(vararg command: String): Int? =
+        runCatching { ProcessBuilder(*command).redirectErrorStream(true).start().let { p -> p.inputStream.readBytes(); p.waitFor() } }.getOrNull()
+
+    suspend fun installToSystem(packageId: String, fileName: String, bytes: ByteArray): String = withContext(Dispatchers.IO) {
+        val safe = systemFileName(packageId, fileName)
         val dir = userFontDir().apply { mkdirs() }
         val target = File(dir, safe)
-        target.writeBytes(bytes)
+        val temp = File(dir, "$safe.tmp")
+        temp.writeBytes(bytes)
+        Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
         val os = System.getProperty("os.name").lowercase()
-        when {
+        val note = when {
             os.contains("win") -> {
-                // Per-user fonts are found through HKCU; without the entry the file sits unused until a reboot scan.
+                // Per-user fonts are found through HKCU; without the entry apps don't see the file until the next sign-in.
                 val name = safe.substringBeforeLast('.') + if (safe.endsWith(".otf", true)) " (OpenType)" else " (TrueType)"
-                runCatching {
-                    ProcessBuilder("reg", "add", "HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts",
-                        "/v", name, "/t", "REG_SZ", "/d", target.absolutePath, "/f").redirectErrorStream(true).start().waitFor()
-                }
+                val code = run("reg", "add", "HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts",
+                    "/v", name, "/t", "REG_SZ", "/d", target.absolutePath, "/f")
+                if (code == 0) "" else " Windows didn't register it (sign out and back in, or install it from the file)."
             }
-            !os.contains("mac") -> runCatching { ProcessBuilder("fc-cache", "-f", dir.absolutePath).redirectErrorStream(true).start().waitFor() }
+            os.contains("mac") -> ""
+            else -> if (run("fc-cache", "-f", dir.absolutePath) == 0) "" else " The font cache wasn't refreshed (run fc-cache, or restart apps)."
         }
-        "Installed $safe in ${dir.absolutePath}."
+        "Installed $safe in ${dir.absolutePath}.$note"
     }
 
     val host: FontStoreHost by lazy {

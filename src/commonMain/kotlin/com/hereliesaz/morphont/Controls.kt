@@ -817,7 +817,9 @@ private fun FontCharacterPicker(app: AppState, host: EditorHost, initialFont: St
     val scope = rememberCoroutineScope()
     val store = host.fontStore
     var shelf by remember { mutableStateOf<List<InstalledFont>>(emptyList()) }
-    if (store != null) LaunchedEffect(store) { shelf = runCatching { store.shelf.list() }.getOrDefault(emptyList()) }
+    if (store != null) LaunchedEffect(store) {
+        try { shelf = store.shelf.list() } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message }
+    }
     MonoDialog("Ghost from a font", onDismiss, actions = {
         MonoButton(onClick = {
             val font = fontName?.let { app.referenceFonts[it] }
@@ -837,7 +839,7 @@ private fun FontCharacterPicker(app: AppState, host: EditorHost, initialFont: St
             for (name in app.referenceFonts.keys) Chip(name, name == fontName) { fontName = name }
             // Installed store fonts not loaded yet: a tap reads the face from this device.
             if (store != null) for (font in shelf) for (face in font.faces.filter { it.readable }) {
-                val label = if (font.faces.size > 1) "${font.family} ${face.style ?: face.fileName}" else font.family
+                val label = shelfFaceLabel(font, face, shelf)
                 if (app.referenceFonts.containsKey(label)) continue
                 Chip(label, false) {
                     scope.launch {
