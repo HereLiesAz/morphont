@@ -68,14 +68,18 @@ class ControlAuditTest {
 
     @Test
     fun copyingAnchorsIsOneUndoAction() {
-        val app = loaded()
+        val app = AppState()
+        val source = Axis.WEIGHT.lo
         val target = Axis.WEIGHT.hi
+        app.anchors.getValue(source).replaceGlyph(GlyphCorner(500f, mutableListOf(square())))
+        app.activeAnchor = source
         assertTrue(app.anchors.getValue(target).glyph.contours.isEmpty())
-        app.copyActiveToOthers()
+        app.startOtherExtremeFromThis()
+        assertEquals(target, app.activeAnchor, "opens the extreme it just started")
         assertEquals(4, app.anchors.getValue(target).glyph.contours.single().points.count { it.onCurve })
         app.undo()
         assertTrue(app.anchors.getValue(target).glyph.contours.isEmpty())
-        assertEquals(4, app.anchors.getValue("regular").glyph.contours.single().points.count { it.onCurve })
+        assertEquals(4, app.anchors.getValue(source).glyph.contours.single().points.count { it.onCurve })
     }
 
     @Test

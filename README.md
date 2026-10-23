@@ -72,9 +72,11 @@ consequence of that drag, not a second, independent decision. See
 `Interpolation.kt` for the derivation.
 
 Editing is deliberately confined to these anchors — not to arbitrary
-interpolated values, the way most variable-font editors work. If an
-automatic in-between shape looks wrong, the fix is to adjust `regular`,
-not to add another editable point. The Regular panel's travel-path
+interpolated values, the way most variable-font editors work. The work is
+done at the **extremes**: they are the drawings. `regular` is derived from
+them (see *Regular follows the extremes* below) and is nudged, never
+drawn. If an automatic in-between shape looks wrong, the fix is a small move
+of `regular`, not to add another editable point. The Regular panel's travel-path
 overlay only offers each axis's own sweep rather than an arbitrary pair
 of anchors, since an axis's own lo/hi is the only pair guaranteed to
 pass through Regular. The overlay is off by default (it can look like
@@ -96,8 +98,13 @@ shows four sliders and expands to the rest.
 Interpolation requires every anchor to be point-for-point compatible
 (same contour count, same points per contour, same node/arm types) --
 `compatibilityIssue()` checks this and the Preview panel reports exactly
-where they disagree. "Copy [anchor] to other N" seeds matching topology
-so anchors can then be reshaped without adding or removing points.
+where they disagree. An axis only varies once **both** its extremes are drawn;
+until then it is inert (both its extremes read as Regular), so a glyph with
+Extra Thin and Extra Black drawn needs nothing copied to the other 26 anchors.
+To get the second extreme of an axis, **Start the other extreme from this one**
+copies the open extreme into its empty partner and opens it to be reshaped
+without adding or removing nodes. It never overwrites a drawn extreme and
+never starts from Regular.
 
 ## Editing tools
 
@@ -168,9 +175,15 @@ so anchors can then be reshaped without adding or removing points.
   guides, metrics and ghosts. A redo is an ordinary edit, so it can itself be
   undone; any new edit forgets what was left to redo, and so does opening
   another glyph.
-- **Reset to the natural path.** On Regular, once the three states of the open
-  axis match point for point, the suggestion **Reset to the natural path** moves
-  every Regular point to exactly halfway between the two extremes, so each
+- **Regular follows the extremes.** Regular is not drawn: with no Regular, it
+  appears halfway between the extremes (for several complete axes, the average
+  of each axis's midpoint) and then *moves by what the extremes move*, so
+  reshaping an extreme carries Regular with it and a nudge you gave Regular (or
+  an imported Regular's offset) is kept. The pen is off on Regular; moving and
+  reshaping its nodes is allowed, and is meant to be slight. Those follow-moves
+  are not edits of their own: Undo of an extreme brings Regular back with it.
+  **Reset to the natural path** (suggestion) and **Reset Regular to the middle**
+  put every Regular point exactly halfway between the extremes again, so each
   node's travel is a straight line with no bend. One undo step.
 - **Anchor-point tools** (dock; keys A, D, C), as in Photoshop. **Add** (A): tap
   a segment to insert a node there without changing the outline (hold and drag
@@ -193,8 +206,8 @@ so anchors can then be reshaped without adding or removing points.
   contour is always closed): every contour the selection touches is taken,
   or the whole outline when nothing is selected. Paste lands in place and
   selects what it pasted; the clipboard survives switching anchors and
-  glyphs. Pasting changes point counts, so re-copy to the other anchors to
-  keep interpolation alive. Also: Delete, Esc, arrow-key nudges (Shift = 10),
+  glyphs. Pasting changes point counts, so run **Match the extremes' nodes**
+  to keep interpolation alive. Also: Delete, Esc, arrow-key nudges (Shift = 10),
   `+`/`-`/`0` for zoom.
 - **Node move circle.** Selecting a node (or one of its curve handles)
   offers a cross-circle. It sits outward -- away from the glyph's centre,
@@ -432,7 +445,7 @@ so anchors can then be reshaped without adding or removing points.
   its **Edit** button in
   the Ghosts panel; while it lasts the ghost draws solid and the working
   glyph as a bare outline, and the glyph is locked -- gestures, the
-  tool dock, keys, Copy to anchors, Simplify and suggestions all
+  tool dock, keys, Start the other extreme, Simplify and suggestions all
   apply to the ghost or are disabled. Never both at once. While a ghost is only
   being placed (Place mode), its nodes are hidden, so node commands (delete,
   nudge, cut, paste, select all) do nothing. Undo is one chronological stack
@@ -461,8 +474,9 @@ so anchors can then be reshaped without adding or removing points.
     contour nesting; match stems that almost agree and centre on the advance.
     Offset operations carry both handles with their owning nodes rather than
     deforming smooth/mirrored pairs.
-  - *Interpolation* -- when anchors disagree: copy this anchor to all, or
-    jump to the first mismatch.
+  - *Interpolation* -- start the other extreme from this one; when extremes
+    disagree: add the missing nodes, match to the fewest, or jump to the first
+    mismatch.
 
 ## Project layout
 
@@ -502,7 +516,7 @@ The glyph is the room. One full-bleed canvas shows the anchor being edited;
 every control floats on it as a rounded, hairline-edged surface and stays out
 of the way until needed.
 
-- **Phone:** glyph name and node count up top, with Copy to anchors, Undo and
+- **Phone:** glyph name and node count up top, with Start the other extreme, Undo and
   the glyph browser; directly beneath, the **anchor filmstrip** (the picked
   axis's three anchors as live thumbnails -- tap one to edit it). A tool
   **dock** (Select, Move node, Node tools, Pen, Reset View, Guides, Ghosts,

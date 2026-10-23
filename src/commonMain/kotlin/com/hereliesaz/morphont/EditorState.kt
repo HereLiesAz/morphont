@@ -67,6 +67,28 @@ class AnchorState(initial: GlyphCorner) {
         if ((drawingContourIndex ?: 0) >= glyph.contours.size) drawingContourIndex = null
     }
 
+    /**
+     * Moves this outline, and every older snapshot of the same structure, by what changed between [from] and
+     * [to] (two outlines of one structure): Regular follows its extremes, and Undo still returns to a Regular
+     * that sits where it would have, not to one the extremes have since moved away from.
+     */
+    fun followBy(from: GlyphCorner, to: GlyphCorner) {
+        fun shifted(g: GlyphCorner): GlyphCorner {
+            if (compatibilityIssue(mapOf("g" to g, "f" to from), listOf("g", "f")) != null) return g
+            val out = g.deepCopy()
+            out.width += to.width - from.width
+            out.contours.forEachIndexed { ci, c ->
+                c.points.forEachIndexed { pi, p ->
+                    p.x += to.contours[ci].points[pi].x - from.contours[ci].points[pi].x
+                    p.y += to.contours[ci].points[pi].y - from.contours[ci].points[pi].y
+                }
+            }
+            return out
+        }
+        glyph = shifted(glyph)
+        for (i in history.indices) history[i] = shifted(history[i])
+    }
+
     /** Replaces [glyph] as one undoable edit: pushes the current state first, same as any other edit. */
     fun replaceWithHistory(new: GlyphCorner) {
         pushHistory()
@@ -709,8 +731,11 @@ class AppState {
             g.sourceGlyph != null -> sourceCorners(g.sourceGlyph!!) ?: return emptyList()
             else -> return applyAffine(g.state.glyph.contours, placed)
         }
-        val result = if (g.axisOverrides.isEmpty() || compatibilityIssue(corners) != null) {
-            corners[anchorName] ?: corners["regular"] ?: return emptyList()
+        // Anchors that aren't drawn (an axis with a missing extreme is inert) read as Regular.
+        val effective = effectiveCorners(corners)
+        val result = if (g.axisOverrides.isEmpty() || compatibilityIssue(effective) != null) {
+            // A drawn anchor shows as drawn, even on an axis too unfinished to vary.
+            corners[anchorName]?.takeIf { it.contours.isNotEmpty() } ?: effective[anchorName] ?: effective["regular"] ?: return emptyList()
         } else {
             val values = Axis.ALL.associate { axis ->
                 axis.tag to when (anchorName) {
@@ -737,7 +762,7 @@ class AppState {
             else -> return applyAffine(g.state.glyph.contours, placed)
         }
         val values = previewValues.toMutableMap().also { it.putAll(g.axisOverrides) }
-        val inst = if (compatibilityIssue(corners) == null) interpolateGlyph(corners, values)
+        val inst = if (compatibilityIssue(effectiveCorners(corners)) == null) interpolateGlyph(corners, values)
             else corners["regular"] ?: return emptyList()
         return applyAffine(inst.contours, placed)
     }
@@ -900,6 +925,16 @@ class AppState {
      */
     val nodeEditsLocked: Boolean get() = reduction != null || (activeGhost != null && ghostTransformMode)
 
+    /**
+     * Why the pen is unavailable now, or null. Nodes are drawn at the extremes; Regular is derived from them, so
+     * structure drawn there would be structure the extremes lack. (Moving and reshaping Regular is allowed.)
+     */
+    val penBlockedReason: String? get() = when {
+        activeGhost != null -> if (ghostTransformMode) "finish placing the ghost first" else null
+        activeAnchor == "regular" -> "Regular is derived from the extremes; draw at an extreme"
+        else -> null
+    }
+
     fun setStatus(msg: String, isError: Boolean = false) {
         status = msg
         statusIsError = isError
@@ -908,8 +943,9 @@ class AppState {
 
     fun cornersSnapshot(): Map<String, GlyphCorner> = anchors.mapValues { it.value.glyph }
 
+    /** Why the anchors can't be interpolated yet, or null. Axes without both extremes drawn are inert, so they never count. */
     fun compatibility(names: List<String> = ANCHORS): String? =
-        compatibilityIssue(cornersSnapshot(), names)
+        compatibilityIssue(effectiveCorners(cornersSnapshot()), names)
 
     fun loadGlyph(name: String, glyph: Glyph) {
         currentGlyphName = name
@@ -932,7 +968,12 @@ class AppState {
         redoStack.clear()
         activeGhostId = null
         reduction = null
-        activeAnchor = "regular"
+        // Open on what has been drawn, preferring Regular for older glyphs; a new glyph starts at an extreme.
+        activeAnchor = when {
+            glyph.corners["regular"]?.contours?.isNotEmpty() == true -> "regular"
+            else -> ANCHORS.firstOrNull { glyph.corners[it]?.contours?.isNotEmpty() == true } ?: selectedAxis.lo
+        }
+        lastNatural = null
         nodeMoveMode = false
         nodeTool = null
         setStatus("Loaded \"$name\".")
@@ -963,7 +1004,6 @@ class AppState {
         outlineFormat = OUTLINE_CUBIC,
     )
 
-    /** Copies the active anchor's outline into every other anchor, seeding matching topology. */
     /**
      * Replaces each of [names]' outlines with [transform] of it as one undo step, so a structural edit
      * that must hit several anchors together is also undone together (never leaving them mismatched).
@@ -981,18 +1021,77 @@ class AppState {
         )
     }
 
-    fun copyActiveToOthers() {
-        if (activeGhost != null || reduction != null) return // never touch the glyph while a ghost is being edited or a Simplify preview is open
-        val src = anchors.getValue(activeAnchor)
-        val targets = ANCHORS.filter { it != activeAnchor }.map { anchors.getValue(it) }
-        val count = targets.size
-        groupUndo(
-            owners = targets,
-            block = { targets.forEach { it.replaceWithHistory(src.glyph.deepCopy()) } },
-            undo = { targets.forEach { it.undo() } },
-        )
-        setStatus("Copied ${ANCHOR_LABELS[activeAnchor]}'s outline to the other $count anchor(s) — reshape each toward its extreme without adding or removing points.")
+    /** The other extreme of [name]'s axis; null for Regular. */
+    fun partnerOf(name: String): String? =
+        Axis.ALL.firstOrNull { it.lo == name }?.hi ?: Axis.ALL.firstOrNull { it.hi == name }?.lo
+
+    /** True when the open anchor is an extreme whose partner on its axis has been drawn. */
+    fun otherExtremeIsDrawn(): Boolean = partnerOf(activeAnchor)?.let { anchors.getValue(it).glyph.contours.isNotEmpty() } == true
+
+    /** Why "start the other extreme from this one" isn't available now, or null when it is. */
+    fun startOtherExtremeBlockedReason(): String? {
+        if (activeGhost != null || reduction != null) return "finish editing the ghost or Simplify first"
+        val partner = partnerOf(activeAnchor) ?: return "Regular is derived; open an extreme"
+        if (anchors.getValue(activeAnchor).glyph.contours.isEmpty()) return "draw this extreme first"
+        if (anchors.getValue(partner).glyph.contours.isNotEmpty()) return "the other extreme is already drawn"
+        return null
     }
+
+    /**
+     * Gives the other extreme of the open axis a copy of this one to start from, and opens it to be reshaped
+     * (one undo step). Only when that extreme is empty: it never overwrites a drawing. Regular is not a place to
+     * start from -- it is derived from the extremes, which are the drawings.
+     */
+    fun startOtherExtremeFromThis() {
+        if (startOtherExtremeBlockedReason() != null) return
+        val partner = partnerOf(activeAnchor) ?: return
+        val src = anchors.getValue(activeAnchor)
+        val target = anchors.getValue(partner)
+        val from = ANCHOR_LABELS[activeAnchor]
+        groupUndo(
+            owners = listOf(target),
+            block = { target.replaceWithHistory(src.glyph.deepCopy()) },
+            undo = { target.undo() },
+        )
+        activeAnchor = partner
+        setStatus("Started ${ANCHOR_LABELS[partner]} from $from. Reshape it, keeping its nodes; Regular follows both.")
+    }
+
+    // ---------------------------------------------------------- Regular, derived
+
+    /** What the extremes imply Regular is (see [naturalRegularOf]); null until at least one is drawn and they agree. */
+    private fun naturalNow(): GlyphCorner? {
+        val drawn = anchors.filter { it.key != "regular" && it.value.glyph.contours.isNotEmpty() }.mapValues { it.value.glyph }
+        if (drawn.isEmpty() || compatibilityIssue(drawn, drawn.keys.toList()) != null) return null
+        return naturalRegularOf(drawn)
+    }
+
+    /** [naturalNow] as of the last [syncRegular], to measure what the extremes have moved since. */
+    private var lastNatural: GlyphCorner? = null
+
+    /**
+     * Keeps Regular in step with the extremes. Regular is derived from them, and what you do to it is a nudge on
+     * top of that, so: with no Regular, or one whose structure no longer fits, it becomes the derived one; with a
+     * Regular that fits, it MOVES BY WHAT THE EXTREMES MOVED, so its offset from the derived position -- an
+     * imported Regular's, a nudge of yours -- survives. These moves are not edits of their own: Undo of an extreme
+     * brings Regular back with it. Call it whenever an extreme may have changed (the editor does).
+     */
+    fun syncRegular() {
+        val natural = naturalNow() ?: run { lastNatural = null; return }
+        val prev = lastNatural
+        lastNatural = natural
+        val regular = anchors.getValue("regular")
+        val cur = regular.glyph
+        if (cur.contours.isEmpty() || compatibilityIssue(mapOf("r" to cur, "n" to natural), listOf("r", "n")) != null) {
+            regular.loadFresh(natural.deepCopy())
+            return
+        }
+        if (prev == null || prev == natural || compatibilityIssue(mapOf("p" to prev, "n" to natural), listOf("p", "n")) != null) return
+        regular.followBy(prev, natural)
+    }
+
+    /** The drawn extremes as they are now: changes whenever one of them is edited, for the editor to react to. */
+    fun extremesFingerprint(): List<GlyphCorner> = ANCHORS.filter { it != "regular" }.map { anchors.getValue(it).glyph }
 
     // ------------------------------------------------------------ clipboard
 
@@ -1094,11 +1193,14 @@ class AppState {
         t.replaceGlyph(retractNodeHandles(t.glyph, key))
     }
 
-    /** Regular moved to the midpoint of the open axis's two extremes (see [midpointGlyph]), or null if that isn't possible. */
+    /** Regular where the extremes put it (see [naturalRegularOf]), with its own node types kept, or null if that can't be worked out yet. */
     fun naturalRegular(): GlyphCorner? {
-        val (lo, mid, hi) = axisTriple().map { anchors.getValue(it).glyph }
-        if (lo.contours.isEmpty() || hi.contours.isEmpty() || mid.contours.isEmpty()) return null
-        return midpointGlyph(lo, mid, hi)
+        val natural = naturalNow() ?: return null
+        val reg = anchors.getValue("regular").glyph
+        if (reg.contours.isEmpty() || compatibilityIssue(mapOf("r" to reg, "n" to natural), listOf("r", "n")) != null) return natural
+        val out = natural.deepCopy()
+        out.contours.forEachIndexed { ci, c -> c.points.forEachIndexed { pi, p -> p.smooth = reg.contours[ci].points[pi].smooth } }
+        return out
     }
 
     /** True when Regular is viewable-resettable: the three states match and Regular isn't already at the midpoint. */
@@ -1113,7 +1215,7 @@ class AppState {
         val natural = naturalRegular()
         if (natural == null) { setStatus("The extremes must have matching nodes first — use \"Match the extremes' nodes\".", true); return }
         anchors.getValue("regular").replaceWithHistory(natural)
-        setStatus("Regular reset to halfway between ${ANCHOR_LABELS[axisTriple()[0]]} and ${ANCHOR_LABELS[axisTriple()[2]]}. Undo puts it back.")
+        setStatus("Regular reset to where the extremes put it. Undo puts it back.")
     }
 
     /** The three anchors of the axis being worked on: its low extreme, Regular, its high extreme. */
@@ -1366,7 +1468,7 @@ class AppState {
     /** Starts a reduction preview on the active anchor -- on every anchor at once when they're compatible. */
     fun startReduction() {
         if (activeGhost != null) return // never touch the glyph while a ghost is being edited
-        val names = if (compatibility() == null) listOf(activeAnchor) + ANCHORS.filter { it != activeAnchor } else listOf(activeAnchor)
+        val names = listOf(activeAnchor) + matchingAnchors().filter { it != activeAnchor }
         val glyphs = names.map { anchors.getValue(it).glyph }
         val total = glyphs.first().contours.sumOf { c -> c.points.count { it.onCurve } }
         val order = reductionOrder(glyphs)

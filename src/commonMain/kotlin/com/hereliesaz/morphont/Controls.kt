@@ -1028,7 +1028,9 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
             else -> t.selection = emptySet()
         }
         e.key == Key.P -> {
-            if (!app.nodeEditsLocked) {
+            val blocked = app.penBlockedReason
+            if (blocked != null) app.setStatus(blocked.replaceFirstChar(Char::uppercase) + ".", true)
+            else if (!app.nodeEditsLocked) {
                 app.nodeMoveMode = false
                 app.nodeTool = null
                 if (t.drawingContourIndex == null) t.startNewContour()

@@ -453,3 +453,27 @@ fun naturalRegularOf(extremes: Map<String, GlyphCorner>): GlyphCorner? {
     }
     return out
 }
+
+/**
+ * The anchors as interpolation should see them. An axis only varies once BOTH its extremes are drawn; until
+ * then it is inert -- both its extremes are Regular -- so a glyph with only Extra Thin and Extra Black drawn
+ * needs nothing copied to the other 26 anchors. Regular is whatever is stored, or, when nothing is, derived from
+ * the extremes ([naturalRegularOf]) when those share a structure. Returns [corners] unchanged when there is
+ * nothing to fill in (nothing drawn, or extremes that don't agree yet, which [compatibilityIssue] will report).
+ */
+fun effectiveCorners(corners: Map<String, GlyphCorner>): Map<String, GlyphCorner> {
+    val stored = corners["regular"]?.takeIf { it.contours.isNotEmpty() }
+    val drawn = corners.filter { it.key != "regular" && it.value.contours.isNotEmpty() }
+    val base = stored ?: run {
+        if (drawn.isEmpty() || compatibilityIssue(drawn, drawn.keys.toList()) != null) return corners
+        naturalRegularOf(drawn) ?: return corners
+    }
+    val out = LinkedHashMap<String, GlyphCorner>()
+    out["regular"] = base
+    for (a in Axis.ALL) {
+        val complete = a.lo in drawn && a.hi in drawn
+        out[a.lo] = if (complete) drawn.getValue(a.lo) else base
+        out[a.hi] = if (complete) drawn.getValue(a.hi) else base
+    }
+    return out
+}

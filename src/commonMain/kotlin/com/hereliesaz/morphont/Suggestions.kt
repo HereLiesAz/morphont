@@ -166,8 +166,7 @@ private fun points(g: GlyphCorner) = g.contours.sumOf { it.points.size }
 // ------------------------------------------------------------- suggestions
 
 /** Anchors an outline-structure change must hit together to keep interpolation intact. */
-private fun scopeFor(app: AppState): List<String> =
-    if (app.compatibility() == null) ANCHORS else listOf(app.activeAnchor)
+private fun scopeFor(app: AppState): List<String> = app.matchingAnchors()
 
 /** Replaces the active anchor with [make]'s result as one undoable edit, and says so. */
 private fun replaceActive(app: AppState, what: String, make: (GlyphCorner) -> GlyphCorner): (AppState) -> Unit = { a ->
@@ -389,17 +388,19 @@ private fun consistency(app: AppState): List<Suggestion> {
 }
 
 private fun interpolation(app: AppState): List<Suggestion> {
-    val issue = app.compatibility() ?: return emptyList()
     val corners = app.cornersSnapshot()
     if (corners.values.sumOf { points(it) } == 0) return emptyList()
     val out = mutableListOf<Suggestion>()
-    val src = app.activeAnchor
-    val srcLabel = ANCHOR_LABELS[src] ?: src
+    val srcLabel = ANCHOR_LABELS[app.activeAnchor] ?: app.activeAnchor
+    // The way into the second extreme: start from the first, and reshape it.
+    if (app.startOtherExtremeBlockedReason() == null) {
+        out.add(Suggestion("Start the other extreme from $srcLabel", "then reshape it") { a -> a.startOtherExtremeFromThis() })
+    }
+    val issue = app.compatibility() ?: return out
     if (app.statesDiffer()) out.add(Suggestion("Add missing nodes", "nothing is lost") { a -> a.addMissingNodes() })
     if (app.statesDiffer()) out.add(Suggestion("Match nodes to the fewest", app.nodeCountSummary()) { a -> a.matchToFewestNodes() })
-    out.add(Suggestion("Copy $srcLabel to every anchor", "replaces the others") { a -> a.copyActiveToOthers() })
     val first = ANCHORS.firstOrNull { it != "regular" && compatibilityIssue(mapOf("regular" to corners["regular"], it to corners[it]), listOf("regular", it)) != null }
-    if (first != null && first != src) out.add(Suggestion("Go to the mismatch", ANCHOR_LABELS[first]) { a ->
+    if (first != null && first != app.activeAnchor) out.add(Suggestion("Go to the mismatch", ANCHOR_LABELS[first]) { a ->
         Axis.ALL.firstOrNull { it.lo == first || it.hi == first }?.let { a.selectedAxis = it }
         a.activeAnchor = first
         a.setStatus(issue)

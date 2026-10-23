@@ -42,7 +42,7 @@ private fun FontGlyphPreview(glyph: Glyph?, values: Map<String, Float>, modifier
         return
     }
     val source = glyph.corners
-    val instance = if (compatibilityIssue(source) == null)
+    val instance = if (compatibilityIssue(effectiveCorners(source)) == null)
         interpolateGlyph(source, values)
     else source["regular"] ?: GlyphCorner()
     val metrics = glyph.metrics ?: FontMetrics()

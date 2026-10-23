@@ -55,7 +55,7 @@ class OnboardingTest {
     @Test
     fun aDrawnGlyphIsAnnouncedAsSuch() {
         assertTrue(createdMessage("o", sampleGlyph()).contains("already drawn"))
-        assertTrue(createdMessage("a", Glyph()).contains("Regular first"))
+        assertTrue(createdMessage("a", Glyph()).contains("draw one extreme"))
     }
 }
 

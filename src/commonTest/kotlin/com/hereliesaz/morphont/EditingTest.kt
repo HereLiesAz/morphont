@@ -246,7 +246,7 @@ class EditingTest {
         val before = app.toGlyph().corners
         app.commandTarget.selectAll()
         app.commandTarget.deleteSelected()
-        app.copyActiveToOthers()
+        app.startOtherExtremeFromThis()
         app.startReduction()
         assertEquals(before, app.toGlyph().corners)
         assertNull(app.reduction)
