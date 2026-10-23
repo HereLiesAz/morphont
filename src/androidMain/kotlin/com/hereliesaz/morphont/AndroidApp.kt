@@ -96,11 +96,15 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 return false
             }
 
+            /** Opens the first glyph that reads; a damaged file stays in the list but doesn't block the ones after it. */
             fun openFirstAvailableGlyph(names: List<String>): OpenGlyphOutcome {
-                val firstName = names.firstOrNull() ?: return OpenGlyphOutcome.EMPTY
-                val glyph = storage.loadGlyph(firstName) ?: return OpenGlyphOutcome.UNREADABLE
-                loadPersistentGlyph(firstName, glyph)
-                return OpenGlyphOutcome.OPENED
+                if (names.isEmpty()) return OpenGlyphOutcome.EMPTY
+                for (name in names) {
+                    val glyph = storage.loadGlyph(name) ?: continue
+                    loadPersistentGlyph(name, glyph)
+                    return OpenGlyphOutcome.OPENED
+                }
+                return OpenGlyphOutcome.UNREADABLE
             }
 
             val registry = storage.registry

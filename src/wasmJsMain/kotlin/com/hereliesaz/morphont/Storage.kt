@@ -223,7 +223,7 @@ object Storage {
         val names = runCatching { databaseNames().await<JsArray<JsString>>().toList().map { it.toString() } }.getOrDefault(emptyList())
         val pending = deleting()
         // A queued delete that has since finished leaves no database behind; forget it.
-        val stillThere = pending.filter { "morphont-$it" in names }.toSet()
+        val stillThere = pending.filter { databaseName(it) in names }.toSet()
         if (stillThere != pending) setDeleting(stillThere)
         for (name in names) {
             val id = name.removePrefix("morphont-").takeIf { name.startsWith("morphont-") && it.isNotEmpty() } ?: continue
@@ -234,6 +234,8 @@ object Storage {
 
     suspend fun adoptLegacyProject() {
         if (registry.find(LEGACY_PROJECT_ID) != null) return
+        // Its delete may still be queued in the browser; adopting it now would have that delete erase it.
+        if (LEGACY_PROJECT_ID in deleting()) return
         val inDatabase = try {
             val db = openDatabase(databaseName(LEGACY_PROJECT_ID), DATABASE_VERSION) { d, oldVersion, _ ->
                 if (oldVersion < 1) d.createObjectStore(GLYPH_STORE, KeyPath("name"))
@@ -308,12 +310,18 @@ object Storage {
 
     /**
      * Renames a glyph in one IndexedDB transaction -- the new record is written and the old one removed
-     * together, so a failed write (quota, say) leaves the glyph under its old name instead of nowhere.
+     * together, so a failed write (quota, say) leaves the glyph under its old name instead of nowhere. The
+     * in-memory project changes at once (the editor stays synchronous); if the transaction then fails it is
+     * put back and [onFailed] runs, so the caller can undo what it showed.
      */
-    fun moveGlyph(old: String, name: String, glyph: Glyph) {
+    fun moveGlyph(old: String, name: String, glyph: Glyph, onFailed: () -> Unit = {}) {
         project.remove(old)
         project[name] = glyph
-        persistAsync("Couldn't rename the glyph") {
+        persistAsync("Couldn't rename the glyph", onFailure = {
+            project.remove(name)
+            project[old] = glyph
+            onFailed()
+        }) {
             writeMutex.withLock {
                 requireDatabase().writeTransaction(GLYPH_STORE) {
                     val store = objectStore(GLYPH_STORE)
@@ -459,7 +467,7 @@ object Storage {
         input.click()
     }
 
-    private fun persistAsync(label: String, block: suspend () -> Unit) {
+    private fun persistAsync(label: String, onFailure: ((Throwable) -> Unit)? = null, block: suspend () -> Unit) {
         val pinned = projectId ?: return
         scope.launch {
             try {
@@ -476,6 +484,7 @@ object Storage {
                     storageUnavailableWarned = true
                     window.alert(storageMessage(label, e))
                 }
+                onFailure?.invoke(e)
                 return@launch
             }
             // A write got through again: the next failure is news, so it is reported again.

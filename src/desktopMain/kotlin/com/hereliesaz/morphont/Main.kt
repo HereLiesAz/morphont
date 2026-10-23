@@ -278,9 +278,12 @@ fun DesktopApp() {
                     glyphFiles = GlyphFiles(
                         exists = DesktopStorage::glyphExists,
                         load = DesktopStorage::loadGlyph,
-                        save = { name, glyph -> PendingSave.name = null; PendingSave.glyph = null; DesktopStorage.saveGlyph(name, glyph) },
-                        delete = { name -> PendingSave.name = null; PendingSave.glyph = null; DesktopStorage.deleteGlyph(name) },
+                        save = { name, glyph -> DesktopStorage.saveGlyph(name, glyph) },
+                        // The pending autosave is dropped only once storage has really deleted (or renamed) the
+                        // glyph it belongs to, so a failure leaves the snapshot for the next flush.
+                        delete = { name -> DesktopStorage.deleteGlyph(name); if (PendingSave.name == name) { PendingSave.name = null; PendingSave.glyph = null } },
                         list = DesktopStorage::listGlyphNames,
+                        renamed = { old, _ -> if (PendingSave.name == old) { PendingSave.name = null; PendingSave.glyph = null } },
                     ),
                     confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
                 )

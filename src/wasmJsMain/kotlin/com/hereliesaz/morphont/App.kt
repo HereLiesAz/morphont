@@ -270,7 +270,14 @@ fun App() {
                         save = Storage::saveGlyph,
                         delete = Storage::deleteGlyph,
                         list = Storage::listGlyphNames,
-                        move = Storage::moveGlyph,
+                        move = { old, name, glyph ->
+                            Storage.moveGlyph(old, name, glyph) {
+                                // The browser refused the write: it is back under its old name, and so is the editor.
+                                if (app.currentGlyphName == name) { app.beginBulkImport(); app.currentGlyphName = old }
+                                app.glyphNames = Storage.listGlyphNames()
+                                app.setStatus("Couldn't rename \"$old\" to \"$name\"; it's still \"$old\".", isError = true)
+                            }
+                        },
                     ),
                     confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
                 )
