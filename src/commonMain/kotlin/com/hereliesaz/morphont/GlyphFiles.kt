@@ -16,6 +16,8 @@ class GlyphFiles(
      * two calls are already safe in order.
      */
     val move: ((String, String, Glyph) -> Unit)? = null,
+    /** Called after a successful rename, for storage that remembers a name (Android's last-open glyph). */
+    val renamed: ((String, String) -> Unit)? = null,
 )
 
 /**
@@ -50,28 +52,37 @@ fun renameGlyph(app: AppState, files: GlyphFiles, old: String, raw: String): Boo
         return false
     }
     if (open) app.currentGlyphName = name
+    files.renamed?.invoke(old, name)
     app.glyphNames = files.list()
     app.setStatus("Renamed \"$old\" to \"$name\".")
     return true
 }
 
 /**
- * Deletes glyph [name]. If it was open, the editor clears first (so autosave can't write it back) and [open]
+ * Deletes glyph [name] from storage first -- if that fails nothing else changes, so the open glyph keeps its
+ * unsaved edits. If it was the open one, the editor then clears (and the autosave epoch moves on, so no save
+ * can write it back) and [open]
  * is called on the first glyph left, if any.
  */
 fun deleteGlyph(app: AppState, files: GlyphFiles, name: String, open: (String) -> Unit) {
-    val wasOpen = name == app.currentGlyphName
-    if (wasOpen) {
-        app.beginBulkImport()
-        app.clearEditor()
-    }
+    // Storage first: if it can't delete, the open glyph is left exactly as it was, unsaved edits and all.
     try {
         files.delete(name)
     } catch (e: Exception) {
+        app.glyphNames = files.list()
         app.setStatus("Couldn't delete \"$name\": ${e.message ?: e::class.simpleName}.", true)
+        return
+    }
+    val wasOpen = name == app.currentGlyphName
+    if (wasOpen) {
+        // The epoch moves on so a save still queued for it is dropped; a save already past that check is
+        // answered by deleting once more.
+        app.beginBulkImport()
+        app.clearEditor()
+        runCatching { files.delete(name) }
     }
     val names = files.list()
     app.glyphNames = names
     if (wasOpen) names.firstOrNull()?.let(open)
-    if (!files.exists(name)) app.setStatus("Deleted \"$name\".")
+    app.setStatus("Deleted \"$name\".")
 }

@@ -315,6 +315,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                         save = { name, glyph -> storage.saveGlyph(name, glyph) },
                         delete = { name -> storage.deleteGlyph(name); if (storage.lastGlyphName() == name) storage.setLastGlyphName(null) },
                         list = storage::listGlyphNames,
+                        renamed = { old, name -> if (storage.lastGlyphName() == old) storage.setLastGlyphName(name) },
                     ),
                     confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
                 )
@@ -355,6 +356,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 var pendingName: String? = null
                 var pendingProject: String? = null
                 var pendingGlyph: Glyph? = null
+                var pendingTicket = 0L
                 var pendingEpoch = app.autosaveEpoch
                 snapshotFlow { Triple(initialized, app.autosaveEpoch, app.currentGlyphName to app.toGlyph()) to app.currentProject?.id }
                     .collect { (state, projectId) ->
@@ -371,7 +373,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                             val outgoingGlyph = pendingGlyph
                             if (outgoingName != null && outgoingGlyph != null) {
                                 saveJob?.cancel()
-                                val failure = withContext(Dispatchers.IO) { runCatching { storage.saveGlyph(outgoingName, outgoingGlyph, pendingProject) }.exceptionOrNull() }
+                                val failure = withContext(Dispatchers.IO) { runCatching { storage.saveGlyph(outgoingName, outgoingGlyph, pendingProject, pendingTicket) }.exceptionOrNull() }
                                 failure?.let { reportSaveFailure(outgoingName, it) }
                             }
                         }
@@ -379,12 +381,15 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                         pendingName = name
                         pendingProject = projectId
                         pendingGlyph = glyph
+                        // Numbered when the snapshot is taken, so an older save can't overwrite a newer one.
+                        val ticket = storage.nextTicket()
+                        pendingTicket = ticket
                         if (name == null) return@collect
                         saveJob?.cancel()
                         saveJob = launch {
                             delay(ANDROID_AUTOSAVE_DEBOUNCE_MS)
                             if (epoch == app.autosaveEpoch) {
-                                val failure = withContext(Dispatchers.IO) { runCatching { storage.saveGlyph(name, glyph, projectId) }.exceptionOrNull() }
+                                val failure = withContext(Dispatchers.IO) { runCatching { storage.saveGlyph(name, glyph, projectId, ticket) }.exceptionOrNull() }
                                 failure?.let { reportSaveFailure(name, it) }
                             }
                         }

@@ -99,10 +99,26 @@ class AndroidStorage(context: Context) {
 
     /** Removes a project's glyphs from disk. Closes it first if it is the open one. */
     fun deleteProjectFiles(id: String) {
-        if (projectId == id) projectId = null
-        File(projectsRoot, id).deleteRecursively()
+        // Under the lock every write takes, so no import or save is mid-write while the folder goes.
+        synchronized(this) {
+            if (projectId == id) projectId = null
+            File(projectsRoot, id).deleteRecursively()
+            committed.keys.removeAll { it.startsWith("$id/") }
+        }
         prefs.edit().remove(LAST_GLYPH_KEY + "_" + id).apply()
     }
+
+    private val tickets = java.util.concurrent.atomic.AtomicLong(0)
+
+    /** The newest save of each glyph that has reached disk, by ticket, keyed "project/glyph". */
+    private val committed = HashMap<String, Long>()
+
+    /**
+     * A number for a snapshot of the open glyph, taken when the snapshot is: later snapshots get larger
+     * ones. [saveGlyph] refuses to write a snapshot older than one already on disk, so a slow background
+     * save can never land on top of a newer one (the stop-time flush, say).
+     */
+    fun nextTicket(): Long = tickets.incrementAndGet()
 
     private fun liveDirectory(): File =
         File(projectsRoot, checkNotNull(projectId) { "No project is open." }).apply { mkdirs() }
@@ -259,16 +275,23 @@ class AndroidStorage(context: Context) {
      * another project was opened is dropped (the switch already saved that glyph) instead of
      * landing in the wrong project.
      */
-    fun saveGlyph(name: String, glyph: Glyph, forProject: String? = null) {
-        if (forProject != null && forProject != projectId) return
-        writeGlyphFile(liveDirectory(), name, glyph)
+    fun saveGlyph(name: String, glyph: Glyph, forProject: String? = null, ticket: Long = nextTicket()) {
+        synchronized(this) {
+            if (forProject != null && forProject != projectId) return
+            val key = "${checkNotNull(projectId) { "No project is open." }}/$name"
+            if ((committed[key] ?: 0L) > ticket) return // a newer snapshot is already saved
+            committed[key] = ticket
+            writeGlyphFile(liveDirectory(), name, glyph)
+        }
     }
 
     /** Removes a glyph's file from the open project. */
-    fun deleteGlyph(name: String) {
-        if (projectId == null) return
+    fun deleteGlyph(name: String) = synchronized(this) {
+        val id = projectId ?: return@synchronized
         val file = glyphFile(liveDirectory(), name)
         check(!file.exists() || file.delete()) { "Couldn't delete \"$name\"." }
+        // A snapshot older than this delete mustn't bring the glyph back.
+        committed["$id/$name"] = tickets.incrementAndGet()
     }
 
     /**
@@ -286,7 +309,13 @@ class AndroidStorage(context: Context) {
         glyphs.values.forEach { ProjectCodec.encodeGlyph(it) }
         val existing = glyphs.keys.filter { glyphFile(directory, it).isFile }
         for ((name, glyph) in glyphs) {
-            if (name !in existing) writeGlyphFile(directory, name, glyph)
+            if (name in existing) continue
+            // Each write holds the lock deleteProjectFiles takes and first checks the folder is still there
+            // (writeGlyphFile would quietly recreate a deleted project's folder).
+            synchronized(this) {
+                check(directory.isDirectory) { "The project was deleted while it was importing." }
+                writeGlyphFile(directory, name, glyph)
+            }
         }
         return existing
     }

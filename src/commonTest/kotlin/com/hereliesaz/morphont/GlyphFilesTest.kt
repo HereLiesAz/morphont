@@ -52,6 +52,26 @@ class GlyphFilesTest {
     }
 
     @Test
+    fun aFailedDeleteLeavesTheOpenGlyphAndItsEditsAlone() {
+        val app = appWith("a", "b")
+        app.loadGlyph("a", sampleGlyph())
+        val stuck = GlyphFiles(files.exists, files.load, files.save, { error("disk is read-only") }, files.list)
+        deleteGlyph(app, stuck, "a") { error("nothing should open") }
+        assertEquals("a", app.currentGlyphName)
+        assertTrue(app.toGlyph().corners.getValue("regular").contours.isNotEmpty(), "unsaved edits survive")
+        assertTrue(app.statusIsError)
+    }
+
+    @Test
+    fun aSuccessfulRenameTellsTheStorageTheNewName() {
+        val app = appWith("a")
+        val seen = mutableListOf<Pair<String, String>>()
+        val withHook = GlyphFiles(files.exists, files.load, files.save, files.delete, files.list, renamed = { o, n -> seen += o to n })
+        assertTrue(renameGlyph(app, withHook, "a", "z"))
+        assertEquals(listOf("a" to "z"), seen)
+    }
+
+    @Test
     fun deletingAnotherGlyphLeavesTheOpenOneAlone() {
         val app = appWith("a", "b")
         app.loadGlyph("a", Glyph())
