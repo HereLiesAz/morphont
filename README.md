@@ -72,9 +72,11 @@ consequence of that drag, not a second, independent decision. See
 `Interpolation.kt` for the derivation.
 
 Editing is deliberately confined to these anchors — not to arbitrary
-interpolated values, the way most variable-font editors work. If an
-automatic in-between shape looks wrong, the fix is to adjust `regular`,
-not to add another editable point. The Regular panel's travel-path
+interpolated values, the way most variable-font editors work. The work is
+done at the **extremes**: they are the drawings. `regular` is derived from
+them (see *Regular follows the extremes* below) and is nudged, never
+drawn. If an automatic in-between shape looks wrong, the fix is a small move
+of `regular`, not to add another editable point. The Regular panel's travel-path
 overlay only offers each axis's own sweep rather than an arbitrary pair
 of anchors, since an axis's own lo/hi is the only pair guaranteed to
 pass through Regular. The overlay is off by default (it can look like
@@ -96,8 +98,13 @@ shows four sliders and expands to the rest.
 Interpolation requires every anchor to be point-for-point compatible
 (same contour count, same points per contour, same node/arm types) --
 `compatibilityIssue()` checks this and the Preview panel reports exactly
-where they disagree. "Copy [anchor] to other N" seeds matching topology
-so anchors can then be reshaped without adding or removing points.
+where they disagree. An axis only varies once **both** its extremes are drawn;
+until then it is inert (both its extremes read as Regular), so a glyph with
+Extra Thin and Extra Black drawn needs nothing copied to the other 26 anchors.
+To get the second extreme of an axis, **Start the other extreme from this one**
+copies the open extreme into its empty partner and opens it to be reshaped
+without adding or removing nodes. It never overwrites a drawn extreme and
+never starts from Regular.
 
 ## Editing tools
 
@@ -168,9 +175,15 @@ so anchors can then be reshaped without adding or removing points.
   guides, metrics and ghosts. A redo is an ordinary edit, so it can itself be
   undone; any new edit forgets what was left to redo, and so does opening
   another glyph.
-- **Reset to the natural path.** On Regular, once the three states of the open
-  axis match point for point, the suggestion **Reset to the natural path** moves
-  every Regular point to exactly halfway between the two extremes, so each
+- **Regular follows the extremes.** Regular is not drawn: with no Regular, it
+  appears halfway between the extremes (for several complete axes, the average
+  of each axis's midpoint) and then *moves by what the extremes move*, so
+  reshaping an extreme carries Regular with it and a nudge you gave Regular (or
+  an imported Regular's offset) is kept. The pen is off on Regular; moving and
+  reshaping its nodes is allowed, and is meant to be slight. Those follow-moves
+  are not edits of their own: Undo of an extreme brings Regular back with it.
+  **Reset to the natural path** (suggestion) and **Reset Regular to the middle**
+  put every Regular point exactly halfway between the extremes again, so each
   node's travel is a straight line with no bend. One undo step.
 - **Anchor-point tools** (dock; keys A, D, C), as in Photoshop. **Add** (A): tap
   a segment to insert a node there without changing the outline (hold and drag
@@ -193,8 +206,8 @@ so anchors can then be reshaped without adding or removing points.
   contour is always closed): every contour the selection touches is taken,
   or the whole outline when nothing is selected. Paste lands in place and
   selects what it pasted; the clipboard survives switching anchors and
-  glyphs. Pasting changes point counts, so re-copy to the other anchors to
-  keep interpolation alive. Also: Delete, Esc, arrow-key nudges (Shift = 10),
+  glyphs. Pasting changes point counts, so run **Match the extremes' nodes**
+  to keep interpolation alive. Also: Delete, Esc, arrow-key nudges (Shift = 10),
   `+`/`-`/`0` for zoom.
 - **Node move circle.** Selecting a node (or one of its curve handles)
   offers a cross-circle. It sits outward -- away from the glyph's centre,
@@ -352,20 +365,30 @@ so anchors can then be reshaped without adding or removing points.
   for whole contours) in any one of them deletes the same nodes from all of
   them as a single undo step, and the status line says which states changed.
   Anchors that don't match are left alone, and deleting just a handle never
-  touches the others. Where the states differ, the **Match nodes to the
-  fewest** suggestion rebuilds Extra Thin, Regular and Extra Black on one shared
-  structure with only as many nodes as the sparsest has: that state is the
-  template; the others pair their contours with its by position and size
-  (unpaired contours are dropped, and the status says so), are cut down by the
-  shape-preserving simplifier, turned to run the same way round and started at
-  the node that lines up best with the template's. One undo step.
-  **Add missing nodes** goes the other way: the densest state is the template
-  and each sparser one gains nodes (splitting its longest segments, so its
-  outline doesn't move) up to that count; it refuses if the states have
-  different numbers of contours. Both, and **Reset Regular to the middle**
-  (every Regular point back halfway between the extremes), live in the
-  dock's **states** menu (three-line icon, with each state's node count at
-  the top) as well as in the sparkle suggestions.
+  touches the others.
+- **Resolving mismatched nodes: extreme to extreme.** When the extremes
+  disagree about their nodes, the app works out which node answers to which
+  *between the extremes themselves* -- Regular's layout is never evidence, and
+  Regular is never the template. Each pair of outlines is aligned as a cyclic
+  sequence of nodes (starting anywhere, wound either way), scoring a pairing by
+  where the node sits in its own contour, which way the outline runs into and
+  out of it, how sharply it turns and how far round the contour it is. A node
+  with no good partner is *missing* from the other extreme. **Add missing
+  nodes** puts each one there, at the same fraction of the way along the
+  matching stretch of outline (a de Casteljau split, so nothing moves), and
+  nothing either extreme drew is lost; **Match nodes to the fewest** instead
+  takes out the nodes with no counterpart (shape-preserving refit). With more
+  than two extremes they are aligned one at a time to a growing shared
+  structure, and every earlier extreme receives each node it gains. Contours are
+  paired by position, size and outer/inner; a contour only one extreme has is
+  supplied to the other as it stands (Add) or dropped (Fewest). Afterwards
+  **Regular is rebuilt** from the resolved extremes -- the average of each
+  complete axis's midpoint -- *only if* its structure no longer fits; a Regular
+  that still fits (an imported one, or one you have moved) is left exactly as it
+  is. One undo step. Both, and **Reset Regular to the middle** (every Regular
+  point back halfway between the extremes), live in the dock's **match** menu
+  (three-line icon, with each anchor's node count at the top) as well as in the
+  sparkle suggestions.
 - **Snapping.** Light: within ~7px a dragged point (or a selection's edges/
   centre) pulls onto metrics, guides, ghost nodes and (more weakly) the grid,
   and lines up -- vertically or horizontally -- with other **nodes** (when
@@ -422,7 +445,7 @@ so anchors can then be reshaped without adding or removing points.
   its **Edit** button in
   the Ghosts panel; while it lasts the ghost draws solid and the working
   glyph as a bare outline, and the glyph is locked -- gestures, the
-  tool dock, keys, Copy to anchors, Simplify and suggestions all
+  tool dock, keys, Start the other extreme, Simplify and suggestions all
   apply to the ghost or are disabled. Never both at once. While a ghost is only
   being placed (Place mode), its nodes are hidden, so node commands (delete,
   nudge, cut, paste, select all) do nothing. Undo is one chronological stack
@@ -451,8 +474,9 @@ so anchors can then be reshaped without adding or removing points.
     contour nesting; match stems that almost agree and centre on the advance.
     Offset operations carry both handles with their owning nodes rather than
     deforming smooth/mirrored pairs.
-  - *Interpolation* -- when anchors disagree: copy this anchor to all, or
-    jump to the first mismatch.
+  - *Interpolation* -- start the other extreme from this one; when extremes
+    disagree: add the missing nodes, match to the fewest, or jump to the first
+    mismatch.
 
 ## Project layout
 
@@ -464,6 +488,7 @@ so anchors can then be reshaped without adding or removing points.
 - `Hit.kt` / `Gestures.kt` -- point hit-testing and pointer-gesture handling (zoom/pinch, touch proxy, ghost placement, rulers/guides, draw, drag with snapping, rubber-band)
 - `Outline.kt` -- the cubic node/arm model: arm lookup, mirrored drags, corner/smooth, line/curve, valid deletion, pen nodes, exact quadratic-to-cubic conversion
 - `Editing.kt` -- UI-free editing geometry: bounds, affine transforms, ghost shapes, clipboard extraction, snapping, node-reduction order
+- `NodeResolve.kt` -- extreme-to-extreme node correspondence (cyclic alignment, missing nodes placed at the matching arc position, multi-extreme merge) and Regular derived from the extremes
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)
 - `Editor.kt` -- the shared editor screen (phone and wide layouts) and the welcome screen, used by all shells
 - `Onboarding.kt` -- the sample glyph, "How Morphont works", the shared start-screen head and the keys-and-gestures list; `GlyphFiles.kt` -- rename and delete for glyphs, written once over each shell's storage
@@ -491,7 +516,7 @@ The glyph is the room. One full-bleed canvas shows the anchor being edited;
 every control floats on it as a rounded, hairline-edged surface and stays out
 of the way until needed.
 
-- **Phone:** glyph name and node count up top, with Copy to anchors, Undo and
+- **Phone:** glyph name and node count up top, with Start the other extreme, Undo and
   the glyph browser; directly beneath, the **anchor filmstrip** (the picked
   axis's three anchors as live thumbnails -- tap one to edit it). A tool
   **dock** (Select, Move node, Node tools, Pen, Reset View, Guides, Ghosts,

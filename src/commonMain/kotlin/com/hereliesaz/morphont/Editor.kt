@@ -100,6 +100,10 @@ fun EditorScreen(app: AppState, host: EditorHost, modifier: Modifier = Modifier)
             androidx.compose.runtime.snapshotFlow { app.settings() }.collect { store.save(it) }
         }
     }
+    // Regular is derived: whenever an extreme changes, it follows (and is built from them if it has no shape yet).
+    androidx.compose.runtime.LaunchedEffect(app) {
+        androidx.compose.runtime.snapshotFlow { app.extremesFingerprint() }.collect { app.syncRegular() }
+    }
     BoxWithConstraints(
         modifier.fillMaxSize().background(Mono.ground).statusBarsPadding().navigationBarsPadding()
             .onGloballyPositioned { rootOrigin = it.positionInRoot() }
@@ -152,8 +156,10 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
         val hint = when {
             target.drawingContourIndex != null && target.glyph.contours.getOrNull(target.drawingContourIndex!!)?.points.isNullOrEmpty() ->
                 "Tap for a corner node, drag for a smooth curve. Switch back to Select to close the contour."
-            app.activeGhost == null && nodeCount(app) == 0 && app.activeAnchor == "regular" -> "Draw Regular first: pick the pen and tap out an outline."
-            app.activeGhost == null && nodeCount(app) == 0 -> "Draw Regular first, then copy its outline here (Copy to every anchor) and reshape it."
+            app.activeGhost == null && nodeCount(app) == 0 && app.activeAnchor == "regular" -> "Regular is derived from the extremes. Open an extreme and draw it."
+            app.activeGhost == null && nodeCount(app) == 0 && app.otherExtremeIsDrawn() ->
+                "Start from the other extreme (the copy button), then reshape it. Keep its nodes."
+            app.activeGhost == null && nodeCount(app) == 0 -> "Draw this extreme: pick the pen and tap out an outline. Regular follows."
             else -> null
         }
         Column(
@@ -164,6 +170,9 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
         ) {
             SuggestionsRow(app, suggestions)
             GhostBar(app)
+            if (app.activeGhost == null && app.activeAnchor == "regular" && nodeCount(app) > 0) {
+                Caps("Regular follows the extremes", color = Mono.inkDim, size = 10)
+            }
             Toast(app)
         }
         if (hint != null) {
@@ -223,8 +232,8 @@ private fun nodeToolSelect(app: AppState, tool: NodeTool) {
 }
 
 private fun penTool(app: AppState) {
-    // While a ghost is being placed there's nothing to draw on; the glyph itself is off-limits.
-    if (app.activeGhost != null && app.ghostTransformMode) return
+    // While a ghost is being placed there's nothing to draw on, and Regular is never drawn on (see penBlockedReason).
+    app.penBlockedReason?.let { app.setStatus(it.replaceFirstChar(Char::uppercase) + ".", true); return }
     if (app.reduction != null) app.resumeGlyphSelection()
     app.nodeMoveMode = false
     app.nodeTool = null
@@ -275,7 +284,7 @@ private fun CompactEditor(
             ) {
             ToolIcon(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.nodeTool == null && app.activeGhost == null && app.reduction == null, size = IconSize.LARGE)
             ToolIcon(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = IconSize.LARGE)
-            ToolIcon(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = IconSize.LARGE, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+            ToolIcon(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = IconSize.LARGE, enabled = app.penBlockedReason == null, disabledReason = app.penBlockedReason)
             ToolIcon(MIcons.AddNode, "Add node", { nodeToolSelect(app, NodeTool.ADD) }, selected = app.nodeTool == NodeTool.ADD, size = IconSize.LARGE, name = "Add")
             ToolIcon(MIcons.SubtractNode, "Subtract node", { nodeToolSelect(app, NodeTool.SUBTRACT) }, selected = app.nodeTool == NodeTool.SUBTRACT, size = IconSize.LARGE, name = "Subtract")
             ToolIcon(MIcons.ConvertNode, "Convert node", { nodeToolSelect(app, NodeTool.CONVERT) }, selected = app.nodeTool == NodeTool.CONVERT, size = IconSize.LARGE, name = "Convert")
@@ -286,7 +295,7 @@ private fun CompactEditor(
             ToolIcon(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = IconSize.LARGE)
             ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = IconSize.LARGE, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
             StatesMenuButton(app, size = IconSize.LARGE)
-            IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = IconSize.LARGE, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
+            IconAction(MIcons.Duplicate, "Start the other extreme from this one", { app.startOtherExtremeFromThis() }, size = IconSize.LARGE, enabled = app.startOtherExtremeBlockedReason() == null, disabledReason = app.startOtherExtremeBlockedReason())
             }
             Scrollbar(dockScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
         }
@@ -348,14 +357,14 @@ private fun WideEditor(
             Column(Modifier.width(60.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 ToolIcon(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.nodeTool == null && app.activeGhost == null && app.reduction == null, size = IconSize.MEDIUM)
                 ToolIcon(MIcons.Move, "Move node (M)", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = IconSize.MEDIUM)
-                ToolIcon(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = IconSize.MEDIUM, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+                ToolIcon(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = IconSize.MEDIUM, enabled = app.penBlockedReason == null, disabledReason = app.penBlockedReason)
                 ToolIcon(MIcons.AddNode, "Add node (A)", { nodeToolSelect(app, NodeTool.ADD) }, selected = app.nodeTool == NodeTool.ADD, size = IconSize.MEDIUM, name = "Add")
                 ToolIcon(MIcons.SubtractNode, "Subtract node (D)", { nodeToolSelect(app, NodeTool.SUBTRACT) }, selected = app.nodeTool == NodeTool.SUBTRACT, size = IconSize.MEDIUM, name = "Subtract")
                 ToolIcon(MIcons.ConvertNode, "Convert node (C)", { nodeToolSelect(app, NodeTool.CONVERT) }, selected = app.nodeTool == NodeTool.CONVERT, size = IconSize.MEDIUM, name = "Convert")
                 NodeActions(app, size = IconSize.MEDIUM)
                 ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = IconSize.MEDIUM, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
                 StatesMenuButton(app, size = IconSize.MEDIUM)
-                IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = IconSize.MEDIUM, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
+                IconAction(MIcons.Duplicate, "Start the other extreme from this one", { app.startOtherExtremeFromThis() }, size = IconSize.MEDIUM, enabled = app.startOtherExtremeBlockedReason() == null, disabledReason = app.startOtherExtremeBlockedReason())
                 SuggestionsButton(app, suggestions, size = IconSize.MEDIUM)
                 IconAction(MIcons.ResetView, "Reset zoom and pan (0)", { app.view.resetView() }, size = IconSize.MEDIUM)
             }

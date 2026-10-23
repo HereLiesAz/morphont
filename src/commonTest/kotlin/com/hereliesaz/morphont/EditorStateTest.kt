@@ -309,27 +309,21 @@ class EditorStateTest {
     }
 
     @Test
-    fun copyActiveToOthersIsUndoable() {
+    fun startingTheOtherExtremeIsUndoable() {
         val app = AppState()
-        app.anchors.getValue("regular").startNewContour()
-        app.anchors.getValue("regular").addDrawPoint(5f, 5f)
+        app.activeAnchor = Axis.WEIGHT.lo
+        app.anchors.getValue(Axis.WEIGHT.lo).startNewContour()
+        app.anchors.getValue(Axis.WEIGHT.lo).addDrawPoint(5f, 5f)
+        val target = Axis.WEIGHT.hi
 
-        val target = Axis.WEIGHT.lo
-        app.anchors.getValue(target).startNewContour()
-        app.anchors.getValue(target).addDrawPoint(9f, 9f)
-        val before = app.anchors.getValue(target).glyph.deepCopy()
-
-        app.copyActiveToOthers()
+        app.startOtherExtremeFromThis()
 
         val copied = app.anchors.getValue(target).glyph
         assertEquals(3, copied.contours[0].points.size)
         assertEquals(5f, copied.contours[0].points[0].x)
 
         app.anchors.getValue(target).undo()
-
-        val restored = app.anchors.getValue(target).glyph
-        assertEquals(before.contours[0].points.size, restored.contours[0].points.size)
-        assertEquals(before.contours[0].points[0].x, restored.contours[0].points[0].x)
+        assertTrue(app.anchors.getValue(target).glyph.contours.isEmpty())
     }
 
     @Test
@@ -364,12 +358,11 @@ class EditorStateTest {
     @Test
     fun groupedUndoSurvivesATargetHistoryHittingItsCap() {
         val app = AppState()
-        val src = app.anchors.getValue(app.activeAnchor)
-        src.replaceGlyph(GlyphCorner(0f, mutableListOf(ContourData(mutableListOf(Pt(1f, 1f, true))))))
-        app.copyActiveToOthers()
-        val target = app.anchors.getValue(ANCHORS.first { it != app.activeAnchor })
-        val other = app.anchors.getValue(ANCHORS.last { it != app.activeAnchor && app.anchors.getValue(it) !== target })
-        repeat(80) { target.pushHistory() } // pushes the target's copy step out of its private history
+        val names = listOf(ANCHORS[1], ANCHORS[2])
+        val target = app.anchors.getValue(names[0])
+        val other = app.anchors.getValue(names[1])
+        app.replaceAnchorsWithHistory(names) { GlyphCorner(0f, mutableListOf(ContourData(mutableListOf(Pt(1f, 1f, true))))) }
+        repeat(80) { target.pushHistory() } // pushes the target's grouped step out of its private history
         repeat(79) { app.undo() }
         assertEquals(1, other.glyph.contours.size) // the grouped step must not have been consumed early
         app.undo()

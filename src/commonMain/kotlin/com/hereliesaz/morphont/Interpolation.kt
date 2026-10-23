@@ -87,10 +87,12 @@ fun compatibilityIssue(glyphs: Map<String, GlyphCorner?>, names: List<String> = 
  * [glyphs] to already be point-compatible; see [compatibilityIssue].
  */
 fun interpolateGlyph(
-    glyphs: Map<String, GlyphCorner>,
+    drawn: Map<String, GlyphCorner>,
     axisValues: Map<String, Float>,
     axes: List<Axis> = Axis.ALL,
 ): GlyphCorner {
+    // Axes whose extremes aren't both drawn are inert, and a missing Regular is derived (see effectiveCorners).
+    val glyphs = effectiveCorners(drawn)
     val gReg = glyphs.getValue("regular")
     val regularCountedExtra = (axes.size - 1).coerceAtLeast(0)
 

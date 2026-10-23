@@ -95,7 +95,7 @@ class AuditRegressionTest {
         app.cutSelection()
         app.paste()
         app.undo() // would shift the nodes the preview's removal keys point at
-        app.copyActiveToOthers()
+        app.startOtherExtremeFromThis()
         assertEquals(before, node.glyph)
         assertNotNull(app.reduction)
         assertTrue(app.anchors.getValue(Axis.WEIGHT.hi).glyph.contours.isEmpty())

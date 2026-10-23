@@ -110,12 +110,14 @@ fun HowItWorksDialog(onDismiss: () -> Unit, onTrySample: (() -> Unit)? = null) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ThreeStops()
             Body("A variable font is a few drawings and the arithmetic between them. For each axis — Weight, Width, " +
-                "Serif and the rest — you draw its two extremes. Every axis shares one middle drawing, Regular.")
+                "Serif and the rest — you draw only its two extremes. Everything between them is calculated.")
             Body("Those drawings are the anchors: the strip of three under the canvas picks which one you're editing, " +
-                "and the axis name beside it switches axes. Draw Regular first, copy it to every anchor, then " +
-                "reshape each extreme. Every in-between weight is calculated, never drawn.")
-            Body("Calculating needs the anchors to agree: the same contours, with the same number of nodes, in the same " +
-                "order. When they don't, the Preview says so, and the \"Match the three anchors\" tool lines them up.")
+                "and the axis name beside it switches axes. Draw one extreme, start the other from a copy of it and " +
+                "reshape it. The middle drawing, Regular, is derived from the extremes and follows them; move it " +
+                "if you want, but there's nothing to draw there. An axis you haven't drawn simply doesn't vary.")
+            Body("Calculating needs the extremes to agree: the same contours, with the same nodes, in the same order. " +
+                "When they don't, the Preview says so, and \"Match the extremes' nodes\" lines them up from one " +
+                "extreme to the other, adding the nodes each is missing where they belong on its outline.")
             Body("The Preview sliders sweep the result. Ghosts lay another glyph, a shape or a character from any font " +
                 "behind yours for comparison.")
         }
@@ -203,4 +205,4 @@ fun MorphontHero(onTrySample: (() -> Unit)? = null) {
 fun createdMessage(name: String, glyph: Glyph): String =
     if (glyph.corners.values.any { it.contours.isNotEmpty() })
         "Created \"$name\", already drawn on every anchor. Drag the Preview sliders, then reshape any anchor."
-    else "Created \"$name\". Pick the pen and draw Regular first."
+    else "Created \"$name\". Pick the pen and draw one extreme; then start the other from it."

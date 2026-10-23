@@ -207,25 +207,26 @@ fun EditorMenuButton(
 }
 
 /**
- * The three ways to bring the three states of the open axis into line, in one menu: cut the denser ones down to
- * the fewest nodes, add the nodes the sparser ones are missing, or put Regular back halfway between the extremes.
+ * Resolving the nodes of the drawn extremes: add the nodes one extreme lacks (placed where they belong on its
+ * outline), or take out the nodes the other doesn't have. It works between the extremes, never through Regular,
+ * which is rebuilt from them. The last item puts Regular back halfway between the open axis's extremes.
  */
 @Composable
 fun StatesMenuButton(app: AppState, size: Int = IconSize.LARGE) {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconAction(MIcons.States, "Match the three anchors", { open = true }, size = size, enabled = app.activeGhost == null,
+        IconAction(MIcons.States, "Match the extremes' nodes", { open = true }, size = size, enabled = app.activeGhost == null,
             disabledReason = "finish editing the ghost first")
         MonoMenu(open, { open = false }) {
             val summary = app.nodeCountSummary()
             MonoMenuItem(summary.ifEmpty { "Nothing drawn yet" }, {}, enabled = false,
-                detail = if (summary.isEmpty()) "Draw Regular first, then copy it to the other anchors." else "Nodes per anchor. They must agree before the Preview can blend them.")
+                detail = if (summary.isEmpty()) "Draw an extreme, then the other one." else "Nodes per anchor. The extremes must agree before the Preview can blend them.")
             val differ = app.statesDiffer()
             val same = "They already agree."
+            MonoMenuItem("Add missing nodes", { open = false; app.addMissingNodes() }, enabled = differ,
+                detail = if (differ) "Each extreme gains the nodes the other lacks, at the matching place on its outline. Nothing is lost." else same)
             MonoMenuItem("Match nodes to the fewest", { open = false; app.matchToFewestNodes() }, enabled = differ,
-                detail = if (differ) "Cuts the denser anchors down to the fewest nodes." else same)
-            MonoMenuItem("Add missing nodes (match the most)", { open = false; app.addMissingNodes() }, enabled = differ,
-                detail = if (differ) "Adds nodes to the sparser anchors, on their own outlines." else same)
+                detail = if (differ) "Takes out the nodes with no counterpart in the other extreme." else same)
             val canReset = app.regularCanReset()
             MonoMenuItem("Reset Regular to the middle", { open = false; app.resetRegularToNaturalPath() }, enabled = canReset,
                 detail = when {
@@ -1027,7 +1028,9 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
             else -> t.selection = emptySet()
         }
         e.key == Key.P -> {
-            if (!app.nodeEditsLocked) {
+            val blocked = app.penBlockedReason
+            if (blocked != null) app.setStatus(blocked.replaceFirstChar(Char::uppercase) + ".", true)
+            else if (!app.nodeEditsLocked) {
                 app.nodeMoveMode = false
                 app.nodeTool = null
                 if (t.drawingContourIndex == null) t.startNewContour()
