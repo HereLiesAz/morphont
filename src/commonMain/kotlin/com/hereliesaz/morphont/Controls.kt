@@ -5,6 +5,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -85,6 +89,8 @@ class EditorHost(
     val fontStore: FontStoreHost? = null,
     /** Looks for a newer Morphont on the channel this copy came from; null where the app updates itself. */
     val updates: UpdateChecker? = null,
+    /** Like [createGlyph] but starting from a drawn glyph (the sample); null where the shell can't. */
+    val createGlyphFrom: ((String, Glyph) -> Boolean)? = null,
 )
 
 // ------------------------------------------------------------ small parts
@@ -100,14 +106,29 @@ fun MonoMenu(expanded: Boolean, onDismiss: () -> Unit, content: @Composable () -
     ) { content() }
 }
 
+/**
+ * One menu entry. [detail] is a second, dimmer line saying what it does -- or, when the item is disabled, why
+ * (so a greyed-out item never looks merely broken).
+ */
 @Composable
-fun MonoMenuItem(text: String, onClick: () -> Unit, checked: Boolean? = null, enabled: Boolean = true) {
+fun MonoMenuItem(text: String, onClick: () -> Unit, checked: Boolean? = null, enabled: Boolean = true, detail: String? = null) {
     DropdownMenuItem(
-        text = { Text(text, fontSize = 14.sp, color = if (enabled) Mono.ink else Mono.inkFaint) },
+        text = {
+            Column {
+                Text(text, fontSize = 14.sp, color = if (enabled) Mono.ink else Mono.inkFaint)
+                if (detail != null) Text(detail, fontSize = 12.sp, color = Mono.inkDim, modifier = Modifier.widthIn(max = 280.dp))
+            }
+        },
         trailingIcon = if (checked == true) ({ Icon(MIcons.Check, null, tint = Mono.ink, modifier = Modifier.size(16.dp)) }) else null,
         enabled = enabled,
         onClick = onClick,
     )
+}
+
+/** A menu's section label, set like every other section head ([Caps]), not as a disabled item. */
+@Composable
+fun MonoMenuHeader(title: String) {
+    Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 4.dp)) { Caps(title) }
 }
 
 /**
@@ -122,7 +143,7 @@ fun EditorMenuButton(
     openBrowser: () -> Unit,
     openFontOverview: () -> Unit,
     goTo: ((String) -> Unit)?,
-    size: Int = 44,
+    size: Int = IconSize.LARGE,
 ) {
     var open by remember { mutableStateOf(false) }
     var projectsOpen by remember { mutableStateOf(false) }
@@ -130,7 +151,7 @@ fun EditorMenuButton(
     var ghostFont by remember { mutableStateOf<String?>(null) }
     var updatesOpen by remember { mutableStateOf(false) }
     val v = app.view
-    @Composable fun section(title: String) = MonoMenuItem(title.uppercase(), {}, enabled = false)
+    @Composable fun section(title: String) = MonoMenuHeader(title)
     Box {
         IconAction(MIcons.More, "Menu", { open = true }, size = size)
         MonoMenu(open, { open = false }) {
@@ -180,7 +201,7 @@ fun EditorMenuButton(
  * the fewest nodes, add the nodes the sparser ones are missing, or put Regular back halfway between the extremes.
  */
 @Composable
-fun StatesMenuButton(app: AppState, size: Int = 42) {
+fun StatesMenuButton(app: AppState, size: Int = IconSize.LARGE) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconAction(MIcons.States, "Match the three states", { open = true }, size = size, enabled = app.activeGhost == null)
@@ -202,7 +223,7 @@ fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
             .clip(RoundedCornerShape(16.dp))
             .background(if (on) Mono.ink else Color.Transparent)
             .border(1.dp, if (on) Mono.ink else Mono.border, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
+            .toggleable(value = on, role = Role.Switch, onValueChange = { onClick() })
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -219,7 +240,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
                 Modifier
                     .height(28.dp)
                     .background(if (i == selected) Mono.ink else Color.Transparent)
-                    .clickable { onSelect(i) }
+                    .selectable(selected = i == selected, role = Role.Tab, onClick = { onSelect(i) })
                     .padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
             ) { Text(label, fontSize = 12.sp, color = if (i == selected) Mono.onPrimary else Mono.inkDim) }
@@ -243,7 +264,7 @@ fun SectionHead(title: String, trailing: @Composable () -> Unit = {}) {
  * so the layout never shifts and there is no separate bar to find.
  */
 @Composable
-fun NodeActions(app: AppState, size: Int = 42) {
+fun NodeActions(app: AppState, size: Int = IconSize.LARGE) {
     val t = app.commandTarget
     // Nodes can't be edited while a Simplify preview is open or a ghost is being placed, or mid-contour.
     val free = !app.nodeEditsLocked && t.drawingContourIndex == null
@@ -271,7 +292,7 @@ fun GhostBar(app: AppState, modifier: Modifier = Modifier) {
     val ghostScroll = rememberScrollState()
     Box(modifier.widthIn(max = 520.dp).floating()) {
         Row(
-            Modifier.height(52.dp).horizontalScroll(ghostScroll)
+            Modifier.height(60.dp).horizontalScroll(ghostScroll)
                 .padding(start = 14.dp, end = 4.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -279,12 +300,12 @@ fun GhostBar(app: AppState, modifier: Modifier = Modifier) {
         Text(g.label, fontSize = 14.sp, color = Mono.ink, maxLines = 1)
         Spacer(Modifier.width(6.dp))
         Segmented(listOf("Place", "Nodes"), if (app.ghostTransformMode) 0 else 1) { app.setGhostNodeMode(it == 1) }
-        IconAction(MIcons.FlipH, "Flip horizontally", { app.flipActiveGhost(true) }, size = 40)
-        IconAction(MIcons.FlipV, "Flip vertically", { app.flipActiveGhost(false) }, size = 40)
-        IconAction(MIcons.RotateLeft, "Rotate 15° left", { app.rotateActiveGhost(15f) }, size = 40)
-        IconAction(MIcons.RotateRight, "Rotate 15° right", { app.rotateActiveGhost(-15f) }, size = 40)
-        if (g.isLinked) IconAction(MIcons.Guides, "Ghost weight, width and axes", { axesOpen = true }, size = 40)
-        IconAction(MIcons.Check, "Done", { app.activeGhostId = null }, size = 40, selected = true)
+        IconAction(MIcons.FlipH, "Flip horizontally", { app.flipActiveGhost(true) }, size = IconSize.LARGE)
+        IconAction(MIcons.FlipV, "Flip vertically", { app.flipActiveGhost(false) }, size = IconSize.LARGE)
+        IconAction(MIcons.RotateLeft, "Rotate 15° left", { app.rotateActiveGhost(15f) }, size = IconSize.LARGE)
+        IconAction(MIcons.RotateRight, "Rotate 15° right", { app.rotateActiveGhost(-15f) }, size = IconSize.LARGE)
+        if (g.isLinked) IconAction(MIcons.Guides, "Ghost weight, width and axes", { axesOpen = true }, size = IconSize.LARGE)
+        IconAction(MIcons.Check, "Done", { app.activeGhostId = null }, size = IconSize.LARGE, selected = true)
         }
         Scrollbar(ghostScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
     }
@@ -301,13 +322,11 @@ fun SimplifyCard(app: AppState, modifier: Modifier = Modifier) {
                 Caps("Simplify" + if (r.anchorNames.size > 1) " · all anchors" else "", color = Mono.ink)
                 Caps("${r.totalPoints} → ${r.remainingNodes} nodes · min ${r.minimumNodes} · drift ${fmt2(r.error)}u", size = 10)
             }
-            IconAction(MIcons.Close, "Cancel", { app.reduction = null }, size = 40)
-            IconAction(MIcons.Check, "Apply", { app.applyReduction() }, size = 40, selected = true, enabled = r.removeCount > 0)
+            IconAction(MIcons.Close, "Cancel", { app.reduction = null }, size = IconSize.LARGE)
+            IconAction(MIcons.Check, "Apply", { app.applyReduction() }, size = IconSize.LARGE, selected = true, enabled = r.removeCount > 0)
         }
         if (r.order.isNotEmpty()) {
-            // Material's platform-native gesture handling avoids the custom
-            // HairSlider pointer capture that left this preview stuck.
-            androidx.compose.material3.Slider(
+            HairSlider(
                 value = r.removeCount.toFloat(),
                 onValueChange = { r.removeCount = kotlin.math.round(it).toInt().coerceIn(0, r.order.size) },
                 valueRange = 0f..r.order.size.toFloat(),
@@ -327,7 +346,7 @@ fun SimplifyCard(app: AppState, modifier: Modifier = Modifier) {
 
 /** The suggestion button: a spark with a count; tap to expand or collapse the row. */
 @Composable
-fun SuggestionsButton(app: AppState, suggestions: List<Suggestion>, size: Int = 44) {
+fun SuggestionsButton(app: AppState, suggestions: List<Suggestion>, size: Int = IconSize.LARGE) {
     Box {
         IconAction(MIcons.Spark, "Suggested edits (${suggestions.size})", { app.showSuggestions = !app.showSuggestions }, selected = app.showSuggestions, size = size, enabled = suggestions.isNotEmpty() || app.showSuggestions)
         if (suggestions.isNotEmpty() && !app.showSuggestions) {
@@ -344,7 +363,7 @@ fun SuggestionsButton(app: AppState, suggestions: List<Suggestion>, size: Int = 
 fun SuggestionsRow(app: AppState, suggestions: List<Suggestion>, modifier: Modifier = Modifier) {
     if (!app.showSuggestions) return
     Row(
-        modifier.floating(20).height(48.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp),
+        modifier.floating(20).height(56.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -360,7 +379,7 @@ fun SuggestionsRow(app: AppState, suggestions: List<Suggestion>, modifier: Modif
                 sg.detail?.let { Caps(it, size = 9) }
             }
         }
-        IconAction(MIcons.Close, "Hide suggestions", { app.showSuggestions = false }, size = 36)
+        IconAction(MIcons.Close, "Hide suggestions", { app.showSuggestions = false }, size = IconSize.LARGE)
     }
 }
 
@@ -417,7 +436,9 @@ fun AnchorFilmstrip(app: AppState, modifier: Modifier = Modifier, compact: Boole
     fun Thumb(name: String, label: String, m: Modifier) {
         val active = app.activeAnchor == name
         Column(
-            m.clip(RoundedCornerShape(12.dp)).clickable { app.activeAnchor = name },
+            m.clip(RoundedCornerShape(12.dp))
+                .selectable(selected = active, role = Role.Tab, onClick = { app.activeAnchor = name })
+                .semantics(mergeDescendants = true) { contentDescription = "$label anchor" },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -465,7 +486,7 @@ fun AxisSliders(app: AppState, initiallyShown: Int = 4) {
                 HairSlider(
                     value = t,
                     onValueChange = { app.previewValues[axis.tag] = it },
-                    modifier = Modifier.weight(1f).height(32.dp),
+                    modifier = Modifier.weight(1f),
                 )
                 Caps(fmt2(t), size = 10, modifier = Modifier.width(40.dp).padding(start = 8.dp))
             }
@@ -503,7 +524,7 @@ fun GhostsSection(app: AppState, host: EditorHost) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SectionHead("Ghosts") {
             Box {
-                IconAction(MIcons.Plus, "Add ghost", { addOpen = true }, size = 36)
+                IconAction(MIcons.Plus, "Add ghost", { addOpen = true }, size = IconSize.LARGE)
                 MonoMenu(addOpen, { addOpen = false }) {
                     val glyph = app.anchors.getValue(app.activeAnchor).glyph
                     val m = app.metrics
@@ -524,7 +545,7 @@ fun GhostsSection(app: AppState, host: EditorHost) {
             HairSlider(
                 value = app.view.glyphOpacity,
                 onValueChange = { app.view.glyphOpacity = it },
-                modifier = Modifier.weight(1f).height(32.dp),
+                modifier = Modifier.weight(1f),
                 valueRange = 0.1f..1f,
             )
             Caps("${(app.view.glyphOpacity * 100).toInt()}%", size = 10, modifier = Modifier.width(44.dp).padding(start = 8.dp))
@@ -559,14 +580,14 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                         }
                         if (g.isLinked) IconAction(
                             MIcons.Guides, "Ghost weight, width and axes",
-                            { ghostAxisId = g.id }, size = 36,
+                            { ghostAxisId = g.id }, size = IconSize.LARGE,
                         )
                         IconAction(MIcons.Pen, if (active) "Done editing ghost" else "Edit ghost",
                             { if (active) app.activeGhostId = null else app.editGhost(g.id) },
-                            selected = active, size = 36)
+                            selected = active, size = IconSize.LARGE)
                         IconAction(if (g.visible) MIcons.Eye else MIcons.EyeOff,
-                            if (g.visible) "Hide" else "Show", { g.visible = !g.visible }, size = 36)
-                        IconAction(MIcons.Delete, "Remove ghost", { app.removeGhost(g.id) }, size = 36)
+                            if (g.visible) "Hide" else "Show", { g.visible = !g.visible }, size = IconSize.LARGE)
+                        IconAction(MIcons.Delete, "Remove ghost", { app.removeGhost(g.id) }, size = IconSize.LARGE)
                     }
                     Scrollbar(rowScroll, false,
                         Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
@@ -598,13 +619,13 @@ private fun GhostAxesDialog(app: AppState, ghost: GhostLayer, onDismiss: () -> U
             val value = ghost.axisOverrides[axis.tag] ?: 0.5f
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(axis.label, color = Mono.ink, fontSize = 13.sp, modifier = Modifier.width(94.dp))
-                androidx.compose.material3.Slider(
+                HairSlider(
                     value = value, onValueChange = { app.setGhostAxis(ghost.id, axis, it) },
-                    valueRange = 0f..1f, modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f),
                 )
                 IconAction(MIcons.Close, "Follow ${axis.label}", {
                     app.setGhostAxis(ghost.id, axis, null)
-                }, size = 28, enabled = ghost.axisOverrides.containsKey(axis.tag))
+                }, size = IconSize.LARGE, enabled = ghost.axisOverrides.containsKey(axis.tag))
             }
         }
     }
@@ -659,7 +680,7 @@ fun MonoDialog(title: String, onDismiss: () -> Unit, actions: @Composable () -> 
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, fontSize = 22.sp, color = Mono.ink, modifier = Modifier.weight(1f))
-                IconAction(MIcons.Close, "Close", onDismiss, size = 40)
+                IconAction(MIcons.Close, "Close", onDismiss, size = IconSize.LARGE)
             }
             val dialogScroll = rememberScrollState()
             Box(Modifier.weight(1f, fill = false).fillMaxWidth()) {
@@ -674,11 +695,26 @@ fun MonoDialog(title: String, onDismiss: () -> Unit, actions: @Composable () -> 
 }
 
 @Composable
-fun MonoField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, big: Boolean = false) {
+fun MonoField(
+    value: String,
+    onChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    big: Boolean = false,
+    isError: Boolean = false,
+    keyboardType: androidx.compose.ui.text.input.KeyboardType = androidx.compose.ui.text.input.KeyboardType.Text,
+    onDone: (() -> Unit)? = null,
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         singleLine = true,
+        isError = isError,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            keyboardType = keyboardType,
+            imeAction = if (onDone != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Default,
+        ),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onDone?.invoke() }),
         placeholder = { Text(placeholder, color = Mono.inkFaint) },
         textStyle = TextStyle(fontSize = if (big) 22.sp else 15.sp, color = Mono.ink),
         colors = monoTextFieldColors(),
@@ -736,26 +772,13 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
             }
             if (showProjects) ProjectsDialog(app, projectActions, onDismiss = { showProjects = false }, onSwitched = { showProjects = false; onDismiss() })
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MonoField(name, { name = it }, "New glyph name", Modifier.weight(1f))
-            MonoButton(onClick = { if (host.createGlyph(name)) onDismiss() }, selected = true, enabled = name.isNotBlank()) { Text("Create") }
-        }
+        NewGlyphRow(name, { name = it }) { if (host.createGlyph(name)) onDismiss() }
         Box(Modifier.heightIn(max = 340.dp)) {
             val gridScroll = rememberScrollState()
             Column(Modifier.verticalScroll(gridScroll).padding(end = 10.dp)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (n in names) {
-                    val current = n == app.currentGlyphName
-                    Box(
-                        Modifier.size(56.dp).clip(RoundedCornerShape(12.dp))
-                            .background(if (current) Mono.ink else Mono.panelHeader)
-                            .clickable { host.openGlyph(n); onDismiss() },
-                        contentAlignment = Alignment.Center,
-                    ) { val label = displayGlyphName(n)
-                        Text(label, fontSize = if (label.length <= 2) 26.sp else 12.sp, color = if (current) Mono.onPrimary else Mono.ink, maxLines = 1)
-                    }
+                    for (n in names) GlyphTile(n, current = n == app.currentGlyphName) { host.openGlyph(n); onDismiss() }
                 }
-            }
             }
             Scrollbar(gridScroll, true, Modifier.align(Alignment.CenterEnd).width(7.dp).fillMaxHeight())
         }
@@ -793,16 +816,8 @@ private fun ProjectGlyphPicker(app: AppState, host: EditorHost, onDismiss: () ->
             val gridScroll = rememberScrollState()
             Column(Modifier.verticalScroll(gridScroll).padding(end = 10.dp)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (n in names) {
-                    Box(
-                        Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Mono.panelHeader)
-                            .clickable { app.addLinkedGhost(n); onDismiss() },
-                        contentAlignment = Alignment.Center,
-                    ) { val label = displayGlyphName(n)
-                        Text(label, fontSize = if (label.length <= 2) 26.sp else 12.sp, color = Mono.ink, maxLines = 1)
-                    }
+                    for (n in names) GlyphTile(n, onClickLabel = "Ghost it") { app.addLinkedGhost(n); onDismiss() }
                 }
-            }
             }
             Scrollbar(gridScroll, true, Modifier.align(Alignment.CenterEnd).width(7.dp).fillMaxHeight())
         }

@@ -78,66 +78,21 @@ fun DesktopApp() {
 
             fun open(name: String) { DesktopStorage.loadGlyph(name)?.let { app.loadGlyph(name, it) } }
 
-            fun createGlyph(raw: String): Boolean {
+            fun createGlyph(raw: String, glyph: Glyph = Glyph()): Boolean {
                 val name = raw.trim()
                 when {
                     name.isEmpty() -> app.setStatus("Type a name first.", true)
                     DesktopStorage.glyphExists(name) -> app.setStatus("A glyph named \"$name\" already exists.", true)
                     else -> {
-                        val glyph = Glyph()
                         DesktopStorage.saveGlyph(name, glyph)
                         app.glyphNames = DesktopStorage.listGlyphNames()
                         app.loadGlyph(name, glyph)
-                        app.setStatus("Created \"$name\". Pick the pen and start in Regular.")
+                        app.setStatus(createdMessage(name, glyph))
                         return true
                     }
                 }
                 return false
             }
-
-            fun importFont() = DesktopStorage.pickBytes("Import a TrueType font", listOf(".ttf"), { bytes ->
-                scope.launch {
-                    try {
-                        app.setStatus("Importing TrueType font…")
-                        val forProject = DesktopStorage.openProjectId
-                        val result = withContext(Dispatchers.Default) { buildFamilyFromVariableFont(bytes) }
-                        val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs, forProject) }
-                        val inserted = result.glyphs.keys.filterNot { it in collisions }
-                        app.glyphNames = DesktopStorage.listGlyphNames()
-                        inserted.firstOrNull()?.let(::open)
-                        val warnings = listOfNotNull(
-                            result.skippedCharacters.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
-                            collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
-                        )
-                        app.setStatus("Imported ${inserted.size} TrueType glyph(s)." +
-                            if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}.")
-                    } catch (e: Exception) {
-                        app.setStatus("Import failed: ${e.message}", true)
-                    }
-                }
-            }, { app.setStatus(it, true) })
-
-            fun importUfo() = DesktopStorage.pickUfo({ file ->
-                scope.launch {
-                    try {
-                        app.setStatus("Importing UFO…")
-                        val forProject = DesktopStorage.openProjectId
-                        val result = withContext(Dispatchers.IO) { importUfoFile(file) }
-                        val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs, forProject) }
-                        val inserted = result.glyphs.keys.filterNot { it in collisions }
-                        app.glyphNames = DesktopStorage.listGlyphNames()
-                        inserted.firstOrNull()?.let(::open)
-                        val warnings = listOfNotNull(
-                            result.skipped.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
-                            collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
-                        )
-                        app.setStatus("Imported ${inserted.size} UFO glyph(s)." +
-                            if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}.")
-                    } catch (e: Exception) {
-                        app.setStatus("UFO import failed: ${e.message}", true)
-                    }
-                }
-            }, { app.setStatus(it, true) })
 
             val registry = DesktopStorage.registry
             remember { app.projects = registry.projects }
@@ -174,6 +129,59 @@ fun DesktopApp() {
                 app.setStatus("Started \"${info.name}\". Create a glyph or import a font; everything saves as you work.")
                 return true
             }
+
+            /** A fresh project for an import started from the projects screen, opened so the import lands in it. */
+            fun newProjectFor(base: String) {
+                val info = registry.create(unusedProjectName(registry, base))
+                app.projects = registry.projects
+                openProject(info.id)
+            }
+
+            fun importFont(intoNewProject: Boolean = false) = DesktopStorage.pickBytes("Import a TrueType font", listOf(".ttf"), { bytes ->
+                scope.launch {
+                    try {
+                        if (intoNewProject) newProjectFor("Imported font")
+                        app.setStatus("Importing TrueType font…")
+                        val forProject = DesktopStorage.openProjectId
+                        val result = withContext(Dispatchers.Default) { buildFamilyFromVariableFont(bytes) }
+                        val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs, forProject) }
+                        val inserted = result.glyphs.keys.filterNot { it in collisions }
+                        app.glyphNames = DesktopStorage.listGlyphNames()
+                        inserted.firstOrNull()?.let(::open)
+                        val warnings = listOfNotNull(
+                            result.skippedCharacters.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
+                            collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
+                        )
+                        app.setStatus("Imported ${inserted.size} TrueType glyph(s)." +
+                            if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}.")
+                    } catch (e: Exception) {
+                        app.setStatus("Import failed: ${e.message}", true)
+                    }
+                }
+            }, { app.setStatus(it, true) })
+
+            fun importUfo(intoNewProject: Boolean = false) = DesktopStorage.pickUfo({ file ->
+                scope.launch {
+                    try {
+                        if (intoNewProject) newProjectFor("Imported UFO")
+                        app.setStatus("Importing UFO…")
+                        val forProject = DesktopStorage.openProjectId
+                        val result = withContext(Dispatchers.IO) { importUfoFile(file) }
+                        val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs, forProject) }
+                        val inserted = result.glyphs.keys.filterNot { it in collisions }
+                        app.glyphNames = DesktopStorage.listGlyphNames()
+                        inserted.firstOrNull()?.let(::open)
+                        val warnings = listOfNotNull(
+                            result.skipped.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
+                            collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
+                        )
+                        app.setStatus("Imported ${inserted.size} UFO glyph(s)." +
+                            if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}.")
+                    } catch (e: Exception) {
+                        app.setStatus("UFO import failed: ${e.message}", true)
+                    }
+                }
+            }, { app.setStatus(it, true) })
 
             fun renameProject(id: String, raw: String): Boolean {
                 registry.nameProblem(raw, exceptId = id)?.let { app.setStatus(it, true); return false }
@@ -216,12 +224,13 @@ fun DesktopApp() {
                     pickFontBytes = { onLoaded, onError -> DesktopStorage.pickBytes("Choose a font", listOf(".ttf"), onLoaded, onError) },
                     openGlyph = { open(it) },
                     createGlyph = { createGlyph(it) },
+                    createGlyphFrom = { name, glyph -> createGlyph(name, glyph) },
                     listGlyphNames = { DesktopStorage.listGlyphNames().also { app.glyphNames = it } },
                     fileActions = listOf(
                         "Import a TrueType font (.ttf)" to { importFont() },
                         "Import UFO (.ufo / .ufoz)" to { importUfo() },
-                        "Open a project (.json)" to { importProject() },
-                        "Save the whole project" to {
+                        "Open a Morphont project (.json)" to { importProject() },
+                        "Save the whole project (.json)" to {
                             var skippedAny = false
                             DesktopStorage.saveText("Save project", "morphont-project.json", DesktopStorage.exportProjectText(
                                 app.currentGlyphName?.let { it to app.toGlyph() },
@@ -286,12 +295,16 @@ fun DesktopApp() {
 
             Box(Modifier.fillMaxSize().focusRequester(focus).focusable().editorKeys(app)) {
                 if (app.currentProject == null) {
-                    ProjectsScreen(app, host.projects!!)
+                    ProjectsScreen(app, host.projects!!, starts = listOf(
+                        "Import a TrueType font (.ttf)" to { importFont(intoNewProject = true) },
+                        "Import UFO (.ufo / .ufoz)" to { importUfo(intoNewProject = true) },
+                        "Open a Morphont project (.json)" to { importProject() },
+                    ))
                 } else if (app.currentGlyphName == null) {
                     WelcomeScreen(app, host, actions = listOf(
-                        "Import a TrueType font" to { importFont() },
+                        "Import a TrueType font (.ttf)" to { importFont() },
                         "Import UFO (.ufo / .ufoz)" to { importUfo() },
-                        "Open a Morphont project" to { importProject() },
+                        "Open a Morphont project (.json)" to { importProject() },
                     ))
                 } else {
                     EditorScreen(app, host)

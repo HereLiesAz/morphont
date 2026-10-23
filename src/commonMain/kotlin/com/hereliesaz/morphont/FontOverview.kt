@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -64,10 +63,9 @@ private fun FontAxisControls(values: Map<String, Float>, onChange: (String, Floa
             val value = values[axis.tag] ?: 0.5f
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(axis.label, fontSize = 12.sp, color = Mono.ink, modifier = Modifier.width(86.dp))
-                Slider(
+                HairSlider(
                     value = value,
                     onValueChange = { onChange(axis.tag, it) },
-                    valueRange = 0f..1f,
                     modifier = Modifier.weight(1f),
                 )
                 Caps(fmt2(value), size = 10, modifier = Modifier.width(38.dp))
@@ -99,7 +97,7 @@ fun FontOverview(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
                 MonoButton(onClick = {
                     for (axis in Axis.ALL) app.setFontPreviewAxis(axis.tag, 0.5f)
                 }, outlined = true) { Text("Regular", fontSize = 12.sp) }
-                IconAction(MIcons.Close, "Close font overview", onDismiss, size = 40)
+                IconAction(MIcons.Close, "Close font overview", onDismiss, size = IconSize.LARGE)
             }
             Text("Adjust every glyph's preview together. Open a tile for individual axes. Source outlines are unchanged.",
                 fontSize = 12.sp, color = Mono.inkDim)

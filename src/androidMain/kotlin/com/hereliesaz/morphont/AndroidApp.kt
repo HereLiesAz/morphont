@@ -80,17 +80,16 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 storage.setLastGlyphName(name)
             }
 
-            fun createGlyphNamed(raw: String): Boolean {
+            fun createGlyphNamed(raw: String, glyph: Glyph = Glyph()): Boolean {
                 val name = raw.trim()
                 when {
                     name.isEmpty() -> app.setStatus("Type a name first.", true)
                     storage.glyphExists(name) -> app.setStatus("A glyph named \"$name\" already exists.", true)
                     else -> {
-                        val glyph = Glyph()
                         storage.saveGlyph(name, glyph)
                         app.glyphNames = storage.listGlyphNames()
                         loadPersistentGlyph(name, glyph)
-                        app.setStatus("Created \"$name\". Pick the pen and start in Regular.")
+                        app.setStatus(createdMessage(name, glyph))
                         return true
                     }
                 }
@@ -108,7 +107,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
             remember { app.projects = registry.projects }
 
             fun reportSaveFailure(name: String, e: Throwable) =
-                app.setStatus("Couldn't save \"$name\": ${e.message ?: e::class.simpleName}. Your edits are still open; export the project to keep a copy.", true)
+                app.setStatus("Couldn't save \"$name\": ${e.message ?: e::class.simpleName}. Your edits are still open; save the whole project to keep a copy.", true)
 
             /** Saves the open glyph into the project that's open now -- must run before storage is pointed elsewhere. */
             fun flushOpenGlyph() {
@@ -142,6 +141,13 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 openProject(info.id)
                 app.setStatus("Started \"${info.name}\". Create a glyph or import a font; everything saves as you work.")
                 return true
+            }
+
+            /** A fresh project for an import started from the projects screen, opened so the import lands in it. */
+            fun newProjectFor(base: String) {
+                val info = registry.create(unusedProjectName(registry, base))
+                app.projects = registry.projects
+                openProject(info.id)
             }
 
             fun renameProject(id: String, raw: String): Boolean {
@@ -199,10 +205,11 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 )
             }
 
-            fun importVariableFontIntoApp() {
+            fun importVariableFontIntoApp(intoNewProject: Boolean = false) {
                 if (importingFont) return
                 files.openTtf(
                     { bytes ->
+                        if (intoNewProject) newProjectFor("Imported font")
                         importingFont = true
                         app.setStatus("Importing TrueType font…")
                         val forProject = app.currentProject?.id
@@ -245,18 +252,19 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                     pickFontBytes = { onLoaded, onError -> files.openTtf(onLoaded, onError) },
                     openGlyph = { name -> storage.loadGlyph(name)?.let { loadPersistentGlyph(name, it) } },
                     createGlyph = { createGlyphNamed(it) },
+                    createGlyphFrom = { name, glyph -> createGlyphNamed(name, glyph) },
                     listGlyphNames = { storage.listGlyphNames().also { app.glyphNames = it } },
                     fileActions = listOf(
                         "Import a TrueType font (.ttf)" to { importVariableFontIntoApp() },
-                        "Open a project (.json)" to { importProjectIntoApp() },
-                        "Export the whole project" to {
+                        "Open a Morphont project (.json)" to { importProjectIntoApp() },
+                        "Save the whole project (.json)" to {
                             scope.launch {
                                 val unsaved = app.currentGlyphName?.let { it to app.toGlyph() }
                                 var skipped = emptyList<String>()
                                 val text = withContext(Dispatchers.IO) { storage.exportProjectText(unsaved) { skipped = it } }
                                 files.saveJson("morphont-project.json", text, {
-                                    if (skipped.isEmpty()) app.setStatus("Project exported.")
-                                    else app.setStatus("Project exported without ${skipped.size} unreadable glyph file(s): ${skipped.joinToString()}.", true)
+                                    if (skipped.isEmpty()) app.setStatus("Project saved.")
+                                    else app.setStatus("Project saved without ${skipped.size} unreadable glyph file(s): ${skipped.joinToString()}.", true)
                                 }, { app.setStatus(it, true) })
                             }
                             Unit
@@ -392,14 +400,17 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
             Box(Modifier.fillMaxSize().background(Mono.ground)
                 .focusRequester(keyboardFocus).focusable().editorKeys(app)) {
                 if (app.currentProject == null) {
-                    ProjectsScreen(app, host.projects!!)
+                    ProjectsScreen(app, host.projects!!, starts = listOf(
+                        (if (importingFont) "Importing TrueType font…" else "Import a TrueType font (.ttf)") to { importVariableFontIntoApp(intoNewProject = true) },
+                        "Open a Morphont project (.json)" to { importProjectIntoApp() },
+                    ))
                 } else if (app.currentGlyphName == null) {
                     WelcomeScreen(
                         app,
                         host,
                         actions = listOf(
-                            (if (importingFont) "Importing TrueType font…" else "Import a TrueType font") to { importVariableFontIntoApp() },
-                            "Open a Morphont project" to { importProjectIntoApp() },
+                            (if (importingFont) "Importing TrueType font…" else "Import a TrueType font (.ttf)") to { importVariableFontIntoApp() },
+                            "Open a Morphont project (.json)" to { importProjectIntoApp() },
                         ),
                     )
                 } else {
