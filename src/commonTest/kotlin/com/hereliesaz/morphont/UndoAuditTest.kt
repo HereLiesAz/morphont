@@ -77,4 +77,38 @@ class UndoAuditTest {
         val p = m.toFont(Offset(10f, 10f))
         assertTrue(p.x.isFinite() && p.y.isFinite())
     }
+
+    @Test
+    fun cancellingAnEmptyContourLeavesNoTraceInLaterSnapshots() {
+        val app = AppState()
+        val a = app.anchors.getValue("regular")
+        a.loadFresh(square(100f))
+        a.startNewContour()
+        // A recorded edit while the empty contour is open: its snapshot includes the empty contour.
+        a.pushHistory()
+        a.replaceGlyph(a.glyph.deepCopy().also { it.contours[0].points[0].x = 5f })
+        a.finishContour()
+        app.undo() // one step back is the state before the edit -- without the empty contour
+        assertEquals(1, a.glyph.contours.size)
+        assertEquals(0f, a.glyph.contours[0].points[0].x)
+        app.undo() // nothing else was recorded
+        assertEquals(1, a.glyph.contours.size)
+        assertEquals(0f, a.glyph.contours[0].points[0].x)
+    }
+
+    @Test
+    fun aGhostBroughtBackByUndoIsTheSameLayer() {
+        val app = AppState()
+        app.loadGlyph("A", Glyph())
+        app.addGhost("box", square(100f).contours)
+        val g = app.ghosts.single()
+        g.pushMatrixHistory(); g.matrix = translation(10f, 0f) // transform
+        app.removeGhost(g.id)                                   // remove
+        app.undo()                                             // undo the removal
+        app.redo()                                             // redo the removal
+        app.undo()                                             // undo that redo: the ghost is back
+        assertTrue(app.ghosts.single() === g, "the restored ghost is the original layer")
+        app.undo()                                             // undo the transform
+        assertEquals(IDENTITY_MATRIX, app.ghosts.single().matrix)
+    }
 }
