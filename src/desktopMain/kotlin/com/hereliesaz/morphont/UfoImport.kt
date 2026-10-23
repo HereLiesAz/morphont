@@ -82,9 +82,21 @@ private data class UfoPoint(val x: Float, val y: Float, val type: String, val sm
  * cubic handles exactly; convert quadratic handles to cubic 2/3 controls.
  * UFO open contours cannot be represented by the editor's closed paths.
  */
+/** A GLIF coordinate: finite and within a sane range ("NaN", "Infinity" and 1e99 parse as floats). */
+private fun coordinate(raw: String): Float {
+    val v = raw.toFloatOrNull() ?: throw IllegalArgumentException("Bad coordinate: $raw")
+    require(v.isFinite() && kotlin.math.abs(v) <= MAX_UFO_COORDINATE) { "Coordinate out of range: $raw" }
+    return v
+}
+
+private const val MAX_UFO_COORDINATE = 1_000_000f
+
+/** The most contours one resolved glyph may hold, so chained components can't multiply into the millions. */
+private const val MAX_RESOLVED_CONTOURS = 5_000
+
 private fun parseUfoContour(element: Element): ContourData {
     val points = element.elements("point").map { p ->
-        UfoPoint(p.getAttribute("x").toFloat(), p.getAttribute("y").toFloat(),
+        UfoPoint(coordinate(p.getAttribute("x")), coordinate(p.getAttribute("y")),
             p.getAttribute("type").ifEmpty { "offcurve" }, p.getAttribute("smooth") == "yes")
     }
     if (points.isEmpty()) return ContourData()
@@ -190,7 +202,11 @@ private fun readUfo(source: UfoSource): UfoImportResult {
         val contours = glyph.contours.map { it.deepCopy() }.toMutableList()
         for (component in glyph.components) {
             val matrix = component.matrix
-            contours.addAll(mapContours(resolve(component.base, ancestors + name)) { x, y ->
+            require(matrix.all { it.isFinite() }) { "Bad component transform in $name" }
+            val base = resolve(component.base, ancestors + name)
+            // Two components per level over 24 levels is 2^24 contours: refuse long before memory runs out.
+            require(contours.size + base.size <= MAX_RESOLVED_CONTOURS) { "Too many contours after expanding components: $name" }
+            contours.addAll(mapContours(base) { x, y ->
                 (matrix[0] * x + matrix[2] * y + matrix[4]) to
                     (matrix[1] * x + matrix[3] * y + matrix[5])
             })
@@ -202,6 +218,9 @@ private fun readUfo(source: UfoSource): UfoImportResult {
     for ((name, record) in parsed) {
         try {
             val regular = GlyphCorner(record.width, resolve(name).map { it.deepCopy() }.toMutableList())
+            require(record.width.isFinite() && regular.contours.all { c -> c.points.all { it.x.isFinite() && it.y.isFinite() } }) {
+                "Coordinates out of range after transforms"
+            }
             glyphs[name] = Glyph(
                 corners = ANCHORS.associateWith { regular.deepCopy() }.toMutableMap(),
                 metrics = metrics, outlineFormat = OUTLINE_CUBIC)

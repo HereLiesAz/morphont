@@ -38,6 +38,7 @@ object MIcons {
     val ConvertNode = icon("convertNode", listOf("M4 20 12 5l8 15", "M8.5 13c2-1.4 5-1.4 7 0"))
     // Three states, one row each, with their nodes at different places -- the thing the menu lines up.
     val States = icon("states", listOf("M3 6h18M3 12h18M3 18h18"), listOf(circle(8f, 6f, 1.8f), circle(15f, 12f, 1.8f), circle(11f, 18f, 1.8f)))
+    val Axes = icon("axes", listOf("M6 3v18M12 3v18M18 3v18"), listOf(circle(6f, 15f, 1.8f), circle(12f, 8f, 1.8f), circle(18f, 13f, 1.8f)))
     val Guides = icon("guides", listOf("M3 3h18v6H9v12H3z", "M7 3v3M11 3v3M15 3v3M3 13h3M3 17h3"))
     val Measure = icon("measure", listOf("M4 12h16M4 8v8M20 8v8"))
     // A ghost, not a copy: the silhouette with a ragged hem and two eyes.

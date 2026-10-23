@@ -10,6 +10,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 
 /** Packages built with the JDK's own zip and deflate, so the reader is checked against a real encoder. */
@@ -105,7 +106,7 @@ class AzpTest {
         shelf.install(Azp.read(fontPackage()))
         assertEquals(1, shelf.list().size)
         shelf.remove("com.acme.fancy")
-        assertEquals(emptyList(), FontShelf(blobs).list())
+        assertEquals(emptyList<InstalledFont>(), FontShelf(blobs).list())
         assertEquals(setOf("index.json"), blobs.map.keys)
     }
 
@@ -137,5 +138,73 @@ class AzpTest {
         assertFailsWith<IllegalArgumentException> { client.download(fonts[2]) }
         assertFailsWith<IllegalArgumentException> { client.download(fonts[1]) } // the store sent com.acme.fancy
         Unit
+    }
+
+    @Test
+    fun fontRulesMatchAzphalts() {
+        Azp.validateFont(Azp.read(fontPackage()))
+        // A face that isn't the format it claims, a stray file, and a duplicate manifest key are all refused.
+        val notTtf = assertFailsWith<IllegalArgumentException> { Azp.validateFont(Azp.read(fontPackage(font = byteArrayOf(1, 2, 3, 4, 5)))) }
+        assertTrue("not a ttf font" in notTtf.message!!)
+        val license = "OFL-1.1".encodeToByteArray()
+        val stray = "evil".encodeToByteArray()
+        val manifest = """{"id":"com.acme.fancy","version":"1.0.0","kind":"font","files":{"fonts/Fancy.ttf":"${sha(ttf)}","LICENSE":"${sha(license)}","code/x.js":"${sha(stray)}"},"font":{"family":"Fancy","faces":[{"path":"fonts/Fancy.ttf","format":"ttf"}]}}""".encodeToByteArray()
+        val withCode = Azp.read(zip(mapOf("manifest.json" to manifest, "LICENSE" to license, "fonts/Fancy.ttf" to ttf, "code/x.js" to stray)))
+        assertFailsWith<IllegalArgumentException> { Azp.validateFont(withCode) }
+        assertEquals("kind", Azp.duplicateJsonKey("""{"kind":"font","a":{"kind":1},"kind":"code"}"""))
+        assertEquals(null, Azp.duplicateJsonKey("""{"a":"x\"kind","kind":1,"b":[{"kind":2},{"kind":3}]}"""))
+    }
+
+    @Test
+    fun aHugeLocalHeaderOffsetIsAReadableError() {
+        val good = fontPackage()
+        // Point the first central-directory entry's local header offset at 0xFFFFFF00.
+        val eocd = (good.size - 22 downTo 0).first { good[it] == 0x50.toByte() && good[it + 1] == 0x4b.toByte() && good[it + 2] == 5.toByte() && good[it + 3] == 6.toByte() }
+        val cd = ((good[eocd + 16].toInt() and 0xff) or ((good[eocd + 17].toInt() and 0xff) shl 8) or ((good[eocd + 18].toInt() and 0xff) shl 16) or ((good[eocd + 19].toInt() and 0xff) shl 24))
+        val bad = good.copyOf().also { b -> b[cd + 42] = 0; b[cd + 43] = 0xFF.toByte(); b[cd + 44] = 0xFF.toByte(); b[cd + 45] = 0xFF.toByte() }
+        assertFailsWith<IllegalArgumentException> { Azp.read(bad) }
+    }
+
+    private class FlakyBlobs(val inner: MemoryBlobs) : BlobStore {
+        var failReads = false
+        override suspend fun get(key: String): ByteArray? { if (failReads) error("disk busy"); return inner.get(key) }
+        override suspend fun put(key: String, bytes: ByteArray) = inner.put(key, bytes)
+        override suspend fun delete(key: String) = inner.delete(key)
+    }
+
+    @Test
+    fun anUnreadableIndexIsNeverTakenForAnEmptyOne() = runBlocking<Unit> {
+        val blobs = MemoryBlobs()
+        FontShelf(blobs).install(Azp.read(fontPackage()))
+        val flaky = FlakyBlobs(blobs).apply { failReads = true }
+        assertFailsWith<IllegalStateException> { FontShelf(flaky).list() }
+        assertFailsWith<IllegalStateException> { FontShelf(flaky).install(Azp.read(fontPackage())) }
+        assertEquals(1, FontShelf(blobs).list().size, "the real list is intact")
+        // A damaged index is kept aside, not silently dropped.
+        blobs.map["index.json"] = "{not json".encodeToByteArray()
+        assertEquals(emptyList<InstalledFont>(), FontShelf(blobs).list())
+        assertTrue("index-unreadable.json" in blobs.map)
+    }
+
+    @Test
+    fun anUpdateWritesNewFacesBeforeTheOldOnesGo() = runBlocking<Unit> {
+        val blobs = MemoryBlobs()
+        val shelf = FontShelf(blobs)
+        val v1 = shelf.install(Azp.read(fontPackage()))
+        val oldKey = v1.faces.single().key
+        assertTrue("/1.0.0/" in oldKey)
+        // The new version's faces never overwrite the old version's bytes in place.
+        val v2pkg = Azp.read(fontPackage()).let { p -> Azp.Package(p.manifest.copy(version = "1.1.0"), p.files) }
+        val v2 = shelf.install(v2pkg)
+        assertTrue("/1.1.0/" in v2.faces.single().key)
+        assertTrue(oldKey !in blobs.map, "the old face is removed once the index moved on")
+    }
+
+    @Test
+    fun systemFileNamesStayClearOfTheUsersOwnFonts() {
+        assertEquals("com.acme.fancy-Arial.ttf", DesktopFontStore.systemFileName("com.acme.fancy", "Arial.ttf"))
+        assertEquals("com.acme.fancy-CON.otf", DesktopFontStore.systemFileName("com.acme.fancy", "fonts/../CON.OTF"))
+        assertFailsWith<IllegalArgumentException> { DesktopFontStore.systemFileName("a.b", "payload.exe") }
+        assertFailsWith<IllegalArgumentException> { DesktopFontStore.systemFileName("a.b", "Fancy.woff2") }
     }
 }

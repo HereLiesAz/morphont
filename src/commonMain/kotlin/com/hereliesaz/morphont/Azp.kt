@@ -6,15 +6,58 @@ import kotlinx.serialization.json.Json
 /**
  * Reading azphalt `.azp` packages: a zip holding `manifest.json`, `LICENSE`, an optional
  * `signature.json` and the payload, every payload file digested (`sha256-<hex>`) in
- * `manifest.files`. Morphont installs `kind: "font"` packages from the azphalt store, so this
- * reads just enough to do that safely: zip-slip, bomb and digest checks the same as azphalt's own
- * `verifyAzp`, then the `font` block. Signatures are not checked here; the store is reached over
- * HTTPS and the digests make every file match the manifest the store serves.
+ * `manifest.files`. [read] does the container checks azphalt's `verifyAzp` does (zip-slip, size,
+ * duplicate entries, every digest, no unlisted file); [validateFont] adds `verifyAzp`'s font-kind
+ * rules. The digests only prove the archive agrees with itself -- the manifest that lists them is
+ * inside it. Signatures aren't checked yet, so a package is as trustworthy as the HTTPS connection
+ * to the store it came from.
  */
 object Azp {
     const val MAX_ENTRIES = 4096
     const val MAX_ENTRY_BYTES = 64 * 1024 * 1024
-    const val MAX_TOTAL_BYTES = 256 * 1024 * 1024
+    /** Kept well under a phone's heap: the archive, its inflated files and a digest copy coexist. */
+    const val MAX_TOTAL_BYTES = 96 * 1024 * 1024
+    /** azphalt's own per-face limit for a font package. */
+    const val MAX_FONT_BYTES = 32 * 1024 * 1024
+    private val FONT_FORMATS = setOf("ttf", "otf", "woff2")
+
+    private fun startsWith(b: ByteArray, vararg sig: Int) = b.size >= sig.size && sig.indices.all { (b[it].toInt() and 0xff) == sig[it] }
+
+    /** Whether [bytes] carry [format]'s file signature (SFNT for ttf/otf, `wOF2` for woff2). */
+    fun fontSignatureMatches(bytes: ByteArray, format: String): Boolean = when (format) {
+        "woff2" -> startsWith(bytes, 0x77, 0x4f, 0x46, 0x32)
+        "ttf", "otf" -> startsWith(bytes, 0x00, 0x01, 0x00, 0x00) || startsWith(bytes, 0x74, 0x72, 0x75, 0x65) || startsWith(bytes, 0x4f, 0x54, 0x54, 0x4f)
+        else -> false
+    }
+
+    /**
+     * azphalt's font-kind rules (`validateFontManifest`), so nothing an install writes is other than
+     * what the card said: a family and faces; each face under `fonts/`, ending in its declared format
+     * (ttf, otf, woff2), carrying that format's signature, at most [MAX_FONT_BYTES]; no `fonts/` file
+     * left undeclared; nothing outside `fonts/` but the licence.
+     */
+    fun validateFont(pkg: Package) {
+        val m = pkg.manifest
+        require(m.kind == "font") { "${m.name.ifEmpty { m.id }} is not a font package." }
+        val font = requireNotNull(m.font) { "The package has no font block." }
+        require(font.family.isNotBlank()) { "The package names no font family." }
+        require(font.faces.isNotEmpty()) { "The package has no faces." }
+        val declared = mutableSetOf<String>()
+        for (face in font.faces) {
+            val path = face.path
+            require(path.startsWith("fonts/") && path.length > 6) { "Face $path is not under fonts/." }
+            require(face.format in FONT_FORMATS) { "Face $path has an unknown format ${face.format}." }
+            require(path.lowercase().endsWith("." + face.format)) { "Face $path doesn't end in .${face.format}." }
+            require(declared.add(path)) { "Face $path is listed twice." }
+            val bytes = requireNotNull(pkg.files[path]) { "Face $path is missing." }
+            require(bytes.size <= MAX_FONT_BYTES) { "Face $path is larger than azphalt allows." }
+            require(fontSignatureMatches(bytes, face.format)) { "Face $path is not a ${face.format} font." }
+        }
+        for (path in pkg.files.keys) {
+            if (path.startsWith("fonts/")) require(path in declared) { "$path isn't declared by any face." }
+            else require(path == "LICENSE") { "A font package can't carry $path." }
+        }
+    }
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -25,6 +68,9 @@ object Azp {
     fun read(bytes: ByteArray): Package {
         val entries = unzip(bytes)
         val raw = entries["manifest.json"] ?: throw IllegalArgumentException("Not an azphalt package: no manifest.json")
+        // The signature (when there is one) covers these exact bytes; with a key twice, readers that keep
+        // the first and readers that keep the last would disagree about what was signed.
+        duplicateJsonKey(raw.decodeToString())?.let { throw IllegalArgumentException("The package manifest repeats the key \"$it\".") }
         val manifest = try {
             json.decodeFromString(AzpManifest.serializer(), raw.decodeToString())
         } catch (e: Exception) {
@@ -38,6 +84,37 @@ object Azp {
         }
         for (path in payload.keys) require(path in manifest.files) { "Unlisted file: $path" }
         return Package(manifest, payload)
+    }
+
+    /** The first key that appears twice in one JSON object of [text], or null. Strings are skipped correctly. */
+    fun duplicateJsonKey(text: String): String? {
+        val stack = ArrayDeque<MutableSet<String>?>() // a key set per open object; null for an array
+        var i = 0
+        var expectKey = false
+        while (i < text.length) {
+            when (val c = text[i]) {
+                '{' -> { stack.addLast(mutableSetOf()); expectKey = true }
+                '[' -> { stack.addLast(null); expectKey = false }
+                '}', ']' -> { stack.removeLastOrNull(); expectKey = false }
+                ',' -> expectKey = stack.lastOrNull() != null
+                '"' -> {
+                    val sb = StringBuilder()
+                    i++
+                    while (i < text.length && text[i] != '"') {
+                        if (text[i] == '\\' && i + 1 < text.length) { sb.append(text[i]).append(text[i + 1]); i += 2; continue }
+                        sb.append(text[i]); i++
+                    }
+                    if (expectKey) {
+                        val keys = stack.lastOrNull()
+                        if (keys != null && !keys.add(sb.toString())) return sb.toString()
+                        expectKey = false
+                    }
+                }
+                else -> if (c == ':') expectKey = false
+            }
+            i++
+        }
+        return null
     }
 
     /** Why [path] is unsafe to extract, or null: absolute, backslashes, drive letters, NUL, or `.`/`..`/empty segments. */
@@ -89,8 +166,9 @@ object Azp {
             require(size <= MAX_ENTRY_BYTES && compressed < bytes.size) { "File too large: $name" }
             total += size
             require(total <= MAX_TOTAL_BYTES) { "Package too large" }
+            require(local + 30 <= bytes.size) { "Corrupt zip entry: $name" }
             val lh = local.toInt()
-            require(lh + 30 <= bytes.size && u32(bytes, lh) == 0x04034b50L) { "Corrupt zip entry: $name" }
+            require(u32(bytes, lh) == 0x04034b50L) { "Corrupt zip entry: $name" }
             val start = lh + 30 + u16(bytes, lh + 26) + u16(bytes, lh + 28)
             require(start + compressed <= bytes.size) { "Truncated zip entry: $name" }
             val data = when (method) {

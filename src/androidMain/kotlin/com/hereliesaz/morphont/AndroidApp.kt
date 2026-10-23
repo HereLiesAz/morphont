@@ -41,6 +41,14 @@ class AndroidFileActions(
 private enum class OpenGlyphOutcome { OPENED, EMPTY, UNREADABLE }
 
 /**
+ * Writes the open glyph now. MainActivity calls it from onStop -- going to the background, rotating,
+ * being closed -- so an edit still inside the autosave debounce is never lost.
+ */
+object AndroidAutosave {
+    var flush: () -> Unit = {}
+}
+
+/**
  * Android shell: persistence, file pickers and haptics around the shared
  * [EditorScreen] -- the phone layout on phones, the desktop layout on wide
  * tablets, exactly as on the web.
@@ -72,38 +80,47 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 storage.setLastGlyphName(name)
             }
 
-            fun createGlyphNamed(raw: String): Boolean {
+            fun createGlyphNamed(raw: String, glyph: Glyph = Glyph()): Boolean {
                 val name = raw.trim()
                 when {
                     name.isEmpty() -> app.setStatus("Type a name first.", true)
                     storage.glyphExists(name) -> app.setStatus("A glyph named \"$name\" already exists.", true)
                     else -> {
-                        val glyph = Glyph()
                         storage.saveGlyph(name, glyph)
                         app.glyphNames = storage.listGlyphNames()
                         loadPersistentGlyph(name, glyph)
-                        app.setStatus("Created \"$name\". Pick the pen and start in Regular.")
+                        app.setStatus(createdMessage(name, glyph))
                         return true
                     }
                 }
                 return false
             }
 
+            /** Opens the first glyph that reads; a damaged file stays in the list but doesn't block the ones after it. */
             fun openFirstAvailableGlyph(names: List<String>): OpenGlyphOutcome {
-                val firstName = names.firstOrNull() ?: return OpenGlyphOutcome.EMPTY
-                val glyph = storage.loadGlyph(firstName) ?: return OpenGlyphOutcome.UNREADABLE
-                loadPersistentGlyph(firstName, glyph)
-                return OpenGlyphOutcome.OPENED
+                if (names.isEmpty()) return OpenGlyphOutcome.EMPTY
+                for (name in names) {
+                    val glyph = storage.loadGlyph(name) ?: continue
+                    loadPersistentGlyph(name, glyph)
+                    return OpenGlyphOutcome.OPENED
+                }
+                return OpenGlyphOutcome.UNREADABLE
             }
 
             val registry = storage.registry
             remember { app.projects = registry.projects }
 
+            fun reportSaveFailure(name: String, e: Throwable) =
+                app.setStatus("Couldn't save \"$name\": ${e.message ?: e::class.simpleName}. Your edits are still open; save the whole project to keep a copy.", true)
+
             /** Saves the open glyph into the project that's open now -- must run before storage is pointed elsewhere. */
             fun flushOpenGlyph() {
                 if (app.currentProject == null) return
-                app.currentGlyphName?.let { storage.saveGlyph(it, app.toGlyph()) }
+                app.currentGlyphName?.let { name ->
+                    try { storage.saveGlyph(name, app.toGlyph(), app.currentProject?.id) } catch (e: Exception) { reportSaveFailure(name, e) }
+                }
             }
+            AndroidAutosave.flush = { if (initialized) flushOpenGlyph() }
 
             fun openProject(id: String) {
                 if (app.currentProject?.id == id) return
@@ -128,6 +145,13 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 openProject(info.id)
                 app.setStatus("Started \"${info.name}\". Create a glyph or import a font; everything saves as you work.")
                 return true
+            }
+
+            /** A fresh project for an import started from the projects screen, opened so the import lands in it. */
+            fun newProjectFor(base: String) {
+                val info = registry.create(unusedProjectName(registry, base))
+                app.projects = registry.projects
+                openProject(info.id)
             }
 
             fun renameProject(id: String, raw: String): Boolean {
@@ -185,21 +209,26 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 )
             }
 
-            fun importVariableFontIntoApp() {
+            fun importVariableFontIntoApp(intoNewProject: Boolean = false) {
                 if (importingFont) return
                 files.openTtf(
                     { bytes ->
+                        if (intoNewProject) newProjectFor("Imported font")
                         importingFont = true
                         app.setStatus("Importing TrueType font…")
+                        val forProject = app.currentProject?.id
                         scope.launch {
                             try {
                                 val result = withContext(Dispatchers.Default) {
                                     buildFamilyFromVariableFont(bytes)
                                 }
-                                val collisions = withContext(Dispatchers.IO) { storage.saveNewGlyphs(result.glyphs) }
-                                app.glyphNames = withContext(Dispatchers.IO) { storage.listGlyphNames() }
+                                val collisions = withContext(Dispatchers.IO) { storage.saveNewGlyphs(result.glyphs, forProject) }
+                                // Still in the project the import began in? If another was opened meanwhile, its glyph
+                                // list and open glyph are left alone: the imported glyphs are in the first project.
+                                val stillHere = app.currentProject?.id == forProject
+                                if (stillHere) app.glyphNames = withContext(Dispatchers.IO) { storage.listGlyphNames() }
                                 val inserted = result.glyphs.keys.filterNot { it in collisions }.sorted()
-                                val firstImportedName = inserted.firstOrNull()
+                                val firstImportedName = inserted.firstOrNull()?.takeIf { stillHere }
                                 if (firstImportedName != null) {
                                     result.glyphs[firstImportedName]?.let {
                                         loadPersistentGlyph(firstImportedName, it)
@@ -211,8 +240,9 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                                 )
                                 val skippedNote = if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}."
                                 val openedNote = if (firstImportedName == null) "" else " Opened $firstImportedName."
+                                val elsewhereNote = if (stillHere) "" else " They're in the project you imported into, not the one open now."
                                 app.setStatus(
-                                    "Imported ${inserted.size} character(s) from the TrueType font.$openedNote$skippedNote",
+                                    "Imported ${inserted.size} character(s) from the TrueType font.$openedNote$skippedNote$elsewhereNote",
                                 )
                             } catch (e: Exception) {
                                 app.setStatus("Import failed: ${e.message}", true)
@@ -233,12 +263,16 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                     listGlyphNames = { storage.listGlyphNames().also { app.glyphNames = it } },
                     fileActions = listOf(
                         "Import a TrueType font (.ttf)" to { importVariableFontIntoApp() },
-                        "Open a project (.json)" to { importProjectIntoApp() },
-                        "Export the whole project" to {
+                        "Open a Morphont project (.json)" to { importProjectIntoApp() },
+                        "Save the whole project (.json)" to {
                             scope.launch {
                                 val unsaved = app.currentGlyphName?.let { it to app.toGlyph() }
-                                val text = withContext(Dispatchers.IO) { storage.exportProjectText(unsaved) }
-                                files.saveJson("morphont-project.json", text, { app.setStatus("Project exported.") }, { app.setStatus(it, true) })
+                                var skipped = emptyList<String>()
+                                val text = withContext(Dispatchers.IO) { storage.exportProjectText(unsaved) { skipped = it } }
+                                files.saveJson("morphont-project.json", text, {
+                                    if (skipped.isEmpty()) app.setStatus("Project saved.")
+                                    else app.setStatus("Project saved without ${skipped.size} unreadable glyph file(s): ${skipped.joinToString()}.", true)
+                                }, { app.setStatus(it, true) })
                             }
                             Unit
                         },
@@ -259,6 +293,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                                         try {
                                             val glyph = withContext(Dispatchers.IO) { storage.importGlyphText(targetName, text) }
                                             loadPersistentGlyph(targetName, glyph)
+                                            app.setStatus("Replaced \"$targetName\" from the file.")
                                         } catch (e: Exception) {
                                             app.setStatus("Import failed: ${e.message}", true)
                                         }
@@ -277,6 +312,16 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                     settings = storage.settings,
                     fontStore = AndroidFontStore.host(context, files),
                     updates = updates,
+                    createGlyphFrom = { name, glyph -> createGlyphNamed(name, glyph) },
+                    glyphFiles = GlyphFiles(
+                        exists = storage::glyphExists,
+                        load = storage::loadGlyph,
+                        save = { name, glyph -> storage.saveGlyph(name, glyph) },
+                        delete = { name -> storage.deleteGlyph(name); if (storage.lastGlyphName() == name) storage.setLastGlyphName(null) },
+                        list = storage::listGlyphNames,
+                        renamed = { old, name -> if (storage.lastGlyphName() == old) storage.setLastGlyphName(name) },
+                    ),
+                    confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
                 )
             }
 
@@ -315,6 +360,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 var pendingName: String? = null
                 var pendingProject: String? = null
                 var pendingGlyph: Glyph? = null
+                var pendingTicket = 0L
                 var pendingEpoch = app.autosaveEpoch
                 snapshotFlow { Triple(initialized, app.autosaveEpoch, app.currentGlyphName to app.toGlyph()) to app.currentProject?.id }
                     .collect { (state, projectId) ->
@@ -331,19 +377,24 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                             val outgoingGlyph = pendingGlyph
                             if (outgoingName != null && outgoingGlyph != null) {
                                 saveJob?.cancel()
-                                withContext(Dispatchers.IO) { storage.saveGlyph(outgoingName, outgoingGlyph, pendingProject) }
+                                val failure = withContext(Dispatchers.IO) { runCatching { storage.saveGlyph(outgoingName, outgoingGlyph, pendingProject, pendingTicket) }.exceptionOrNull() }
+                                failure?.let { reportSaveFailure(outgoingName, it) }
                             }
                         }
                         pendingEpoch = epoch
                         pendingName = name
                         pendingProject = projectId
                         pendingGlyph = glyph
+                        // Numbered when the snapshot is taken, so an older save can't overwrite a newer one.
+                        val ticket = storage.nextTicket()
+                        pendingTicket = ticket
                         if (name == null) return@collect
                         saveJob?.cancel()
                         saveJob = launch {
                             delay(ANDROID_AUTOSAVE_DEBOUNCE_MS)
-                            if (epoch == app.autosaveEpoch) withContext(Dispatchers.IO) {
-                                storage.saveGlyph(name, glyph, projectId)
+                            if (epoch == app.autosaveEpoch) {
+                                val failure = withContext(Dispatchers.IO) { runCatching { storage.saveGlyph(name, glyph, projectId, ticket) }.exceptionOrNull() }
+                                failure?.let { reportSaveFailure(name, it) }
                             }
                         }
                     }
@@ -371,14 +422,17 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
             Box(Modifier.fillMaxSize().background(Mono.ground)
                 .focusRequester(keyboardFocus).focusable().editorKeys(app)) {
                 if (app.currentProject == null) {
-                    ProjectsScreen(app, host.projects!!)
+                    ProjectsScreen(app, host.projects!!, starts = listOf(
+                        (if (importingFont) "Importing TrueType font…" else "Import a TrueType font (.ttf)") to { importVariableFontIntoApp(intoNewProject = true) },
+                        "Open a Morphont project (.json)" to { importProjectIntoApp() },
+                    ))
                 } else if (app.currentGlyphName == null) {
                     WelcomeScreen(
                         app,
                         host,
                         actions = listOf(
-                            (if (importingFont) "Importing TrueType font…" else "Import a TrueType font") to { importVariableFontIntoApp() },
-                            "Open a Morphont project" to { importProjectIntoApp() },
+                            (if (importingFont) "Importing TrueType font…" else "Import a TrueType font (.ttf)") to { importVariableFontIntoApp() },
+                            "Open a Morphont project (.json)" to { importProjectIntoApp() },
                         ),
                     )
                 } else {

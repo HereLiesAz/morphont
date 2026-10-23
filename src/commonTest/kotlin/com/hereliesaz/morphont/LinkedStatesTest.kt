@@ -182,4 +182,21 @@ class LinkedStatesTest {
         app.addMissingNodes()
         assertEquals(before, app.anchors.getValue(lo).glyph, "nothing is dropped or invented")
     }
+
+    @Test fun matchingReachesTheOtherAxesSoRegularStaysCompatibleWithAll() {
+        // Weight is 8/8/6; Width's extremes (drawn too) have 8. Matching Weight to the fewest changes
+        // Regular, so Width's extremes must come along or the whole glyph stops interpolating.
+        val app = app(8, 8, 6)
+        app.anchors.getValue(Axis.WIDTH.lo).loadFresh(ring(8, 180f))
+        app.anchors.getValue(Axis.WIDTH.hi).loadFresh(ring(8, 220f))
+        app.matchToFewestNodes()
+        val drawn = listOf(lo, "regular", hi, Axis.WIDTH.lo, Axis.WIDTH.hi)
+        for (n in drawn) assertEquals(6, nodes(app, n), n)
+        assertNull(app.compatibility(drawn))
+        // One undo step puts all five back.
+        app.undo()
+        assertEquals(8, nodes(app, Axis.WIDTH.lo))
+        assertEquals(6, nodes(app, hi))
+        assertEquals(8, nodes(app, "regular"))
+    }
 }

@@ -70,6 +70,10 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.sp
 
 /** Below this width the editor is the phone layout (one canvas, axis strip, dock); above it, the desktop layout. */
@@ -139,7 +143,10 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
             onPointHit = host.onPointHit,
             coveredTopPx = coveredTop,
             coveredBottomPx = coveredBottom,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().semantics {
+                contentDescription = "Drawing canvas: the ${ANCHOR_LABELS[app.activeAnchor]} anchor of " +
+                    "${app.currentGlyphName?.let(::displayGlyphName) ?: "this glyph"}, ${nodeCount(app)} nodes"
+            },
         )
         val target = app.editTarget(app.activeAnchor)
         val hint = when {
@@ -160,7 +167,7 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
             Toast(app)
         }
         if (hint != null) {
-            Text(hint, fontSize = 14.sp, color = Mono.inkDim, modifier = Modifier.align(Alignment.Center).padding(32.dp))
+            Text(hint, fontSize = Type.Body, color = Mono.inkDim, modifier = Modifier.align(Alignment.Center).padding(32.dp))
         }
         Column(
             Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset.dp, start = 12.dp, end = 12.dp)
@@ -241,7 +248,7 @@ private fun CompactEditor(
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = openBrowser)) {
-                Text(app.currentGlyphName?.let(::displayGlyphName) ?: "", fontSize = 38.sp, lineHeight = 40.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(app.currentGlyphName?.let(::displayGlyphName) ?: "", fontSize = Type.Name, lineHeight = 40.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Caps("${ANCHOR_LABELS[app.activeAnchor]} · ${nodeCount(app)} nodes")
             }
             SuggestionsButton(app, suggestions)
@@ -261,25 +268,25 @@ private fun CompactEditor(
         val dockScroll = rememberScrollState()
         Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp).floating(30)) {
             Row(
-                Modifier.fillMaxWidth().height(72.dp).horizontalScroll(dockScroll)
+                Modifier.fillMaxWidth().height(76.dp).horizontalScroll(dockScroll)
                     .padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-            ToolIcon(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.nodeTool == null && app.activeGhost == null && app.reduction == null, size = 44)
-            ToolIcon(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
-            ToolIcon(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
-            ToolIcon(MIcons.AddNode, "Add node", { nodeToolSelect(app, NodeTool.ADD) }, selected = app.nodeTool == NodeTool.ADD, size = 42, name = "Add")
-            ToolIcon(MIcons.SubtractNode, "Subtract node", { nodeToolSelect(app, NodeTool.SUBTRACT) }, selected = app.nodeTool == NodeTool.SUBTRACT, size = 42, name = "Subtract")
-            ToolIcon(MIcons.ConvertNode, "Convert node", { nodeToolSelect(app, NodeTool.CONVERT) }, selected = app.nodeTool == NodeTool.CONVERT, size = 42, name = "Convert")
-            NodeActions(app, size = 42)
-            IconAction(MIcons.ResetView, "Reset zoom and pan", { app.view.resetView() }, size = 42)
-            IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = 42)
-            IconAction(MIcons.Guides, "Guides", { sheet = Sheet.GUIDES }, size = 48)
-            ToolIcon(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = 48)
-            ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 48, enabled = app.activeGhost == null)
-            StatesMenuButton(app, size = 48)
-            IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 48, enabled = app.activeGhost == null)
+            ToolIcon(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.nodeTool == null && app.activeGhost == null && app.reduction == null, size = IconSize.LARGE)
+            ToolIcon(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = IconSize.LARGE)
+            ToolIcon(MIcons.Pen, "Pen", { penTool(app) }, selected = drawing, size = IconSize.LARGE, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+            ToolIcon(MIcons.AddNode, "Add node", { nodeToolSelect(app, NodeTool.ADD) }, selected = app.nodeTool == NodeTool.ADD, size = IconSize.LARGE, name = "Add")
+            ToolIcon(MIcons.SubtractNode, "Subtract node", { nodeToolSelect(app, NodeTool.SUBTRACT) }, selected = app.nodeTool == NodeTool.SUBTRACT, size = IconSize.LARGE, name = "Subtract")
+            ToolIcon(MIcons.ConvertNode, "Convert node", { nodeToolSelect(app, NodeTool.CONVERT) }, selected = app.nodeTool == NodeTool.CONVERT, size = IconSize.LARGE, name = "Convert")
+            NodeActions(app, size = IconSize.LARGE)
+            IconAction(MIcons.ResetView, "Reset zoom and pan", { app.view.resetView() }, size = IconSize.LARGE)
+            IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = IconSize.LARGE)
+            IconAction(MIcons.Guides, "Guides", { sheet = Sheet.GUIDES }, size = IconSize.LARGE)
+            ToolIcon(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = IconSize.LARGE)
+            ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = IconSize.LARGE, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
+            StatesMenuButton(app, size = IconSize.LARGE)
+            IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = IconSize.LARGE, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
             }
             Scrollbar(dockScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
         }
@@ -292,7 +299,7 @@ private fun CompactEditor(
             containerColor = Mono.panel,
             contentColor = Mono.ink,
             scrimColor = Color.Black.copy(alpha = 0.55f),
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         ) {
             Box(Modifier.fillMaxWidth()) {
                 val sheetScroll = rememberScrollState()
@@ -326,31 +333,31 @@ private fun WideEditor(
                     contentDescription = null,
                     modifier = Modifier.size(28.dp),
                 )
-                Text("Morphont", fontSize = 22.sp, fontStyle = FontStyle.Italic, color = Mono.ink)
+                Text("Morphont", fontSize = Type.Title, fontStyle = FontStyle.Italic, color = Mono.ink)
             }
             GlyphTabs(app, host, openBrowser, Modifier.weight(1f))
             ZoomControl(app.view)
-            IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = 40)
-            IconAction(MIcons.Undo, "Undo", { app.undo() }, size = 40)
-        IconAction(MIcons.Redo, "Redo", { app.redo() }, size = 40, enabled = app.canRedo)
-        EditorMenuButton(app, host, openBrowser, openFontOverview, goTo = null, size = 40)
-            MonoButton(onClick = openBrowser, selected = true) { Text("Glyphs & file", fontSize = 13.sp) }
+            IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = IconSize.MEDIUM)
+            IconAction(MIcons.Undo, "Undo", { app.undo() }, size = IconSize.MEDIUM)
+        IconAction(MIcons.Redo, "Redo", { app.redo() }, size = IconSize.MEDIUM, enabled = app.canRedo)
+        EditorMenuButton(app, host, openBrowser, openFontOverview, goTo = null, size = IconSize.MEDIUM)
+            MonoButton(onClick = openBrowser, selected = true) { Text("Glyphs and files") }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
         Row(Modifier.weight(1f).fillMaxWidth()) {
             Column(Modifier.width(60.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                ToolIcon(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.nodeTool == null && app.activeGhost == null && app.reduction == null, size = 42)
-                ToolIcon(MIcons.Move, "Move node (M)", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = 42)
-                ToolIcon(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = 42, enabled = !(app.activeGhost != null && app.ghostTransformMode))
-                ToolIcon(MIcons.AddNode, "Add node (A)", { nodeToolSelect(app, NodeTool.ADD) }, selected = app.nodeTool == NodeTool.ADD, size = 42, name = "Add")
-                ToolIcon(MIcons.SubtractNode, "Subtract node (D)", { nodeToolSelect(app, NodeTool.SUBTRACT) }, selected = app.nodeTool == NodeTool.SUBTRACT, size = 42, name = "Subtract")
-                ToolIcon(MIcons.ConvertNode, "Convert node (C)", { nodeToolSelect(app, NodeTool.CONVERT) }, selected = app.nodeTool == NodeTool.CONVERT, size = 42, name = "Convert")
-                NodeActions(app, size = 42)
-                ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = 42, enabled = app.activeGhost == null)
-                StatesMenuButton(app, size = 42)
-                IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = 42, enabled = app.activeGhost == null)
-                SuggestionsButton(app, suggestions, size = 42)
-                IconAction(MIcons.ResetView, "Reset zoom and pan (0)", { app.view.resetView() }, size = 42)
+                ToolIcon(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.nodeTool == null && app.activeGhost == null && app.reduction == null, size = IconSize.MEDIUM)
+                ToolIcon(MIcons.Move, "Move node (M)", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = IconSize.MEDIUM)
+                ToolIcon(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = IconSize.MEDIUM, enabled = !(app.activeGhost != null && app.ghostTransformMode))
+                ToolIcon(MIcons.AddNode, "Add node (A)", { nodeToolSelect(app, NodeTool.ADD) }, selected = app.nodeTool == NodeTool.ADD, size = IconSize.MEDIUM, name = "Add")
+                ToolIcon(MIcons.SubtractNode, "Subtract node (D)", { nodeToolSelect(app, NodeTool.SUBTRACT) }, selected = app.nodeTool == NodeTool.SUBTRACT, size = IconSize.MEDIUM, name = "Subtract")
+                ToolIcon(MIcons.ConvertNode, "Convert node (C)", { nodeToolSelect(app, NodeTool.CONVERT) }, selected = app.nodeTool == NodeTool.CONVERT, size = IconSize.MEDIUM, name = "Convert")
+                NodeActions(app, size = IconSize.MEDIUM)
+                ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = IconSize.MEDIUM, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
+                StatesMenuButton(app, size = IconSize.MEDIUM)
+                IconAction(MIcons.Duplicate, "Copy this outline to every anchor", { app.copyActiveToOthers() }, size = IconSize.MEDIUM, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
+                SuggestionsButton(app, suggestions, size = IconSize.MEDIUM)
+                IconAction(MIcons.ResetView, "Reset zoom and pan (0)", { app.view.resetView() }, size = IconSize.MEDIUM)
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
             Stage(app, host, 1f, Modifier.weight(1f).fillMaxHeight(), suggestions, bottomInset = 18) {
@@ -387,7 +394,7 @@ private fun GlyphTabs(app: AppState, host: EditorHost, openBrowser: () -> Unit, 
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         IconAction(MIcons.ChevronLeft, "Scroll glyphs left",
             { scope.launch { scroll.animateScrollTo((scroll.value - 280).coerceAtLeast(0)) } },
-            enabled = scroll.value > 0, size = 28)
+            enabled = scroll.value > 0, size = IconSize.SMALL)
         Box(Modifier.weight(1f)) {
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(scroll).padding(bottom = 9.dp),
@@ -399,10 +406,12 @@ private fun GlyphTabs(app: AppState, host: EditorHost, openBrowser: () -> Unit, 
                     Box(
                         Modifier.height(34.dp).widthIn(min = 38.dp).clip(RoundedCornerShape(10.dp))
                             .background(if (active) Mono.panelHeader else Color.Transparent)
-                            .clickable { host.openGlyph(name) }.padding(horizontal = 10.dp),
+                            .clickable(role = Role.Button, onClickLabel = "Open") { host.openGlyph(name) }
+                            .semantics { contentDescription = "Glyph $name"; selected = active }
+                            .padding(horizontal = 10.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(displayGlyphName(name), fontSize = 20.sp, color = if (active) Mono.ink else Mono.inkDim, maxLines = 1)
+                        Text(displayGlyphName(name), fontSize = Type.Title, color = if (active) Mono.ink else Mono.inkDim, maxLines = 1)
                     }
                 }
             }
@@ -410,7 +419,7 @@ private fun GlyphTabs(app: AppState, host: EditorHost, openBrowser: () -> Unit, 
         }
         IconAction(MIcons.ChevronRight, "Scroll glyphs right",
             { scope.launch { scroll.animateScrollTo((scroll.value + 280).coerceAtMost(scroll.maxValue)) } },
-            enabled = scroll.value < scroll.maxValue, size = 28)
+            enabled = scroll.value < scroll.maxValue, size = IconSize.SMALL)
         Box(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = openBrowser)
             .padding(horizontal = 10.dp, vertical = 8.dp)) { Caps("All ${names.size}") }
     }
@@ -437,9 +446,10 @@ private fun ZoomControl(view: ViewSettings) {
         focusManager.clearFocus()
     }
     if (editing) {
-        OutlinedTextField(
+        MonoField(
             value = input,
-            onValueChange = { input = it },
+            onChange = { input = it },
+            placeholder = "%",
             modifier = Modifier.width(92.dp).focusRequester(inputFocus).onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) false
                 else when (event.key) {
@@ -448,15 +458,13 @@ private fun ZoomControl(view: ViewSettings) {
                     else -> false
                 }
             },
-            singleLine = true,
-            suffix = { Text("%") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { commit() }),
+            keyboardType = KeyboardType.Decimal,
+            onDone = { commit() },
         )
     } else {
         Text(
             "${(view.zoom * 100f).toInt()}%",
-            color = Mono.ink, fontSize = 14.sp,
+            color = Mono.ink, fontSize = Type.Body,
             modifier = Modifier
                 .pointerInput(view) {
                     var original = 1f
@@ -470,67 +478,95 @@ private fun ZoomControl(view: ViewSettings) {
                         },
                     )
                 }
-                .clickable { input = (view.zoom * 100f).toInt().toString(); editing = true }
-                .padding(horizontal = 8.dp, vertical = 12.dp),
+                .clickable(role = Role.Button, onClickLabel = "Set zoom") { input = (view.zoom * 100f).toInt().toString(); editing = true }
+                .padding(horizontal = 8.dp, vertical = 14.dp),
         )
     }
 }
 
 // ----------------------------------------------------------------- welcome
 
-/** First run: a title, the three ways in, and any glyphs already saved. */
+/**
+ * An open project with no glyph open yet: the shared head, the ways in (import, open, or the sample), a new
+ * glyph by name, and any glyphs already saved.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WelcomeScreen(app: AppState, host: EditorHost, actions: List<Pair<String, () -> Unit>>, modifier: Modifier = Modifier) {
     var name by remember { mutableStateOf("") }
+    val trySample: (() -> Unit)? = host.createGlyphFrom?.let { make -> { make(sampleGlyphName(app.glyphNames), sampleGlyph()) } }
+    val ways = actions + listOfNotNull(trySample?.let { "Try the sample: an \"o\" already drawn on every anchor" to it })
     Box(modifier.fillMaxSize().background(Mono.ground).statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.Center) {
         val welcomeScroll = rememberScrollState()
         Column(
             Modifier.widthIn(max = 520.dp).fillMaxWidth().verticalScroll(welcomeScroll).padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            androidx.compose.foundation.Image(
-                painterResource(Res.drawable.morphont_logo),
-                contentDescription = null,
-                modifier = Modifier.size(112.dp),
-            )
-            Column {
-                Text("Morphont", fontSize = 64.sp, lineHeight = 66.sp, fontStyle = FontStyle.Italic, color = Mono.ink)
-                Caps("Three drawings per axis. The rest is arithmetic.")
-            }
-            Column {
-                for ((label, action) in actions) {
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = action).padding(vertical = 14.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(label, fontSize = 18.sp, color = Mono.ink, modifier = Modifier.weight(1f))
-                        Icon(MIcons.Chevron, null, tint = Mono.inkDim, modifier = Modifier.size(16.dp).rotate(-90f))
-                    }
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MonoField(name, { name = it }, "New glyph", Modifier.weight(1f))
-                MonoButton(onClick = { if (host.createGlyph(name)) name = "" }, selected = true, enabled = name.isNotBlank()) { Text("Create") }
-            }
+            MorphontHero(trySample)
+            StartList(ways)
+            NewGlyphRow(name, { name = it }) { if (host.createGlyph(name)) name = "" }
             if (app.glyphNames.isNotEmpty()) {
-                Caps("Saved")
+                Caps("Saved glyphs")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (n in app.glyphNames) {
-                        Box(
-                            Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Mono.panel).border(1.dp, Mono.border, RoundedCornerShape(12.dp))
-                                .clickable { host.openGlyph(n) },
-                            contentAlignment = Alignment.Center,
-                        ) { val label = displayGlyphName(n)
-                            Text(label, fontSize = if (label.length <= 2) 26.sp else 12.sp, color = Mono.ink, maxLines = 1)
-                        }
-                    }
+                    for (n in app.glyphNames) GlyphTile(n, onClick = { host.openGlyph(n) })
                 }
             }
-            if (app.status.isNotEmpty()) Text(app.status, fontSize = 13.sp, color = if (app.statusIsError) Mono.error else Mono.inkDim)
+            if (app.status.isNotEmpty()) Text(app.status, fontSize = Type.Body, color = if (app.statusIsError) Mono.error else Mono.inkDim)
             Spacer(Modifier.height(8.dp))
         }
         Scrollbar(welcomeScroll, true, Modifier.align(Alignment.CenterEnd).width(8.dp).fillMaxHeight())
+    }
+}
+
+/** The start screens' list of ways in: one full-width row each, label and chevron, hairline between. */
+@Composable
+fun StartList(items: List<Pair<String, () -> Unit>>) {
+    Column {
+        for ((label, action) in items) {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button, onClick = action)
+                    .padding(vertical = 14.dp, horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(label, fontSize = Type.Row, color = Mono.ink, modifier = Modifier.weight(1f))
+                Icon(MIcons.Chevron, null, tint = Mono.inkDim, modifier = Modifier.size(16.dp).rotate(-90f))
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
+        }
+    }
+}
+
+/** Name a new glyph: the field, Create, and what a name can be. */
+@Composable
+fun NewGlyphRow(name: String, onName: (String) -> Unit, onCreate: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MonoField(name, onName, "New glyph", Modifier.weight(1f), onDone = { if (name.isNotBlank()) onCreate() })
+            MonoButton(onClick = onCreate, selected = true, enabled = name.isNotBlank()) { Text("Create") }
+        }
+        Text(GLYPH_NAME_HINT, fontSize = Type.Small, color = Mono.inkDim)
+    }
+}
+
+/** How to name a glyph so the exported font maps it to a character. */
+const val GLYPH_NAME_HINT = "Name it by its character — A, é, 7 — or by its code point, like uni00E9."
+
+/**
+ * One glyph as a square tile, the same everywhere a glyph is picked: its character large (or its name small),
+ * filled with ink when it is the open one.
+ */
+@Composable
+fun GlyphTile(name: String, current: Boolean = false, onClickLabel: String = "Open", onClick: () -> Unit) {
+    Box(
+        Modifier.size(56.dp).clip(RoundedCornerShape(12.dp))
+            .background(if (current) Mono.ink else Mono.panelHeader)
+            .border(1.dp, if (current) Mono.ink else Mono.border, RoundedCornerShape(12.dp))
+            .clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick)
+            .semantics { contentDescription = "Glyph $name"; selected = current },
+        contentAlignment = Alignment.Center,
+    ) {
+        val label = displayGlyphName(name)
+        Text(label, fontSize = if (label.length <= 2) Type.TileGlyph else Type.Small, color = if (current) Mono.onPrimary else Mono.ink, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.dp))
     }
 }

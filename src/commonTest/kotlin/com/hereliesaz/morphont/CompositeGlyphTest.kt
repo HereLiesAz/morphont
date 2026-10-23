@@ -39,7 +39,7 @@ class CompositeGlyphTest {
         for ((i, o) in listOf(0, 0, 20, 40, 68).withIndex()) u32(loca + i * 4, o)
         // A: (100,0) (100,100) (0,100), all on-curve.
         u16(g, 1); u16(g + 10, 2); u16(g + 12, 0)
-        b[g + 14] = 0x13; b[g + 15] = 0x35; b[g + 16] = 0x23
+        b[g + 14] = 0x33; b[g + 15] = 0x35; b[g + 16] = 0x23
         b[g + 17] = 100; b[g + 18] = 100; b[g + 19] = 100
         // B: composite of A, words + xy + scale (0.5 = 0x2000), offset (10, 20).
         val gb = g + 20

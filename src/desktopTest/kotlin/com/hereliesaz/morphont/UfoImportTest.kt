@@ -125,4 +125,53 @@ class UfoImportTest {
             assertEquals(2048f, result.glyphs.getValue("A").metrics!!.unitsPerEm)
         } finally { dir.toFile().deleteRecursively() }
     }
+
+    private fun ufo(root: Path, glyphs: Map<String, String>): Path {
+        val ufo = Files.createDirectory(root.resolve("hostile.ufo"))
+        val entries = glyphs.keys.joinToString("") { "<key>$it</key><string>$it.glif</string>" }
+        val all = mapOf("metainfo.plist" to meta, "fontinfo.plist" to info,
+            "glyphs/contents.plist" to "$plistHeader<dict>$entries</dict></plist>") +
+            glyphs.map { (name, body) -> "glyphs/$name.glif" to body }
+        for ((path, content) in all) {
+            val target = ufo.resolve(path)
+            Files.createDirectories(target.parent)
+            Files.writeString(target, content)
+        }
+        return ufo
+    }
+
+    @Test
+    fun nonFiniteCoordinatesSkipTheGlyphInsteadOfBreakingTheSave() {
+        val temp = Files.createTempDirectory("morphont-ufo-")
+        try {
+            val bad = """<?xml version="1.0"?><glyph name="bad" format="2"><advance width="500"/><outline><contour>
+<point x="NaN" y="0" type="line"/><point x="100" y="0" type="line"/><point x="100" y="Infinity" type="line"/>
+</contour></outline></glyph>"""
+            val result = importUfoFile(ufo(temp, mapOf("A" to a, "bad" to bad)).toFile())
+            assertEquals(setOf("A"), result.glyphs.keys)
+            assertTrue(result.skipped.single().startsWith("bad:"))
+            // What was imported encodes: nothing non-finite reached the project.
+            result.glyphs.values.forEach { ProjectCodec.encodeGlyph(it) }
+        } finally { temp.toFile().deleteRecursively() }
+    }
+
+    @Test
+    fun chainedComponentsCannotMultiplyIntoMillionsOfContours() {
+        val temp = Files.createTempDirectory("morphont-ufo-")
+        try {
+            // g1 is two copies of A, g2 two of g1, ... g20 would hold 2^20 contours.
+            val glyphs = linkedMapOf("A" to a)
+            var previous = "A"
+            for (i in 1..20) {
+                val name = "g$i"
+                glyphs[name] = """<?xml version="1.0"?><glyph name="$name" format="2"><advance width="500"/><outline>
+<component base="$previous"/><component base="$previous" xOffset="10"/></outline></glyph>"""
+                previous = name
+            }
+            val result = importUfoFile(ufo(temp, glyphs).toFile())
+            assertTrue("A" in result.glyphs)
+            assertTrue("g20" !in result.glyphs)
+            assertTrue(result.skipped.any { it.startsWith("g20:") && "Too many contours" in it })
+        } finally { temp.toFile().deleteRecursively() }
+    }
 }

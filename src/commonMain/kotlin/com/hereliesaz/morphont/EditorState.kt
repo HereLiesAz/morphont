@@ -33,6 +33,11 @@ class AnchorState(initial: GlyphCorner) {
     var onHistoryPush: (() -> Unit)? = null
     /** AppState registers this to forget the oldest ([oldest] = true) or newest undo action when history drops an entry. */
     var onHistoryDrop: ((oldest: Boolean) -> Unit)? = null
+    /** AppState registers this to forget this anchor's undo action [fromNewest] places back (0 = its newest). */
+    var onHistoryDropAt: ((fromNewest: Int) -> Unit)? = null
+
+    /** Where in [history] the snapshot [startNewContour] pushed sits, while that contour is open. */
+    private var contourStartIndex: Int? = null
 
     fun replaceGlyph(new: GlyphCorner) {
         glyph = new
@@ -44,6 +49,7 @@ class AnchorState(initial: GlyphCorner) {
         onHistoryPush?.invoke()
         if (history.size > 80) {
             history.removeAt(0)
+            contourStartIndex = contourStartIndex?.minus(1)?.takeIf { it >= 1 }
             onHistoryDrop?.invoke(true)
         }
     }
@@ -55,6 +61,7 @@ class AnchorState(initial: GlyphCorner) {
     fun undo() {
         if (history.size <= 1) return
         glyph = history.removeAt(history.lastIndex).deepCopy()
+        if ((contourStartIndex ?: -1) > history.lastIndex) contourStartIndex = null
         selection = emptySet()
         // Keep drawing if the restored state still has the active contour; otherwise leave drawing mode.
         if ((drawingContourIndex ?: 0) >= glyph.contours.size) drawingContourIndex = null
@@ -72,6 +79,7 @@ class AnchorState(initial: GlyphCorner) {
         glyph = new
         selection = emptySet()
         drawingContourIndex = null
+        contourStartIndex = null
         history.clear()
         history.add(glyph.deepCopy())
     }
@@ -88,6 +96,7 @@ class AnchorState(initial: GlyphCorner) {
             return
         }
         pushHistory()
+        contourStartIndex = history.lastIndex
         val updated = glyph.deepCopy()
         updated.contours.add(ContourData())
         drawingContourIndex = updated.contours.size - 1
@@ -103,12 +112,23 @@ class AnchorState(initial: GlyphCorner) {
         if (contour != null && contour.points.isEmpty()) {
             updated.contours.removeAt(ci)
             glyph = updated
-            // Starting and cancelling an empty contour is not a new edit.
-            if (history.size > 1) {
-                history.removeAt(history.lastIndex)
-                onHistoryDrop?.invoke(false)
+            // Starting and cancelling an empty contour is not a new edit: drop the entry startNewContour
+            // pushed, wherever it now sits, and take the empty contour out of every snapshot taken since,
+            // so Undo neither resurrects it nor needs an extra step to get past it.
+            val start = contourStartIndex
+            if (start != null && start in 1..history.lastIndex) {
+                for (i in start + 1..history.lastIndex) {
+                    val snap = history[i]
+                    if (ci < snap.contours.size && snap.contours[ci].points.isEmpty()) {
+                        history[i] = snap.deepCopy().also { it.contours.removeAt(ci) }
+                    }
+                }
+                val fromNewest = history.lastIndex - start
+                history.removeAt(start)
+                onHistoryDropAt?.invoke(fromNewest)
             }
         }
+        contourStartIndex = null
         drawingContourIndex = null
         selection = emptySet()
     }
@@ -317,17 +337,18 @@ class GhostLayer(
     /**
      * Folds the placement into the owned contours (static ghosts only) so nodes edit exactly what's drawn.
      * A ghost set [beside] the glyph is drawn shifted by [advance], so that shift is baked in too.
+     * Touches neither history: the caller records the whole bake as one undo step that restores the
+     * placement and geometry, after which the older entries apply to the state they were made on.
      */
     fun bake(advance: Float = 0f) {
         if (isLinked || (matrix == IDENTITY_MATRIX && !beside)) return
         val placed = if (beside) compose(translation(advance, 0f), matrix) else matrix
-        state.replaceWithHistory(GlyphCorner(0f, applyAffine(state.glyph.contours, placed).map { it.deepCopy() }.toMutableList()))
+        state.replaceGlyph(GlyphCorner(0f, applyAffine(state.glyph.contours, placed).map { it.deepCopy() }.toMutableList()))
         matrix = IDENTITY_MATRIX
         beside = false
-        matrixHistory.clear()
     }
 
-    /** Turns a linked ghost into a static one holding [contours] (already placed), e.g. before node editing. */
+    /** Turns a linked ghost into a static one holding [contours] (already placed), e.g. before node editing. Like [bake], history is the caller's. */
     fun detach(contours: List<ContourData>) {
         sourceGlyph = null
         referenceCorners = emptyMap()
@@ -335,8 +356,27 @@ class GhostLayer(
         axisOverrides.clear()
         beside = false
         matrix = IDENTITY_MATRIX
-        matrixHistory.clear()
-        state.loadFresh(GlyphCorner(0f, contours.map { it.deepCopy() }.toMutableList()))
+        state.replaceGlyph(GlyphCorner(0f, contours.map { it.deepCopy() }.toMutableList()))
+    }
+
+    /**
+     * Takes on [d]'s look, placement and geometry in place. Redo uses this rather than rebuilding the
+     * layer, so the undo entries already recorded against this ghost (and its private histories) keep
+     * pointing at the object that is on screen.
+     */
+    fun applyData(d: GhostData) {
+        label = d.label
+        visible = d.visible
+        sourceGlyph = d.sourceGlyph
+        matrix = d.matrix.takeIf { it.size == 6 } ?: IDENTITY_MATRIX
+        beside = d.beside
+        axisOverrides.clear(); axisOverrides.putAll(d.axisOverrides)
+        referenceCorners = d.referenceCorners
+        supportedAxes = d.supportedAxes
+        solid = d.solid
+        color = d.color
+        val contours = d.contours.map { it.deepCopy() }.toMutableList()
+        if (state.glyph.contours != contours) state.replaceGlyph(GlyphCorner(0f, contours))
     }
 
     fun toData() = GhostData(
@@ -396,6 +436,11 @@ class AppState {
     /** [owners] are the objects whose private history holds one snapshot for this entry (several for a grouped edit). */
     private class UndoEntry(val owners: MutableList<Any>, val action: () -> Unit)
     private val undoActions = mutableListOf<UndoEntry>()
+
+    private companion object {
+        /** As long as the undo history ([undoActions] keeps 150): no older retired ghost can be asked for. */
+        const val MAX_RETIRED_GHOSTS = 150
+    }
     private var recording = true
 
     /** Everything Undo and Redo move between: the outlines, guides, metrics and ghosts at one moment. */
@@ -404,6 +449,8 @@ class AppState {
         val guides: List<Guide>,
         val metrics: FontMetrics,
         val ghosts: List<GhostData>,
+        /** [ghosts]' layer ids, so redo can update the same layers instead of replacing them. */
+        val ghostIds: List<Int>,
     )
 
     /** States Undo stepped back from, newest last; Redo steps forward to them. Cleared by any new edit. */
@@ -420,6 +467,7 @@ class AppState {
         anchors.values.forEach { state ->
             state.onHistoryPush = { recordUndo(state) { state.undo() } }
             state.onHistoryDrop = { oldest -> dropUndo(state, oldest) }
+            state.onHistoryDropAt = { n -> dropUndoAt(state, n) }
         }
     }
 
@@ -439,6 +487,14 @@ class AppState {
     }
 
     /** Forgets the oldest or newest undo action owned by [owner] when its own history dropped the matching entry. */
+    /** Forgets the undo action owned by [owner] that sits [fromNewest] places back among its own (0 = newest). */
+    private fun dropUndoAt(owner: Any, fromNewest: Int) {
+        val owned = undoActions.indices.filter { i -> undoActions[i].owners.any { it === owner } }
+        val i = owned.getOrNull(owned.size - 1 - fromNewest) ?: return
+        undoActions[i].owners.removeAll { it === owner }
+        if (undoActions[i].owners.isEmpty()) undoActions.removeAt(i)
+    }
+
     private fun dropUndo(owner: Any, oldest: Boolean) {
         val i = if (oldest) undoActions.indexOfFirst { e -> e.owners.any { it === owner } } else undoActions.indexOfLast { e -> e.owners.any { it === owner } }
         if (i < 0) return
@@ -450,6 +506,7 @@ class AppState {
     private fun attachGhost(g: GhostLayer) {
         g.state.onHistoryPush = { recordUndo(g.state) { g.state.undo() } }
         g.state.onHistoryDrop = { oldest -> dropUndo(g.state, oldest) }
+        g.state.onHistoryDropAt = { n -> dropUndoAt(g.state, n) }
         g.onMatrixHistoryPush = { recordUndo(g) { g.undoMatrix() } }
         g.onMatrixDrop = { dropUndo(g, true) }
     }
@@ -713,6 +770,7 @@ class AppState {
         guides = guides.toList(),
         metrics = metrics,
         ghosts = ghosts.map { it.toData() },
+        ghostIds = ghosts.map { it.id },
     )
 
     private fun ghostFromData(it: GhostData) = GhostLayer(
@@ -721,15 +779,28 @@ class AppState {
         it.axisOverrides, it.referenceCorners, it.supportedAxes, it.solid, it.color,
     )
 
-    private fun setGhosts(list: List<GhostData>) {
+    /**
+     * Ghost layers taken off the list by [setGhosts], kept by id: older undo entries still point at them,
+     * so bringing one back must bring back that same object, not a lookalike. Oldest first, and capped at
+     * the undo history's own length ([MAX_RETIRED_GHOSTS]): a layer retired longer ago than that has no
+     * history entry left that could bring it back, so remove/undo/redo cycles can't grow memory forever.
+     */
+    private val retiredGhosts = LinkedHashMap<Int, GhostLayer>()
+
+    /** Makes the ghost list [list], reusing the layers -- shown or retired -- whose ids are in [ids] (see [GhostLayer.applyData]). */
+    private fun setGhosts(list: List<GhostData>, ids: List<Int>) {
         activeGhostId = null
-        ghosts.clear()
-        for (d in list) {
-            val layer = ghostFromData(d)
-            attachGhost(layer)
-            ghosts.add(layer)
-            d.sourceGlyph?.let { src -> cacheLinked(src) }
+        val known = retiredGhosts + ghosts.associateBy { it.id }
+        val next = list.mapIndexed { i, d ->
+            ids.getOrNull(i)?.let { known[it] }?.also { it.applyData(d) }
+                ?: ghostFromData(d).also { attachGhost(it) }
         }
+        for (g in ghosts) if (next.none { it === g }) { retiredGhosts.remove(g.id); retiredGhosts[g.id] = g }
+        for (g in next) retiredGhosts.remove(g.id)
+        while (retiredGhosts.size > MAX_RETIRED_GHOSTS) retiredGhosts.remove(retiredGhosts.keys.first())
+        ghosts.clear()
+        ghosts.addAll(next)
+        for (d in list) d.sourceGlyph?.let { src -> cacheLinked(src) }
     }
 
     /**
@@ -764,10 +835,11 @@ class AppState {
                 recordUndo { metrics = before }
                 metrics = target.metrics
             }
-            if (target.ghosts != now.ghosts) {
+            if (target.ghosts != now.ghosts || target.ghostIds != now.ghostIds) {
                 val before = now.ghosts
-                recordUndo { setGhosts(before) }
-                setGhosts(target.ghosts)
+                val beforeIds = now.ghostIds
+                recordUndo { setGhosts(before, beforeIds) }
+                setGhosts(target.ghosts, target.ghostIds)
             }
         } finally { redoing = false }
     }
@@ -785,7 +857,7 @@ class AppState {
                 g.axisOverrides.putAll(original.axisOverrides)
                 g.beside = original.beside
                 g.matrix = original.matrix
-                g.state.loadFresh(GlyphCorner(0f, original.contours.map { it.deepCopy() }.toMutableList()))
+                g.state.replaceGlyph(GlyphCorner(0f, original.contours.map { it.deepCopy() }.toMutableList()))
                 ghostTransformMode = true
                 activeGhostId = g.id
             }
@@ -856,6 +928,7 @@ class AppState {
         }
         metrics = glyph.metrics ?: FontMetrics()
         undoActions.clear()
+        retiredGhosts.clear()
         redoStack.clear()
         activeGhostId = null
         reduction = null
@@ -878,6 +951,7 @@ class AppState {
         reduction = null
         metrics = FontMetrics()
         undoActions.clear()
+        retiredGhosts.clear()
         redoStack.clear()
     }
 
@@ -890,6 +964,23 @@ class AppState {
     )
 
     /** Copies the active anchor's outline into every other anchor, seeding matching topology. */
+    /**
+     * Replaces each of [names]' outlines with [transform] of it as one undo step, so a structural edit
+     * that must hit several anchors together is also undone together (never leaving them mismatched).
+     */
+    fun replaceAnchorsWithHistory(names: List<String>, transform: (GlyphCorner) -> GlyphCorner) {
+        val targets = names.map { anchors.getValue(it) }
+        if (targets.size == 1) {
+            targets[0].replaceWithHistory(transform(targets[0].glyph))
+            return
+        }
+        groupUndo(
+            owners = targets,
+            block = { targets.forEach { it.replaceWithHistory(transform(it.glyph)) } },
+            undo = { targets.forEach { it.undo() } },
+        )
+    }
+
     fun copyActiveToOthers() {
         if (activeGhost != null || reduction != null) return // never touch the glyph while a ghost is being edited or a Simplify preview is open
         val src = anchors.getValue(activeAnchor)
@@ -900,7 +991,7 @@ class AppState {
             block = { targets.forEach { it.replaceWithHistory(src.glyph.deepCopy()) } },
             undo = { targets.forEach { it.undo() } },
         )
-        setStatus("Copied ${ANCHOR_LABELS[activeAnchor]}'s outline to the other $count anchor(s) -- reshape each toward its extreme without adding or removing points.")
+        setStatus("Copied ${ANCHOR_LABELS[activeAnchor]}'s outline to the other $count anchor(s) — reshape each toward its extreme without adding or removing points.")
     }
 
     // ------------------------------------------------------------ clipboard
@@ -1020,12 +1111,12 @@ class AppState {
     fun resetRegularToNaturalPath() {
         if (activeGhost != null || reduction != null) return
         val natural = naturalRegular()
-        if (natural == null) { setStatus("The three states must match point for point first (Match nodes to the fewest).", true); return }
+        if (natural == null) { setStatus("The three anchors must have matching nodes first — use \"Match the three anchors\".", true); return }
         anchors.getValue("regular").replaceWithHistory(natural)
         setStatus("Regular reset to halfway between ${ANCHOR_LABELS[axisTriple()[0]]} and ${ANCHOR_LABELS[axisTriple()[2]]}. Undo puts it back.")
     }
 
-    /** The three states of the axis being worked on: its low extreme, Regular, its high extreme. */
+    /** The three anchors of the axis being worked on: its low extreme, Regular, its high extreme. */
     fun axisTriple(): List<String> {
         val axis = Axis.ALL.firstOrNull { it.lo == activeAnchor || it.hi == activeAnchor } ?: selectedAxis
         return listOf(axis.lo, "regular", axis.hi)
@@ -1034,9 +1125,16 @@ class AppState {
     /** The drawn states of [axisTriple]. */
     private fun drawnTriple() = axisTriple().filter { anchors.getValue(it).glyph.contours.isNotEmpty() }
 
-    /** True when the drawn states of [axisTriple] don't share one structure (different node or contour counts), so [matchToFewestNodes] has work to do. */
+    /**
+     * Every drawn anchor, on every axis. Regular is the middle of all of them, so matching can't stop at
+     * one axis: rebuilding Regular for the weight axis alone would leave it out of step with every other
+     * axis's extremes, and the whole glyph would stop interpolating.
+     */
+    private fun drawnStates() = ANCHORS.filter { anchors.getValue(it).glyph.contours.isNotEmpty() }
+
+    /** True when the drawn anchors don't share one structure (different node or contour counts), so [matchToFewestNodes] has work to do. */
     fun statesDiffer(): Boolean {
-        val names = drawnTriple()
+        val names = drawnStates()
         return names.size >= 2 && compatibilityIssue(cornersSnapshot(), names) != null
     }
 
@@ -1045,13 +1143,13 @@ class AppState {
         drawnTriple().joinToString(" · ") { n -> "${ANCHOR_LABELS[n] ?: n} ${anchors.getValue(n).glyph.contours.sumOf { c -> c.points.count { it.onCurve } }}" }
 
     /**
-     * Rebuilds the states of [axisTriple] on one shared structure (see [matchToFewest]) as one undo step: with only
+     * Rebuilds every drawn anchor on one shared structure (see [matchToFewest]) as one undo step: with only
      * as many nodes as the sparsest has, or, with [most], with as many as the densest has (nodes added to the
      * others). Says why when it can't.
      */
     private fun matchStates(most: Boolean) {
         if (activeGhost != null || reduction != null) return
-        val names = drawnTriple()
+        val names = drawnStates()
         val before = names.associateWith { anchors.getValue(it).glyph }
         val out = matchToFewest(before, mostNodes = most)
         val glyphs = out.glyphs ?: run { setStatus(out.problem ?: "Couldn't match them.", true); return }
@@ -1063,7 +1161,8 @@ class AppState {
             undo = { targets.forEach { it.undo() } },
         )
         val lost = out.dropped.entries.joinToString(", ") { "${ANCHOR_LABELS[it.key] ?: it.key} -${it.value} contour(s)" }
-        setStatus((if (most) "Added the missing nodes: " else "Matched to the fewest nodes: ") + nodeCountSummary() + (if (lost.isEmpty()) "" else ". Dropped: $lost") + ". Undo puts it back.")
+        val across = if (names.size > 3) " (all ${names.size} drawn anchors)" else ""
+        setStatus((if (most) "Added the missing nodes$across: " else "Matched to the fewest nodes$across: ") + nodeCountSummary() + (if (lost.isEmpty()) "" else ". Dropped: $lost") + ". Undo puts it back.")
     }
 
     fun matchToFewestNodes() = matchStates(most = false)

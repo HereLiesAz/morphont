@@ -5,6 +5,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -85,6 +91,12 @@ class EditorHost(
     val fontStore: FontStoreHost? = null,
     /** Looks for a newer Morphont on the channel this copy came from; null where the app updates itself. */
     val updates: UpdateChecker? = null,
+    /** Like [createGlyph] but starting from a drawn glyph (the sample); null where the shell can't. */
+    val createGlyphFrom: ((String, Glyph) -> Boolean)? = null,
+    /** The open project's glyph files, for renaming and deleting glyphs; null where the shell can't. */
+    val glyphFiles: GlyphFiles? = null,
+    /** File actions (by label) that ask first, with the question: those that overwrite without undo. */
+    val confirmBefore: Map<String, String> = emptyMap(),
 )
 
 // ------------------------------------------------------------ small parts
@@ -100,14 +112,29 @@ fun MonoMenu(expanded: Boolean, onDismiss: () -> Unit, content: @Composable () -
     ) { content() }
 }
 
+/**
+ * One menu entry. [detail] is a second, dimmer line saying what it does -- or, when the item is disabled, why
+ * (so a greyed-out item never looks merely broken).
+ */
 @Composable
-fun MonoMenuItem(text: String, onClick: () -> Unit, checked: Boolean? = null, enabled: Boolean = true) {
+fun MonoMenuItem(text: String, onClick: () -> Unit, checked: Boolean? = null, enabled: Boolean = true, detail: String? = null) {
     DropdownMenuItem(
-        text = { Text(text, fontSize = 14.sp, color = if (enabled) Mono.ink else Mono.inkFaint) },
+        text = {
+            Column {
+                Text(text, fontSize = Type.Body, color = if (enabled) Mono.ink else Mono.inkFaint)
+                if (detail != null) Text(detail, fontSize = Type.Small, color = Mono.inkDim, modifier = Modifier.widthIn(max = 280.dp))
+            }
+        },
         trailingIcon = if (checked == true) ({ Icon(MIcons.Check, null, tint = Mono.ink, modifier = Modifier.size(16.dp)) }) else null,
         enabled = enabled,
         onClick = onClick,
     )
+}
+
+/** A menu's section label, set like every other section head ([Caps]), not as a disabled item. */
+@Composable
+fun MonoMenuHeader(title: String) {
+    Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 4.dp)) { Caps(title) }
 }
 
 /**
@@ -122,22 +149,24 @@ fun EditorMenuButton(
     openBrowser: () -> Unit,
     openFontOverview: () -> Unit,
     goTo: ((String) -> Unit)?,
-    size: Int = 44,
+    size: Int = IconSize.LARGE,
 ) {
     var open by remember { mutableStateOf(false) }
     var projectsOpen by remember { mutableStateOf(false) }
     var storeOpen by remember { mutableStateOf(false) }
     var ghostFont by remember { mutableStateOf<String?>(null) }
     var updatesOpen by remember { mutableStateOf(false) }
+    var howOpen by remember { mutableStateOf(false) }
+    var keysOpen by remember { mutableStateOf(false) }
     val v = app.view
-    @Composable fun section(title: String) = MonoMenuItem(title.uppercase(), {}, enabled = false)
+    @Composable fun section(title: String) = MonoMenuHeader(title)
     Box {
         IconAction(MIcons.More, "Menu", { open = true }, size = size)
         MonoMenu(open, { open = false }) {
             section("Go to")
             MonoMenuItem("Glyphs and files…", { open = false; openBrowser() })
             if (host.projects != null) MonoMenuItem("Projects…", { open = false; projectsOpen = true })
-            MonoMenuItem("Font overview", { open = false; openFontOverview() })
+            MonoMenuItem("Font overview…", { open = false; openFontOverview() })
             if (host.fontStore != null) MonoMenuItem("Font store…", { open = false; storeOpen = true })
             if (goTo != null) {
                 MonoMenuItem("Preview", { open = false; goTo("preview") })
@@ -159,10 +188,10 @@ fun EditorMenuButton(
             MonoMenuItem("Grid", { v.showGrid = !v.showGrid }, checked = v.showGrid)
             section("Grid step")
             for (step in GRID_STEPS) MonoMenuItem("${step.toInt()} units", { v.gridStep = step }, checked = v.gridStep == step)
-            if (host.updates != null) {
-                section("Morphont")
-                MonoMenuItem("Check for updates…", { open = false; updatesOpen = true })
-            }
+            section("Help")
+            MonoMenuItem("How Morphont works…", { open = false; howOpen = true })
+            MonoMenuItem("Keys and gestures…", { open = false; keysOpen = true })
+            if (host.updates != null) MonoMenuItem("Check for updates…", { open = false; updatesOpen = true })
         }
     }
     host.projects?.let { actions ->
@@ -173,6 +202,8 @@ fun EditorMenuButton(
     }
     ghostFont?.let { name -> FontCharacterPicker(app, host, initialFont = name) { ghostFont = null } }
     host.updates?.let { checker -> if (updatesOpen) UpdateCheckDialog(checker) { updatesOpen = false } }
+    if (howOpen) HowItWorksDialog({ howOpen = false })
+    if (keysOpen) ShortcutsDialog { keysOpen = false }
 }
 
 /**
@@ -180,15 +211,28 @@ fun EditorMenuButton(
  * the fewest nodes, add the nodes the sparser ones are missing, or put Regular back halfway between the extremes.
  */
 @Composable
-fun StatesMenuButton(app: AppState, size: Int = 42) {
+fun StatesMenuButton(app: AppState, size: Int = IconSize.LARGE) {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconAction(MIcons.States, "Match the three states", { open = true }, size = size, enabled = app.activeGhost == null)
+        IconAction(MIcons.States, "Match the three anchors", { open = true }, size = size, enabled = app.activeGhost == null,
+            disabledReason = "finish editing the ghost first")
         MonoMenu(open, { open = false }) {
-            MonoMenuItem(app.nodeCountSummary().ifEmpty { "Nothing drawn yet" }, {}, enabled = false)
-            MonoMenuItem("Match nodes to the fewest", { open = false; app.matchToFewestNodes() }, enabled = app.statesDiffer())
-            MonoMenuItem("Add missing nodes (match the most)", { open = false; app.addMissingNodes() }, enabled = app.statesDiffer())
-            MonoMenuItem("Reset Regular to the middle", { open = false; app.resetRegularToNaturalPath() }, enabled = app.regularCanReset())
+            val summary = app.nodeCountSummary()
+            MonoMenuItem(summary.ifEmpty { "Nothing drawn yet" }, {}, enabled = false,
+                detail = if (summary.isEmpty()) "Draw Regular first, then copy it to the other anchors." else "Nodes per anchor. They must agree before the Preview can blend them.")
+            val differ = app.statesDiffer()
+            val same = "They already agree."
+            MonoMenuItem("Match nodes to the fewest", { open = false; app.matchToFewestNodes() }, enabled = differ,
+                detail = if (differ) "Cuts the denser anchors down to the fewest nodes." else same)
+            MonoMenuItem("Add missing nodes (match the most)", { open = false; app.addMissingNodes() }, enabled = differ,
+                detail = if (differ) "Adds nodes to the sparser anchors, on their own outlines." else same)
+            val canReset = app.regularCanReset()
+            MonoMenuItem("Reset Regular to the middle", { open = false; app.resetRegularToNaturalPath() }, enabled = canReset,
+                detail = when {
+                    canReset -> "Puts Regular halfway between the two extremes. Undo puts it back."
+                    differ -> "Match the nodes first."
+                    else -> "Regular is already halfway."
+                })
         }
     }
 }
@@ -202,11 +246,11 @@ fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
             .clip(RoundedCornerShape(16.dp))
             .background(if (on) Mono.ink else Color.Transparent)
             .border(1.dp, if (on) Mono.ink else Mono.border, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
+            .toggleable(value = on, role = Role.Switch, onValueChange = { onClick() })
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, fontSize = 13.sp, color = if (on) Mono.onPrimary else Mono.inkDim)
+        Text(label, fontSize = Type.Body, color = if (on) Mono.onPrimary else Mono.inkDim)
     }
 }
 
@@ -219,10 +263,10 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
                 Modifier
                     .height(28.dp)
                     .background(if (i == selected) Mono.ink else Color.Transparent)
-                    .clickable { onSelect(i) }
+                    .selectable(selected = i == selected, role = Role.Tab, onClick = { onSelect(i) })
                     .padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
-            ) { Text(label, fontSize = 12.sp, color = if (i == selected) Mono.onPrimary else Mono.inkDim) }
+            ) { Text(label, fontSize = Type.Small, color = if (i == selected) Mono.onPrimary else Mono.inkDim) }
         }
     }
 }
@@ -243,24 +287,31 @@ fun SectionHead(title: String, trailing: @Composable () -> Unit = {}) {
  * so the layout never shifts and there is no separate bar to find.
  */
 @Composable
-fun NodeActions(app: AppState, size: Int = 42) {
+fun NodeActions(app: AppState, size: Int = IconSize.LARGE) {
     val t = app.commandTarget
     // Nodes can't be edited while a Simplify preview is open or a ghost is being placed, or mid-contour.
     val free = !app.nodeEditsLocked && t.drawingContourIndex == null
     val has = free && t.selection.isNotEmpty()
     val several = free && t.selection.size >= 2
-    IconAction(MIcons.Copy, "Copy", { app.copySelection() }, size = size, enabled = has)
-    IconAction(MIcons.Cut, "Cut", { app.cutSelection() }, size = size, enabled = has)
-    IconAction(MIcons.Paste, "Paste", { app.paste() }, size = size, enabled = free && app.clipboard != null)
-    IconAction(MIcons.Delete, "Delete", { app.trashSelection() }, size = size, enabled = has)
+    val whyNot = when {
+        app.nodeEditsLocked -> "unavailable while Simplify or ghost Place is open"
+        t.drawingContourIndex != null -> "finish the contour first"
+        else -> null
+    }
+    val needsNode = whyNot ?: "select a node first"
+    val needsTwo = whyNot ?: "select two or more nodes"
+    IconAction(MIcons.Copy, "Copy", { app.copySelection() }, size = size, enabled = has, disabledReason = needsNode)
+    IconAction(MIcons.Cut, "Cut", { app.cutSelection() }, size = size, enabled = has, disabledReason = needsNode)
+    IconAction(MIcons.Paste, "Paste", { app.paste() }, size = size, enabled = free && app.clipboard != null, disabledReason = whyNot ?: "copy or cut something first")
+    IconAction(MIcons.Delete, "Delete", { app.trashSelection() }, size = size, enabled = has, disabledReason = needsNode)
     val smooth = has && t.selectionIsSmooth
-    IconAction(if (smooth) MIcons.Corner else MIcons.Smooth, if (smooth) "Make corner" else "Make smooth", { t.toggleSmoothSelected() }, size = size, enabled = has)
-    IconAction(MIcons.CurveLine, "Toggle line / curve", { t.toggleCurveSelected() }, size = size, enabled = has)
-    IconAction(MIcons.SelectAll, "Select all", { t.selectAll() }, size = size, enabled = free)
-    IconAction(MIcons.FlipH, "Flip horizontally", { t.flipSelected(true) }, size = size, enabled = several)
-    IconAction(MIcons.FlipV, "Flip vertically", { t.flipSelected(false) }, size = size, enabled = several)
-    IconAction(MIcons.RotateLeft, "Rotate 15° left", { t.rotateSelected(15f) }, size = size, enabled = several)
-    IconAction(MIcons.RotateRight, "Rotate 15° right", { t.rotateSelected(-15f) }, size = size, enabled = several)
+    IconAction(if (smooth) MIcons.Corner else MIcons.Smooth, if (smooth) "Make corner" else "Make smooth", { t.toggleSmoothSelected() }, size = size, enabled = has, disabledReason = needsNode)
+    IconAction(MIcons.CurveLine, "Toggle line / curve", { t.toggleCurveSelected() }, size = size, enabled = has, disabledReason = needsNode)
+    IconAction(MIcons.SelectAll, "Select all", { t.selectAll() }, size = size, enabled = free, disabledReason = whyNot)
+    IconAction(MIcons.FlipH, "Flip horizontally", { t.flipSelected(true) }, size = size, enabled = several, disabledReason = needsTwo)
+    IconAction(MIcons.FlipV, "Flip vertically", { t.flipSelected(false) }, size = size, enabled = several, disabledReason = needsTwo)
+    IconAction(MIcons.RotateLeft, "Rotate 15° left", { t.rotateSelected(15f) }, size = size, enabled = several, disabledReason = needsTwo)
+    IconAction(MIcons.RotateRight, "Rotate 15° right", { t.rotateSelected(-15f) }, size = size, enabled = several, disabledReason = needsTwo)
 }
 
 /** Placement controls for the ghost being edited. */
@@ -271,20 +322,20 @@ fun GhostBar(app: AppState, modifier: Modifier = Modifier) {
     val ghostScroll = rememberScrollState()
     Box(modifier.widthIn(max = 520.dp).floating()) {
         Row(
-            Modifier.height(52.dp).horizontalScroll(ghostScroll)
+            Modifier.height(60.dp).horizontalScroll(ghostScroll)
                 .padding(start = 14.dp, end = 4.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-        Text(g.label, fontSize = 14.sp, color = Mono.ink, maxLines = 1)
+        Text(g.label, fontSize = Type.Body, color = Mono.ink, maxLines = 1)
         Spacer(Modifier.width(6.dp))
         Segmented(listOf("Place", "Nodes"), if (app.ghostTransformMode) 0 else 1) { app.setGhostNodeMode(it == 1) }
-        IconAction(MIcons.FlipH, "Flip horizontally", { app.flipActiveGhost(true) }, size = 40)
-        IconAction(MIcons.FlipV, "Flip vertically", { app.flipActiveGhost(false) }, size = 40)
-        IconAction(MIcons.RotateLeft, "Rotate 15° left", { app.rotateActiveGhost(15f) }, size = 40)
-        IconAction(MIcons.RotateRight, "Rotate 15° right", { app.rotateActiveGhost(-15f) }, size = 40)
-        if (g.isLinked) IconAction(MIcons.Guides, "Ghost weight, width and axes", { axesOpen = true }, size = 40)
-        IconAction(MIcons.Check, "Done", { app.activeGhostId = null }, size = 40, selected = true)
+        IconAction(MIcons.FlipH, "Flip horizontally", { app.flipActiveGhost(true) }, size = IconSize.LARGE)
+        IconAction(MIcons.FlipV, "Flip vertically", { app.flipActiveGhost(false) }, size = IconSize.LARGE)
+        IconAction(MIcons.RotateLeft, "Rotate 15° left", { app.rotateActiveGhost(15f) }, size = IconSize.LARGE)
+        IconAction(MIcons.RotateRight, "Rotate 15° right", { app.rotateActiveGhost(-15f) }, size = IconSize.LARGE)
+        if (g.isLinked) IconAction(MIcons.Axes, "Ghost weight, width and axes", { axesOpen = true }, size = IconSize.LARGE)
+        IconAction(MIcons.Check, "Done", { app.activeGhostId = null }, size = IconSize.LARGE, selected = true)
         }
         Scrollbar(ghostScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
     }
@@ -301,13 +352,11 @@ fun SimplifyCard(app: AppState, modifier: Modifier = Modifier) {
                 Caps("Simplify" + if (r.anchorNames.size > 1) " · all anchors" else "", color = Mono.ink)
                 Caps("${r.totalPoints} → ${r.remainingNodes} nodes · min ${r.minimumNodes} · drift ${fmt2(r.error)}u", size = 10)
             }
-            IconAction(MIcons.Close, "Cancel", { app.reduction = null }, size = 40)
-            IconAction(MIcons.Check, "Apply", { app.applyReduction() }, size = 40, selected = true, enabled = r.removeCount > 0)
+            IconAction(MIcons.Close, "Cancel", { app.reduction = null }, size = IconSize.LARGE)
+            IconAction(MIcons.Check, "Apply", { app.applyReduction() }, size = IconSize.LARGE, selected = true, enabled = r.removeCount > 0)
         }
         if (r.order.isNotEmpty()) {
-            // Material's platform-native gesture handling avoids the custom
-            // HairSlider pointer capture that left this preview stuck.
-            androidx.compose.material3.Slider(
+            HairSlider(
                 value = r.removeCount.toFloat(),
                 onValueChange = { r.removeCount = kotlin.math.round(it).toInt().coerceIn(0, r.order.size) },
                 valueRange = 0f..r.order.size.toFloat(),
@@ -327,14 +376,14 @@ fun SimplifyCard(app: AppState, modifier: Modifier = Modifier) {
 
 /** The suggestion button: a spark with a count; tap to expand or collapse the row. */
 @Composable
-fun SuggestionsButton(app: AppState, suggestions: List<Suggestion>, size: Int = 44) {
+fun SuggestionsButton(app: AppState, suggestions: List<Suggestion>, size: Int = IconSize.LARGE) {
     Box {
         IconAction(MIcons.Spark, "Suggested edits (${suggestions.size})", { app.showSuggestions = !app.showSuggestions }, selected = app.showSuggestions, size = size, enabled = suggestions.isNotEmpty() || app.showSuggestions)
         if (suggestions.isNotEmpty() && !app.showSuggestions) {
             Box(
                 Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).size(16.dp).clip(RoundedCornerShape(8.dp)).background(Mono.ink),
                 contentAlignment = Alignment.Center,
-            ) { Text(suggestions.size.coerceAtMost(9).toString(), fontSize = 10.sp, color = Mono.onPrimary) }
+            ) { Text(suggestions.size.coerceAtMost(9).toString(), fontSize = Type.Micro, color = Mono.onPrimary) }
         }
     }
 }
@@ -344,11 +393,11 @@ fun SuggestionsButton(app: AppState, suggestions: List<Suggestion>, size: Int = 
 fun SuggestionsRow(app: AppState, suggestions: List<Suggestion>, modifier: Modifier = Modifier) {
     if (!app.showSuggestions) return
     Row(
-        modifier.floating(20).height(48.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp),
+        modifier.floating(20).height(56.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (suggestions.isEmpty()) Text("Nothing to suggest right now.", fontSize = 13.sp, color = Mono.inkDim, modifier = Modifier.padding(horizontal = 10.dp))
+        if (suggestions.isEmpty()) Text("Nothing to suggest: no duplicate or redundant points, and the outline's direction is right.", fontSize = Type.Body, color = Mono.inkDim, modifier = Modifier.padding(horizontal = 10.dp))
         for (sg in suggestions) {
             Row(
                 Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).border(1.dp, Mono.border, RoundedCornerShape(18.dp))
@@ -356,11 +405,11 @@ fun SuggestionsRow(app: AppState, suggestions: List<Suggestion>, modifier: Modif
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(sg.label, fontSize = 13.sp, color = Mono.ink, maxLines = 1)
-                sg.detail?.let { Caps(it, size = 9) }
+                Text(sg.label, fontSize = Type.Body, color = Mono.ink, maxLines = 1)
+                sg.detail?.let { Caps(it, size = 10) }
             }
         }
-        IconAction(MIcons.Close, "Hide suggestions", { app.showSuggestions = false }, size = 36)
+        IconAction(MIcons.Close, "Hide suggestions", { app.showSuggestions = false }, size = IconSize.LARGE)
     }
 }
 
@@ -369,16 +418,18 @@ fun SuggestionsRow(app: AppState, suggestions: List<Suggestion>, modifier: Modif
 fun Toast(app: AppState, modifier: Modifier = Modifier) {
     if (app.status.isEmpty()) return
     androidx.compose.runtime.LaunchedEffect(app.status) {
-        kotlinx.coroutines.delay(if (app.statusIsError) 7000 else 3500)
+        // Long messages stay up long enough to read: a base, plus time per character, doubled for errors.
+        kotlinx.coroutines.delay((3500L + app.status.length * 45L) * (if (app.statusIsError) 2 else 1))
         app.setStatus("")
     }
     Text(
         app.status,
         color = if (app.statusIsError) Mono.error else Mono.ink,
-        fontSize = 13.sp,
-        maxLines = 3,
+        fontSize = Type.Body,
+        maxLines = 6,
         overflow = TextOverflow.Ellipsis,
-        modifier = modifier.floating(16).widthIn(max = 520.dp).clickable { app.setStatus("") }.padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = modifier.floating(16).widthIn(max = 520.dp).clickable(role = Role.Button, onClickLabel = "Dismiss") { app.setStatus("") }
+            .semantics { liveRegion = LiveRegionMode.Polite }.padding(horizontal = 16.dp, vertical = 10.dp),
     )
 }
 
@@ -417,7 +468,9 @@ fun AnchorFilmstrip(app: AppState, modifier: Modifier = Modifier, compact: Boole
     fun Thumb(name: String, label: String, m: Modifier) {
         val active = app.activeAnchor == name
         Column(
-            m.clip(RoundedCornerShape(12.dp)).clickable { app.activeAnchor = name },
+            m.clip(RoundedCornerShape(12.dp))
+                .selectable(selected = active, role = Role.Tab, onClick = { app.activeAnchor = name })
+                .semantics(mergeDescendants = true) { contentDescription = "$label anchor" },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -429,7 +482,7 @@ fun AnchorFilmstrip(app: AppState, modifier: Modifier = Modifier, compact: Boole
                     .border(if (active) 1.5.dp else 1.dp, if (active) Mono.ink else Mono.border, RoundedCornerShape(10.dp))
                     .padding(4.dp),
             )
-            Text(label, fontSize = 11.sp, color = if (active) Mono.ink else Mono.inkDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, fontSize = Type.Micro, color = if (active) Mono.ink else Mono.inkDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
     if (compact) {
@@ -461,20 +514,20 @@ fun AxisSliders(app: AppState, initiallyShown: Int = 4) {
         for (axis in axes) {
             val t = app.previewValues[axis.tag] ?: 0.5f
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(axis.label, fontSize = 13.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(92.dp))
+                Text(axis.label, fontSize = Type.Body, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(92.dp))
                 HairSlider(
                     value = t,
                     onValueChange = { app.previewValues[axis.tag] = it },
-                    modifier = Modifier.weight(1f).height(32.dp),
+                    modifier = Modifier.weight(1f),
                 )
                 Caps(fmt2(t), size = 10, modifier = Modifier.width(40.dp).padding(start = 8.dp))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             if (Axis.ALL.size > initiallyShown) {
-                MonoButton(onClick = { all = !all }) { Text(if (all) "Fewer axes" else "${Axis.ALL.size - initiallyShown} more axes", fontSize = 12.sp, color = Mono.inkDim) }
+                MonoButton(onClick = { all = !all }) { Text(if (all) "Fewer axes" else "${Axis.ALL.size - initiallyShown} more axes") }
             }
-            MonoButton(onClick = { Axis.ALL.forEach { app.previewValues[it.tag] = 0.5f } }) { Text("Reset to Regular", fontSize = 12.sp, color = Mono.inkDim) }
+            MonoButton(onClick = { Axis.ALL.forEach { app.previewValues[it.tag] = 0.5f } }) { Text("Reset to Regular") }
         }
     }
 }
@@ -503,7 +556,7 @@ fun GhostsSection(app: AppState, host: EditorHost) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SectionHead("Ghosts") {
             Box {
-                IconAction(MIcons.Plus, "Add ghost", { addOpen = true }, size = 36)
+                IconAction(MIcons.Plus, "Add ghost", { addOpen = true }, size = IconSize.LARGE)
                 MonoMenu(addOpen, { addOpen = false }) {
                     val glyph = app.anchors.getValue(app.activeAnchor).glyph
                     val m = app.metrics
@@ -518,13 +571,13 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                 }
             }
         }
-        if (app.ghosts.isEmpty()) Text("Lay a shape, another glyph, or a character from any font over this one to compare.", fontSize = 13.sp, color = Mono.inkDim)
+        if (app.ghosts.isEmpty()) Text("Lay a shape, another glyph, or a character from any font over this one to compare.", fontSize = Type.Body, color = Mono.inkDim)
         if (app.ghosts.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Glyph opacity", fontSize = 13.sp, color = Mono.ink, maxLines = 1, modifier = Modifier.width(110.dp))
+            Text("Glyph opacity", fontSize = Type.Body, color = Mono.ink, maxLines = 1, modifier = Modifier.width(110.dp))
             HairSlider(
                 value = app.view.glyphOpacity,
                 onValueChange = { app.view.glyphOpacity = it },
-                modifier = Modifier.weight(1f).height(32.dp),
+                modifier = Modifier.weight(1f),
                 valueRange = 0.1f..1f,
             )
             Caps("${(app.view.glyphOpacity * 100).toInt()}%", size = 10, modifier = Modifier.width(44.dp).padding(start = 8.dp))
@@ -536,9 +589,9 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                     .background(if (active) Mono.panelHeader else Color.Transparent)
                     .padding(horizontal = 8.dp, vertical = 5.dp),
             ) {
-                Text(g.label, fontSize = 14.sp, color = if (g.visible) Mono.ink else Mono.inkDim,
+                Text(g.label, fontSize = Type.Body, color = if (g.visible) Mono.ink else Mono.inkDim,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (g.isLinked) Text("Variable source · independent axes", fontSize = 11.sp, color = Mono.inkDim)
+                if (g.isLinked) Text("Variable source · independent axes", fontSize = Type.Micro, color = Mono.inkDim)
                 val rowScroll = rememberScrollState()
                 Box(Modifier.fillMaxWidth()) {
                     Row(
@@ -558,15 +611,15 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                             )
                         }
                         if (g.isLinked) IconAction(
-                            MIcons.Guides, "Ghost weight, width and axes",
-                            { ghostAxisId = g.id }, size = 36,
+                            MIcons.Axes, "Ghost weight, width and axes",
+                            { ghostAxisId = g.id }, size = IconSize.LARGE,
                         )
                         IconAction(MIcons.Pen, if (active) "Done editing ghost" else "Edit ghost",
                             { if (active) app.activeGhostId = null else app.editGhost(g.id) },
-                            selected = active, size = 36)
+                            selected = active, size = IconSize.LARGE)
                         IconAction(if (g.visible) MIcons.Eye else MIcons.EyeOff,
-                            if (g.visible) "Hide" else "Show", { g.visible = !g.visible }, size = 36)
-                        IconAction(MIcons.Delete, "Remove ghost", { app.removeGhost(g.id) }, size = 36)
+                            if (g.visible) "Hide" else "Show", { g.visible = !g.visible }, size = IconSize.LARGE)
+                        IconAction(MIcons.Delete, "Remove ghost", { app.removeGhost(g.id) }, size = IconSize.LARGE)
                     }
                     Scrollbar(rowScroll, false,
                         Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
@@ -589,22 +642,22 @@ private fun GhostAxesDialog(app: AppState, ghost: GhostLayer, onDismiss: () -> U
     MonoDialog("Ghost axes: ${ghost.label}", onDismiss, actions = {
         MonoButton(onClick = { ghost.axisOverrides.keys.toList().forEach { tag ->
             Axis.ALL.firstOrNull { it.tag == tag }?.let { app.setGhostAxis(ghost.id, it, null) }
-        } }) { Text("Follow glyph axes", fontSize = 12.sp) }
+        } }) { Text("Follow glyph axes", fontSize = Type.Small) }
     }) {
         Text("These values affect this ghost only. Untouched axes follow the working glyph's selected anchor and preview.",
-            fontSize = 12.sp, color = Mono.inkDim)
+            fontSize = Type.Small, color = Mono.inkDim)
         for (axis in Axis.ALL) {
             if (ghost.referenceCorners.isNotEmpty() && axis.tag !in ghost.supportedAxes) continue
             val value = ghost.axisOverrides[axis.tag] ?: 0.5f
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(axis.label, color = Mono.ink, fontSize = 13.sp, modifier = Modifier.width(94.dp))
-                androidx.compose.material3.Slider(
+                Text(axis.label, color = Mono.ink, fontSize = Type.Body, modifier = Modifier.width(94.dp))
+                HairSlider(
                     value = value, onValueChange = { app.setGhostAxis(ghost.id, axis, it) },
-                    valueRange = 0f..1f, modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f),
                 )
                 IconAction(MIcons.Close, "Follow ${axis.label}", {
                     app.setGhostAxis(ghost.id, axis, null)
-                }, size = 28, enabled = ghost.axisOverrides.containsKey(axis.tag))
+                }, size = IconSize.LARGE, enabled = ghost.axisOverrides.containsKey(axis.tag))
             }
         }
     }
@@ -622,7 +675,7 @@ fun GuidesSection(app: AppState) {
             Chip("Metrics", v.showMetrics) { v.showMetrics = !v.showMetrics }
             Chip("Rulers", v.showRulers) { v.showRulers = !v.showRulers }
             Chip("Guides", v.showGuides) { v.showGuides = !v.showGuides }
-            Chip("Measure", v.showMeasure) { v.showMeasure = !v.showMeasure }
+            Chip("Measurements", v.showMeasure) { v.showMeasure = !v.showMeasure }
             Chip("Ghosts", v.showGhosts) { v.showGhosts = !v.showGhosts }
             Chip("Travel paths", v.showTravel) { v.showTravel = !v.showTravel }
             Chip("Move circle", app.nodeMoveCircleEnabled) {
@@ -639,10 +692,10 @@ fun GuidesSection(app: AppState) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            MonoButton(onClick = { metricsOpen = true }, outlined = true) { Text("Metrics…", fontSize = 12.sp) }
-            MonoButton(onClick = { app.clearGuides() }, enabled = app.guides.isNotEmpty(), outlined = true) { Text("Clear ${app.guides.size} guides", fontSize = 12.sp) }
+            MonoButton(onClick = { metricsOpen = true }, outlined = true) { Text("Metrics…") }
+            MonoButton(onClick = { app.clearGuides() }, enabled = app.guides.isNotEmpty(), outlined = true) { Text("Clear ${app.guides.size} guides") }
         }
-        Text("Drag from a ruler to place a guide; drop it back on the ruler to remove it.", fontSize = 12.sp, color = Mono.inkDim)
+        Text("Drag from a ruler to place a guide; drop it back on the ruler to remove it.", fontSize = Type.Small, color = Mono.inkDim)
     }
     if (metricsOpen) MetricsDialog(app) { metricsOpen = false }
 }
@@ -658,8 +711,8 @@ fun MonoDialog(title: String, onDismiss: () -> Unit, actions: @Composable () -> 
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, fontSize = 22.sp, color = Mono.ink, modifier = Modifier.weight(1f))
-                IconAction(MIcons.Close, "Close", onDismiss, size = 40)
+                Text(title, fontSize = Type.Title, color = Mono.ink, modifier = Modifier.weight(1f))
+                IconAction(MIcons.Close, "Close", onDismiss, size = IconSize.LARGE)
             }
             val dialogScroll = rememberScrollState()
             Box(Modifier.weight(1f, fill = false).fillMaxWidth()) {
@@ -674,17 +727,42 @@ fun MonoDialog(title: String, onDismiss: () -> Unit, actions: @Composable () -> 
 }
 
 @Composable
-fun MonoField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, big: Boolean = false) {
+fun MonoField(
+    value: String,
+    onChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    big: Boolean = false,
+    isError: Boolean = false,
+    keyboardType: androidx.compose.ui.text.input.KeyboardType = androidx.compose.ui.text.input.KeyboardType.Text,
+    onDone: (() -> Unit)? = null,
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         singleLine = true,
-        placeholder = { Text(placeholder, color = Mono.inkFaint) },
-        textStyle = TextStyle(fontSize = if (big) 22.sp else 15.sp, color = Mono.ink),
+        isError = isError,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            keyboardType = keyboardType,
+            imeAction = if (onDone != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Default,
+        ),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onDone?.invoke() }),
+        placeholder = { Text(placeholder, color = Mono.inkDim) },
+        textStyle = TextStyle(fontSize = if (big) Type.Title else Type.Row, color = Mono.ink),
         colors = monoTextFieldColors(),
         shape = RoundedCornerShape(14.dp),
         modifier = modifier,
     )
+}
+
+/** Why a metrics entry can't be used, or null: every field a number, units per em at least 16, and ascender above descender. */
+fun metricsProblem(unitsPerEm: String, ascender: String, capHeight: String, xHeight: String, descender: String): String? {
+    val names = listOf("Units per em", "Ascender", "Cap height", "x-height", "Descender")
+    val values = listOf(unitsPerEm, ascender, capHeight, xHeight, descender).map { it.trim().toFloatOrNull()?.takeIf { v -> v.isFinite() } }
+    values.indexOfFirst { it == null }.takeIf { it >= 0 }?.let { return "${names[it]} needs a number." }
+    if (values[0]!! < 16f) return "Units per em must be at least 16 (fonts use 1000 or 2048)."
+    if (values[1]!! <= values[4]!!) return "The ascender has to sit above the descender."
+    return null
 }
 
 @Composable
@@ -692,28 +770,36 @@ private fun MetricsDialog(app: AppState, onDismiss: () -> Unit) {
     val m = app.metrics
     val fields = remember(m) {
         listOf(
-            "Units per em" to mutableStateOf(m.unitsPerEm.toInt().toString()),
-            "Ascender" to mutableStateOf(m.ascender.toInt().toString()),
-            "Cap height" to mutableStateOf(m.capHeight.toInt().toString()),
-            "x-height" to mutableStateOf(m.xHeight.toInt().toString()),
-            "Descender" to mutableStateOf(m.descender.toInt().toString()),
+            Triple("Units per em", mutableStateOf(m.unitsPerEm.toInt().toString()), "The grid the font is drawn on: 1000 or 2048"),
+            Triple("Ascender", mutableStateOf(m.ascender.toInt().toString()), "Top of the tallest letters, above the baseline"),
+            Triple("Cap height", mutableStateOf(m.capHeight.toInt().toString()), "Height of capital letters"),
+            Triple("x-height", mutableStateOf(m.xHeight.toInt().toString()), "Height of lowercase letters like x"),
+            Triple("Descender", mutableStateOf(m.descender.toInt().toString()), "Bottom of letters like p and g (negative)"),
         )
     }
+    val v = fields.map { it.second.value }
+    val problem = metricsProblem(v[0], v[1], v[2], v[3], v[4])
     MonoDialog("Metrics", onDismiss, actions = {
+        MonoButton(onClick = onDismiss, outlined = true) { Text("Cancel") }
         MonoButton(onClick = {
-            val v = fields.map { it.second.value.toFloatOrNull() }
-            app.updateMetrics(FontMetrics(
-                v[0]?.coerceAtLeast(16f) ?: m.unitsPerEm, v[1] ?: m.ascender, v[2] ?: m.capHeight, v[3] ?: m.xHeight, v[4] ?: m.descender,
-            ))
+            val n = v.map { it.trim().toFloat() }
+            app.updateMetrics(FontMetrics(n[0], n[1], n[2], n[3], n[4]))
             onDismiss()
-        }, selected = true) { Text("Apply") }
+        }, selected = true, enabled = problem == null) { Text("Apply") }
     }) {
-        for ((label, state) in fields) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, fontSize = 14.sp, color = Mono.inkDim, modifier = Modifier.width(120.dp))
-                MonoField(state.value, { s -> state.value = s.filter { it.isDigit() || it == '-' || it == '.' } }, "", Modifier.weight(1f))
+        Text("The horizontal guides the canvas draws, in font units.", fontSize = Type.Small, color = Mono.inkDim)
+        for ((label, state, help) in fields) {
+            Column(Modifier.padding(top = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, fontSize = Type.Body, color = Mono.ink, modifier = Modifier.width(120.dp))
+                    MonoField(state.value, { s -> state.value = s.filter { it.isDigit() || it == '-' || it == '.' } }, "", Modifier.weight(1f),
+                        isError = state.value.trim().toFloatOrNull() == null,
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+                }
+                Text(help, fontSize = Type.Micro, color = Mono.inkDim)
             }
         }
+        problem?.let { Text(it, fontSize = Type.Body, color = Mono.error, modifier = Modifier.padding(top = 8.dp)) }
     }
 }
 
@@ -724,44 +810,41 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var showReport by remember { mutableStateOf(false) }
     var showProjects by remember { mutableStateOf(false) }
+    var confirming by remember { mutableStateOf<String?>(null) }
     val names = app.glyphNames
-    MonoDialog("Glyphs", onDismiss) {
+    confirming?.let { label ->
+        ConfirmDialog(label, host.confirmBefore.getValue(label), confirmLabel = "Replace", onDismiss = { confirming = null }) {
+            confirming = null
+            onDismiss()
+            host.fileActions.firstOrNull { it.first == label }?.second?.invoke()
+        }
+    }
+    MonoDialog("Glyphs and files", onDismiss) {
         host.projects?.let { projectActions ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f)) {
                     Caps("Project")
-                    Text(app.currentProject?.name ?: "", fontSize = 17.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(app.currentProject?.name ?: "", fontSize = Type.Row, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                MonoButton(onClick = { showProjects = true }, outlined = true) { Text("Projects", fontSize = 13.sp) }
+                MonoButton(onClick = { showProjects = true }, outlined = true) { Text("Projects") }
             }
             if (showProjects) ProjectsDialog(app, projectActions, onDismiss = { showProjects = false }, onSwitched = { showProjects = false; onDismiss() })
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MonoField(name, { name = it }, "New glyph name", Modifier.weight(1f))
-            MonoButton(onClick = { if (host.createGlyph(name)) onDismiss() }, selected = true, enabled = name.isNotBlank()) { Text("Create") }
-        }
+        NewGlyphRow(name, { name = it }) { if (host.createGlyph(name)) onDismiss() }
+        val current = app.currentGlyphName
+        if (host.glyphFiles != null && current != null) ThisGlyphRow(app, host, host.glyphFiles, current)
         Box(Modifier.heightIn(max = 340.dp)) {
             val gridScroll = rememberScrollState()
             Column(Modifier.verticalScroll(gridScroll).padding(end = 10.dp)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (n in names) {
-                    val current = n == app.currentGlyphName
-                    Box(
-                        Modifier.size(56.dp).clip(RoundedCornerShape(12.dp))
-                            .background(if (current) Mono.ink else Mono.panelHeader)
-                            .clickable { host.openGlyph(n); onDismiss() },
-                        contentAlignment = Alignment.Center,
-                    ) { val label = displayGlyphName(n)
-                        Text(label, fontSize = if (label.length <= 2) 26.sp else 12.sp, color = if (current) Mono.onPrimary else Mono.ink, maxLines = 1)
-                    }
+                    for (n in names) GlyphTile(n, current = n == app.currentGlyphName) { host.openGlyph(n); onDismiss() }
                 }
-            }
             }
             Scrollbar(gridScroll, true, Modifier.align(Alignment.CenterEnd).width(7.dp).fillMaxHeight())
         }
         if (app.lastReport.isNotEmpty()) {
             MonoButton(onClick = { showReport = true }, outlined = true) {
-                Text("View latest report", fontSize = 13.sp)
+                Text("View latest report", fontSize = Type.Body)
             }
         }
         if (host.fileActions.isNotEmpty()) {
@@ -770,16 +853,67 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
                 for ((label, action) in host.fileActions) {
                     Text(
                         label,
-                        fontSize = 15.sp,
+                        fontSize = Type.Row,
                         color = Mono.ink,
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onDismiss(); action() }.padding(vertical = 10.dp, horizontal = 4.dp),
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                            .clickable(role = Role.Button) {
+                                if (label in host.confirmBefore) confirming = label else { onDismiss(); action() }
+                            }
+                            .padding(vertical = 12.dp, horizontal = 4.dp),
                     )
                 }
             }
         }
     }
     if (showReport) MonoDialog("Latest report", { showReport = false }) {
-        Text(app.lastReport, color = Mono.ink, fontSize = 13.sp)
+        Text(app.lastReport, color = Mono.ink, fontSize = Type.Body)
+    }
+}
+
+/** The open glyph's own actions: rename it in place, or delete it after asking. */
+@Composable
+private fun ThisGlyphRow(app: AppState, host: EditorHost, files: GlyphFiles, current: String) {
+    var renaming by remember(current) { mutableStateOf(false) }
+    var newName by remember(current) { mutableStateOf(current) }
+    var deleting by remember(current) { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Caps("This glyph")
+        when {
+            renaming -> {
+                MonoField(newName, { newName = it }, "Glyph name", Modifier.fillMaxWidth(),
+                    onDone = { if (renameGlyph(app, files, current, newName)) renaming = false })
+                Text(GLYPH_NAME_HINT, fontSize = Type.Small, color = Mono.inkDim)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MonoButton(onClick = { renaming = false }, outlined = true) { Text("Cancel") }
+                    MonoButton(onClick = { if (renameGlyph(app, files, current, newName)) renaming = false },
+                        selected = true, enabled = newName.isNotBlank()) { Text("Rename") }
+                }
+            }
+            deleting -> {
+                Text("Delete \"${displayGlyphName(current)}\" and every anchor drawn for it? This can't be undone, and " +
+                    "ghosts of it in other glyphs stop following it.", fontSize = Type.Body, color = Mono.ink)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MonoButton(onClick = { deleting = false }, outlined = true) { Text("Cancel") }
+                    MonoButton(onClick = { deleting = false; deleteGlyph(app, files, current, host.openGlyph) }, selected = true) { Text("Delete") }
+                }
+            }
+            else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(displayGlyphName(current), fontSize = Type.Row, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                MonoButton(onClick = { newName = current; renaming = true }, outlined = true) { Text("Rename") }
+                MonoButton(onClick = { deleting = true }, outlined = true) { Text("Delete") }
+            }
+        }
+    }
+}
+
+/** Asks before something that can't be undone: Cancel first, the named action last. */
+@Composable
+fun ConfirmDialog(title: String, message: String, confirmLabel: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    MonoDialog(title, onDismiss, actions = {
+        MonoButton(onClick = onDismiss, outlined = true) { Text("Cancel") }
+        MonoButton(onClick = onConfirm, selected = true) { Text(confirmLabel) }
+    }) {
+        Text(message, fontSize = Type.Body, color = Mono.ink)
     }
 }
 
@@ -788,21 +922,13 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
 private fun ProjectGlyphPicker(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
     val names = app.glyphNames
     MonoDialog("Ghost a glyph", onDismiss) {
-        Text("Live: it takes the working character's weight, width and every other axis -- here and in the Preview.", fontSize = 13.sp, color = Mono.inkDim)
+        Text("Live: it takes the working character's weight, width and every other axis — here and in the Preview.", fontSize = Type.Body, color = Mono.inkDim)
         Box(Modifier.heightIn(max = 340.dp)) {
             val gridScroll = rememberScrollState()
             Column(Modifier.verticalScroll(gridScroll).padding(end = 10.dp)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (n in names) {
-                    Box(
-                        Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Mono.panelHeader)
-                            .clickable { app.addLinkedGhost(n); onDismiss() },
-                        contentAlignment = Alignment.Center,
-                    ) { val label = displayGlyphName(n)
-                        Text(label, fontSize = if (label.length <= 2) 26.sp else 12.sp, color = Mono.ink, maxLines = 1)
-                    }
+                    for (n in names) GlyphTile(n, onClickLabel = "Ghost it") { app.addLinkedGhost(n); onDismiss() }
                 }
-            }
             }
             Scrollbar(gridScroll, true, Modifier.align(Alignment.CenterEnd).width(7.dp).fillMaxHeight())
         }
@@ -817,11 +943,13 @@ private fun FontCharacterPicker(app: AppState, host: EditorHost, initialFont: St
     val scope = rememberCoroutineScope()
     val store = host.fontStore
     var shelf by remember { mutableStateOf<List<InstalledFont>>(emptyList()) }
-    if (store != null) LaunchedEffect(store) { shelf = runCatching { store.shelf.list() }.getOrDefault(emptyList()) }
+    if (store != null) LaunchedEffect(store) {
+        try { shelf = store.shelf.list() } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message }
+    }
     MonoDialog("Ghost from a font", onDismiss, actions = {
         MonoButton(onClick = {
             val font = fontName?.let { app.referenceFonts[it] }
-            if (font == null) { error = "Load a font first."; return@MonoButton }
+            if (font == null) { error = "No font is loaded yet. Tap \"Load .ttf…\" above, or pick one from the font store."; return@MonoButton }
             var added = 0
             for (ch in chars) {
                 try {
@@ -837,7 +965,7 @@ private fun FontCharacterPicker(app: AppState, host: EditorHost, initialFont: St
             for (name in app.referenceFonts.keys) Chip(name, name == fontName) { fontName = name }
             // Installed store fonts not loaded yet: a tap reads the face from this device.
             if (store != null) for (font in shelf) for (face in font.faces.filter { it.readable }) {
-                val label = if (font.faces.size > 1) "${font.family} ${face.style ?: face.fileName}" else font.family
+                val label = shelfFaceLabel(font, face, shelf)
                 if (app.referenceFonts.containsKey(label)) continue
                 Chip(label, false) {
                     scope.launch {
@@ -862,8 +990,8 @@ private fun FontCharacterPicker(app: AppState, host: EditorHost, initialFont: St
             }
         }
         MonoField(chars, { chars = it.take(8) }, "Characters", Modifier.fillMaxWidth(), big = true)
-        Text("Each character becomes an independently adjustable ghost; weight, width and other source axes are preserved with the project.", fontSize = 12.sp, color = Mono.inkDim)
-        error?.let { Text(it, color = Mono.error, fontSize = 13.sp) }
+        Text("Each character becomes an independently adjustable ghost; weight, width and other source axes are preserved with the project.", fontSize = Type.Small, color = Mono.inkDim)
+        error?.let { Text(it, color = Mono.error, fontSize = Type.Body) }
     }
 }
 

@@ -272,13 +272,17 @@ private fun cleanup(app: AppState): List<Suggestion> {
         }
     }
     if (dupes.isNotEmpty()) out.add(Suggestion("Merge ${dupes.size} duplicate point${if (dupes.size > 1) "s" else ""}", scopeLabel(scope)) { a ->
-        scope.forEach { n -> a.anchors.getValue(n).let { it.replaceWithHistory(withoutPoints(it.glyph, dupes, mergeIntoPrevious = true)) } }
+        a.replaceAnchorsWithHistory(scope) { withoutPoints(it, dupes, mergeIntoPrevious = true) }
         a.setStatus("Merged ${dupes.size} duplicate point(s).")
     })
-    // Redundant: points whose removal changes nothing (zero drift).
+    // Redundant: points whose removal changes nothing (zero drift). Removed exactly as Simplify removes
+    // them -- the neighbouring segments refitted -- since that is what the zero drift was measured on.
     val redundant = reductionOrder(glyphs).takeWhile { it.error < 0.5f }.map { it.key }.toSet() - dupes
     if (redundant.isNotEmpty()) out.add(Suggestion("Remove ${redundant.size} redundant point${if (redundant.size > 1) "s" else ""}", "no visible change") { a ->
-        scope.forEach { n -> a.anchors.getValue(n).let { it.replaceWithHistory(withoutPoints(it.glyph, redundant)) } }
+        a.replaceAnchorsWithHistory(scope) { gl ->
+            val reduced = reducedGlyph(gl, redundant)
+            GlyphCorner(reduced.width, reduced.contours.filter { it.points.isNotEmpty() }.toMutableList())
+        }
         a.setStatus("Removed ${redundant.size} point(s) that added no shape.")
     })
     // Direction: TrueType wants outer contours clockwise, counters counter-clockwise.
@@ -289,11 +293,10 @@ private fun cleanup(app: AppState): List<Suggestion> {
     val wrong = wrongDirection(g)
     // Reversing flips the point array, so every anchor must reverse the same contours or index correspondence breaks.
     if (wrong.isNotEmpty() && glyphs.all { wrongDirection(it) == wrong }) out.add(Suggestion("Fix direction of ${wrong.size} contour${if (wrong.size > 1) "s" else ""}", "outer clockwise") { a ->
-        scope.forEach { n ->
-            val st = a.anchors.getValue(n)
-            val ng = st.glyph.deepCopy()
+        a.replaceAnchorsWithHistory(scope) { gl ->
+            val ng = gl.deepCopy()
             for (ci in wrong) ng.contours[ci] = ContourData(ng.contours[ci].points.reversed().toMutableList())
-            st.replaceWithHistory(ng)
+            ng
         }
         a.setStatus("Reversed ${wrong.size} contour(s).")
     })

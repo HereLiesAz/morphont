@@ -5,7 +5,10 @@ import java.net.URI
 
 /**
  * Desktop updates come from GitHub Releases: the newest release carrying this system's installer
- * (`.msi`, `.dmg`, or `.deb`/`.rpm`) newer than [DESKTOP_VERSION], opened in the browser.
+ * (`.msi`, `.dmg`, or `.deb`/`.rpm`) newer than [DESKTOP_VERSION], opened in the browser. Installers
+ * are named with the full four-part version (`Morphont-0.15.0.1-windows-x64.msi`) and the app is
+ * built with that same number, so all four parts compare. (The `.dmg`'s internal bundle version is
+ * 1.x because macOS refuses 0.x; the file name, which is what's read here, is not.)
  */
 object DesktopUpdates {
     internal fun installerFor(os: String = System.getProperty("os.name").lowercase()): (String) -> Boolean = { name ->
@@ -26,8 +29,7 @@ object DesktopUpdates {
     }
 
     val checker = UpdateChecker(
-        // Installers carry a run number the app doesn't; major.minor.patch decides.
-        check = { GitHubReleases.latest(DesktopFontStore.http, DESKTOP_VERSION, installerFor(), parts = 3) },
+        check = { GitHubReleases.latest(DesktopFontStore.http, DESKTOP_VERSION, installerFor()) },
         open = { browse(it.url) },
     )
 }

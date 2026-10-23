@@ -24,8 +24,12 @@ fun computeViewBox(g: GlyphCorner): ViewBox {
 
 /** Maps font-design-space coordinates into this panel's actual pixel canvas, flipping Y and fitting/centering [vb]. */
 class SpaceMapper(private val vb: ViewBox, private val canvasSize: Size) {
-    /** Font-design units per pixel; also usable to convert delta vectors, not just points. */
-    val scale = if (vb.w <= 0f || vb.h <= 0f) 1f else minOf(canvasSize.width / vb.w, canvasSize.height / vb.h)
+    /**
+     * Pixels per font-design unit; also usable to convert delta vectors, not just points. 1 until both
+     * the view box and the canvas have a size (before layout), so [toFont] never divides by zero.
+     */
+    val scale = if (vb.w <= 0f || vb.h <= 0f || canvasSize.width <= 0f || canvasSize.height <= 0f) 1f
+        else minOf(canvasSize.width / vb.w, canvasSize.height / vb.h)
     private val offsetX = (canvasSize.width - vb.w * scale) / 2f
     private val offsetY = (canvasSize.height - vb.h * scale) / 2f
 

@@ -2,12 +2,19 @@ package com.hereliesaz.morphont
 
 import android.net.Uri
 import android.os.Bundle
+import android.provider.DocumentsContract
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 
+/**
+ * The manifest keeps this activity across rotation, resizing and theme changes (Compose re-lays itself
+ * out), so a file picker's pending callbacks and the editor's state survive them. Only process death
+ * can still lose a pending callback; [lostRequest] says so instead of failing silently.
+ */
 class MainActivity : ComponentActivity() {
     private val storage by lazy { AndroidStorage(this) }
     private val updates by lazy { AndroidUpdates(this) }
@@ -23,11 +30,19 @@ class MainActivity : ComponentActivity() {
     private var pendingFontDone: (() -> Unit)? = null
     private var pendingFontError: ((String) -> Unit)? = null
 
+    /** A picker answered after the app was restarted, so what asked for it is gone. */
+    private fun lostRequest(what: String, created: Uri? = null) {
+        // A CreateDocument has already made an empty file; don't leave it looking like a backup.
+        created?.let { runCatching { DocumentsContract.deleteDocument(contentResolver, it) } }
+        Toast.makeText(this, "Morphont restarted while the file picker was open. $what again.", Toast.LENGTH_LONG).show()
+    }
+
     private val openJsonLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) {
             clearJsonCallbacks()
             return@registerForActivityResult
         }
+        if (pendingJsonLoaded == null) { lostRequest("Open it"); return@registerForActivityResult }
         try {
             val text = readText(uri)
             pendingJsonLoaded?.invoke(text)
@@ -43,6 +58,7 @@ class MainActivity : ComponentActivity() {
             clearTtfCallbacks()
             return@registerForActivityResult
         }
+        if (pendingTtfLoaded == null) { lostRequest("Choose the font"); return@registerForActivityResult }
         try {
             val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 ?: error("No readable stream returned")
@@ -61,6 +77,7 @@ class MainActivity : ComponentActivity() {
             clearSaveCallbacks()
             return@registerForActivityResult
         }
+        if (pendingSaveText == null) { lostRequest("Export it", created = uri); return@registerForActivityResult }
         try {
             val text = pendingSaveText ?: error("Nothing queued for export")
             contentResolver.openOutputStream(uri, "w")?.bufferedWriter()?.use { it.write(text) }
@@ -86,13 +103,20 @@ class MainActivity : ComponentActivity() {
             fail?.invoke("Not saved.")
             return@registerForActivityResult
         }
+        if (bytes == null) { lostRequest("Save the font", created = uri); return@registerForActivityResult }
         try {
-            contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes ?: error("Nothing queued to save")) }
+            contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
                 ?: error("No writable stream returned")
             done?.invoke()
         } catch (e: Exception) {
             fail?.invoke("Couldn't save the font: ${e.message}")
         }
+    }
+
+    override fun onStop() {
+        // Backgrounded or closing: write the edit still waiting on the autosave debounce.
+        AndroidAutosave.flush()
+        super.onStop()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

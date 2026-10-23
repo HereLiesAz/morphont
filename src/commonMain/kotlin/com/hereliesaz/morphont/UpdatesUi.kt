@@ -17,6 +17,8 @@ private sealed interface UpdateResult {
     data class Failed(val message: String) : UpdateResult
 }
 
+private object LaunchCheck { var done = false }
+
 /**
  * Looks for an update once, when the app starts, and says so only if there is one. Silent when
  * there isn't, or when the check can't reach its source (offline is normal for an editor).
@@ -26,6 +28,10 @@ fun AutoUpdatePrompt(checker: UpdateChecker?) {
     checker ?: return
     var found by remember { mutableStateOf<AvailableUpdate?>(null) }
     LaunchedEffect(checker) {
+        // Once per run of the app, however often this composes again (a recreated window or activity):
+        // "Later" means later, and GitHub's anonymous rate limit isn't spent on repeats.
+        if (LaunchCheck.done) return@LaunchedEffect
+        LaunchCheck.done = true
         found = try { checker.check() } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
     }
     found?.let { UpdateFoundDialog(it, checker) { found = null } }
@@ -54,7 +60,7 @@ fun UpdateCheckDialog(checker: UpdateChecker, onDismiss: () -> Unit) {
                     is UpdateResult.Failed -> r.message
                     is UpdateResult.Found -> ""
                 },
-                fontSize = 14.sp, color = if (r is UpdateResult.Failed) Mono.error else Mono.ink,
+                fontSize = Type.Body, color = if (r is UpdateResult.Failed) Mono.error else Mono.ink,
             )
         }
     }
@@ -63,15 +69,15 @@ fun UpdateCheckDialog(checker: UpdateChecker, onDismiss: () -> Unit) {
 @Composable
 private fun UpdateFoundDialog(update: AvailableUpdate, checker: UpdateChecker, onDismiss: () -> Unit) {
     MonoDialog("Update available", onDismiss, actions = {
-        MonoButton(onClick = onDismiss, outlined = true) { Text("Later", fontSize = 13.sp) }
+        MonoButton(onClick = onDismiss, outlined = true) { Text("Later") }
         MonoButton(onClick = { checker.open(update); onDismiss() }, selected = true) {
-            Text("Open ${update.source.label}", fontSize = 13.sp)
+            Text("Open ${update.source.label}")
         }
     }) {
         Text(
             if (update.version.isEmpty()) "A newer Morphont is available on ${update.source.label}."
             else "Morphont ${update.version} is available on ${update.source.label}.",
-            fontSize = 14.sp, color = Mono.ink,
+            fontSize = Type.Body, color = Mono.ink,
         )
     }
 }

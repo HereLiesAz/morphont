@@ -631,14 +631,14 @@ private fun reducedTo(c: ContourData, target: Int): ContourData {
  * the same number of contours in every state.
  */
 fun matchToFewest(glyphs: Map<String, GlyphCorner>, mostNodes: Boolean = false): MatchOutcome {
-    if (glyphs.size < 2) return MatchOutcome(null, problem = "Draw at least two states first.")
+    if (glyphs.size < 2) return MatchOutcome(null, problem = "Draw at least two anchors first.")
     val done = glyphs.mapValues { completeNodeHandles(it.value) }
     if (done.values.any { g -> g.contours.isEmpty() || g.contours.any { it.points.isEmpty() || !isValidCubicContour(it) } }) {
-        return MatchOutcome(null, problem = "A state has an empty or malformed outline.")
+        return MatchOutcome(null, problem = "An anchor has an empty or malformed outline.")
     }
     // Adding nodes can't invent a missing contour, and dropping one would lose drawing: refuse instead.
     if (mostNodes && done.values.map { it.contours.size }.toSet().size > 1) {
-        return MatchOutcome(null, problem = "The states have different numbers of contours, so nodes alone can't match them. Use Match nodes to the fewest, or draw the missing contour.")
+        return MatchOutcome(null, problem = "The anchors have different numbers of contours, so nodes alone can't match them. Draw the missing contour on the others.")
     }
     val ref = if (mostNodes) done.entries.maxBy { (_, g) -> g.contours.sumOf(::nodesIn) }.key
         else done.entries.minBy { (_, g) -> g.contours.sumOf(::nodesIn) }.key

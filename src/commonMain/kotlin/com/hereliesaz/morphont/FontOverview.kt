@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,7 +38,7 @@ import androidx.compose.ui.window.DialogProperties
 @Composable
 private fun FontGlyphPreview(glyph: Glyph?, values: Map<String, Float>, modifier: Modifier) {
     if (glyph == null) {
-        Box(modifier, contentAlignment = Alignment.Center) { Caps("Unavailable", size = 9) }
+        Box(modifier, contentAlignment = Alignment.Center) { Caps("Unavailable", size = 10) }
         return
     }
     val source = glyph.corners
@@ -63,18 +62,17 @@ private fun FontAxisControls(values: Map<String, Float>, onChange: (String, Floa
         for (axis in axes) {
             val value = values[axis.tag] ?: 0.5f
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(axis.label, fontSize = 12.sp, color = Mono.ink, modifier = Modifier.width(86.dp))
-                Slider(
+                Text(axis.label, fontSize = Type.Small, color = Mono.ink, modifier = Modifier.width(86.dp))
+                HairSlider(
                     value = value,
                     onValueChange = { onChange(axis.tag, it) },
-                    valueRange = 0f..1f,
                     modifier = Modifier.weight(1f),
                 )
                 Caps(fmt2(value), size = 10, modifier = Modifier.width(38.dp))
             }
         }
         MonoButton(onClick = { expanded = !expanded }, outlined = true) {
-            Text(if (expanded) "Fewer axes" else "All ${Axis.ALL.size} axes", fontSize = 12.sp)
+            Text(if (expanded) "Fewer axes" else "All ${Axis.ALL.size} axes", fontSize = Type.Small)
         }
     }
 }
@@ -95,14 +93,14 @@ fun FontOverview(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Font · ${names.size} glyphs", fontSize = 21.sp, color = Mono.ink, modifier = Modifier.weight(1f))
+                Text("Font · ${names.size} glyphs", fontSize = Type.Title, color = Mono.ink, modifier = Modifier.weight(1f))
                 MonoButton(onClick = {
                     for (axis in Axis.ALL) app.setFontPreviewAxis(axis.tag, 0.5f)
-                }, outlined = true) { Text("Regular", fontSize = 12.sp) }
-                IconAction(MIcons.Close, "Close font overview", onDismiss, size = 40)
+                }, outlined = true) { Text("Regular", fontSize = Type.Small) }
+                IconAction(MIcons.Close, "Close font overview", onDismiss, size = IconSize.LARGE)
             }
             Text("Adjust every glyph's preview together. Open a tile for individual axes. Source outlines are unchanged.",
-                fontSize = 12.sp, color = Mono.inkDim)
+                fontSize = Type.Small, color = Mono.inkDim)
             Box(Modifier.fillMaxWidth().heightIn(max = 215.dp)) {
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(end = 10.dp)) {
                     FontAxisControls(app.fontPreviewValues.toMap(), app::setFontPreviewAxis)
@@ -126,7 +124,7 @@ fun FontOverview(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         FontGlyphPreview(glyph, values, Modifier.fillMaxWidth().height(88.dp))
-                        Text(displayGlyphName(name), color = Mono.ink, fontSize = 14.sp, maxLines = 1)
+                        Text(displayGlyphName(name), color = Mono.ink, fontSize = Type.Body, maxLines = 1)
                     }
                 }
             }
@@ -141,22 +139,22 @@ fun FontOverview(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
             MonoButton(onClick = {
                 app.applyGlyphPreviewToAll(current)
                 selected = null
-            }, selected = true) { Text("Apply instance to all", fontSize = 12.sp) }
+            }, selected = true) { Text("Apply instance to all", fontSize = Type.Small) }
             MonoButton(onClick = {
                 selected = null
                 onDismiss()
                 host.openGlyph(current)
-            }) { Text("Edit glyph", fontSize = 12.sp) }
+            }) { Text("Edit glyph", fontSize = Type.Small) }
         }) {
             FontGlyphPreview(glyph, app.fontValuesFor(current),
                 Modifier.fillMaxWidth().height(216.dp).background(Mono.panelHeader, RoundedCornerShape(12.dp)))
             Text("Adjust this glyph's preview. Apply to all to set the font-wide instance.",
-                fontSize = 12.sp, color = Mono.inkDim)
+                fontSize = Type.Small, color = Mono.inkDim)
             FontAxisControls(app.fontValuesFor(current)) { tag, value ->
                 app.setGlyphPreviewAxis(current, tag, value)
             }
             MonoButton(onClick = { app.glyphPreviewValues.remove(current) }, outlined = true) {
-                Text("Use font-wide values", fontSize = 12.sp)
+                Text("Use font-wide values", fontSize = Type.Small)
             }
         }
     }

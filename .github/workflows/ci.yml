@@ -1,0 +1,55 @@
+name: CI
+
+# Runs the shared test suite on the JVM targets (desktop and the Android host) for every pull request
+# and every push to main, so a failing test turns the check red. This is the repository's own CI: the
+# HereLiesAz/workflows policy lets a target run its CI locally, declared by the ci-report step below.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: read
+  id-token: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # GITHUB_ACTOR/GITHUB_TOKEN authenticate against HereLiesAz/convey's GitHub Packages repository.
+      - name: Run tests
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew desktopTest testAndroidHostTest --continue --stacktrace
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: build/reports/tests/
+
+      - if: always()
+        uses: HereLiesAz/workflows/.github/actions/ci-report@main
+        with:
+          summary: ${{ job.status }}

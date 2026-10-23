@@ -327,7 +327,8 @@ fun toggleCurveSelection(g: GlyphCorner, selection: Set<PointKey>): Pair<GlyphCo
 /**
  * Inserts a node on the segment leaving node [from] of [c], at parameter [t] (0..1) along it, without
  * changing the outline (de Casteljau). The two ends keep their tangent directions; only their handle on
- * this segment shortens. The new node is smooth on a curve and a corner on a straight side. Returns the
+ * this segment shortens. The new node is smooth on a curve split at its middle (mirrored arms) and a
+ * corner otherwise. Returns the
  * new contour and the new node's point index, or null when [c] isn't a valid cubic contour or [from]
  * isn't a node of it.
  */
@@ -346,7 +347,13 @@ fun splitSegment(c: ContourData, from: Int, t: Float): Pair<ContourData, Int>? {
     val m = mid(r0, r1, t)
     val collinear = kotlin.math.abs((p1.x - a.x) * (b.y - a.y) - (p1.y - a.y) * (b.x - a.x)) < 1e-3f &&
         kotlin.math.abs((p2.x - a.x) * (b.y - a.y) - (p2.y - a.y) * (b.x - a.x)) < 1e-3f
-    val node = Pt(m.x, m.y, true, smooth = !straight && !collinear)
+    // Smooth means mirrored arms (collinear *and* equal). A de Casteljau split's arms are collinear but
+    // in the ratio t : 1 - t, so only a split near the middle can be smooth; elsewhere the node stays a
+    // corner, or the first arm drag would re-mirror the other and bend the next segment.
+    val inLen = kotlin.math.hypot(m.x - r0.x, m.y - r0.y)
+    val outLen = kotlin.math.hypot(r1.x - m.x, r1.y - m.y)
+    val mirrored = kotlin.math.abs(inLen - outLen) <= 0.01f * maxOf(inLen, outLen, 1e-6f)
+    val node = Pt(m.x, m.y, true, smooth = !straight && !collinear && mirrored)
     val out = mutableListOf<Pt>()
     var newIndex = -1
     for (s in segs) {

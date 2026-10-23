@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -16,16 +17,23 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import compose.conveyance.ConveySystem
+import kotlinx.browser.document
+import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
+import org.w3c.dom.events.Event
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** `document.visibilityState == "hidden"` (not in this kotlinx-browser's Document). */
+private fun pageHidden(): Boolean = js("document.visibilityState === 'hidden'")
 
 /** How long an edit has to sit still before autosave writes it -- coalesces a whole drag gesture's frame-by-frame updates into one write. */
 private const val AUTOSAVE_DEBOUNCE_MS = 400L
 
 
-private fun createGlyph(app: AppState, rawName: String): Boolean {
+private fun createGlyph(app: AppState, rawName: String, glyph: Glyph = Glyph()): Boolean {
     val name = rawName.trim()
     if (name.isBlank()) {
         app.setStatus("Type a name for the new glyph first.", isError = true)
@@ -36,11 +44,10 @@ private fun createGlyph(app: AppState, rawName: String): Boolean {
         return false
     }
 
-    val glyph = Glyph()
     Storage.saveGlyph(name, glyph)
     app.glyphNames = Storage.listGlyphNames()
     app.loadGlyph(name, glyph)
-    app.setStatus("Created \"$name\". Choose New contour in Regular and start drawing.")
+    app.setStatus(createdMessage(name, glyph))
     return true
 }
 
@@ -75,12 +82,15 @@ private suspend fun enterProject(app: AppState, info: ProjectInfo, message: Stri
     app.projects = Storage.registry.projects
     app.glyphNames = names
     openFirstAvailableGlyph(app, names)
-    app.setStatus(message)
+    val unreadable = Storage.unreadableOnLoad
+    if (unreadable.isEmpty()) app.setStatus(message)
+    else app.setStatus("$message ${unreadable.size} glyph record(s) couldn't be read and are left out: ${unreadable.joinToString()}.", isError = true)
 }
 
 private fun openProject(app: AppState, scope: CoroutineScope, id: String, message: (ProjectInfo) -> String = { "Opened \"${it.name}\"." }) {
     if (app.currentProject?.id == id) return
-    val info = Storage.registry.open(id) ?: return
+    // Remembering it as the last-opened project can fail (storage full); opening it shouldn't.
+    val info = runCatching { Storage.registry.open(id) }.getOrNull() ?: Storage.registry.find(id) ?: return
     app.projects = Storage.registry.projects
     closeOpenProject(app)
     scope.launch {
@@ -94,7 +104,10 @@ private fun openProject(app: AppState, scope: CoroutineScope, id: String, messag
 
 private fun createProject(app: AppState, scope: CoroutineScope, raw: String): Boolean {
     Storage.registry.nameProblem(raw)?.let { app.setStatus(it, isError = true); return false }
-    val info = Storage.registry.create(raw)
+    val info = try { Storage.registry.create(raw) } catch (e: Exception) {
+        app.setStatus("Couldn't start the project: ${e.message}", isError = true)
+        return false
+    }
     app.projects = Storage.registry.projects
     openProject(app, scope, info.id) { "Started \"${it.name}\". Create a glyph or import a font; everything saves as you work." }
     return true
@@ -102,19 +115,28 @@ private fun createProject(app: AppState, scope: CoroutineScope, raw: String): Bo
 
 private fun renameProject(app: AppState, id: String, raw: String): Boolean {
     Storage.registry.nameProblem(raw, exceptId = id)?.let { app.setStatus(it, isError = true); return false }
-    val renamed = Storage.registry.rename(id, raw) ?: return false
+    val renamed = try { Storage.registry.rename(id, raw) } catch (e: Exception) {
+        app.setStatus("Couldn't rename the project: ${e.message}", isError = true)
+        return false
+    } ?: return false
     if (app.currentProject?.id == id) app.currentProject = renamed
     app.projects = Storage.registry.projects
     return true
 }
 
 private fun deleteProject(app: AppState, scope: CoroutineScope, id: String) {
+    try { Storage.registry.delete(id) } catch (e: Exception) {
+        app.setStatus("Couldn't delete the project: ${e.message}", isError = true)
+        return
+    }
     if (app.currentProject?.id == id) closeOpenProject(app)
-    Storage.registry.delete(id)
     app.projects = Storage.registry.projects
     scope.launch {
         try {
-            Storage.deleteProjectData(id)
+            // Another Morphont tab holding the database open blocks the delete indefinitely.
+            if (withTimeoutOrNull(8_000) { Storage.deleteProjectData(id) } == null) {
+                app.setStatus("The project's data is still in use by another Morphont tab; close it and the data will be erased.", isError = true)
+            }
         } catch (e: Throwable) {
             app.setStatus("Could not erase the project's data: ${e.message ?: e::class.simpleName}", isError = true)
         }
@@ -141,31 +163,57 @@ private fun importProjectIntoApp(app: AppState) {
     )
 }
 
-private fun importVariableFontIntoApp(app: AppState) {
+private fun importFontBytes(app: AppState, bytes: ByteArray) {
+    try {
+        val result = buildFamilyFromVariableFont(bytes)
+        val collisions = Storage.saveNewGlyphs(result.glyphs)
+        app.glyphNames = Storage.listGlyphNames()
+
+        val inserted = result.glyphs.keys.filterNot { it in collisions }.sorted()
+        val firstImportedName = inserted.firstOrNull()
+        if (firstImportedName != null) {
+            result.glyphs[firstImportedName]?.let { app.loadGlyph(firstImportedName, it) }
+        }
+
+        val warnings = listOfNotNull(
+            result.skippedCharacters.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
+            collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
+        )
+        val skippedNote = if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}."
+        val openedNote = if (firstImportedName == null) "" else " Opened $firstImportedName."
+        app.setStatus(
+            "Imported ${inserted.size} character(s) from the TrueType font.$openedNote$skippedNote",
+        )
+    } catch (e: Exception) {
+        app.setStatus("Import failed: ${e.message}", isError = true)
+    }
+}
+
+/**
+ * Imports a TrueType font into the open project, or -- [intoNewProject], from the projects screen -- into a
+ * fresh one, entered (the browser database opened) before any glyph is written.
+ */
+private fun importVariableFontIntoApp(app: AppState, scope: CoroutineScope, intoNewProject: Boolean = false) {
     Storage.pickTtfBytes(
         onLoaded = { bytes ->
-            try {
-                val result = buildFamilyFromVariableFont(bytes)
-                val collisions = Storage.saveNewGlyphs(result.glyphs)
-                app.glyphNames = Storage.listGlyphNames()
-
-                val inserted = result.glyphs.keys.filterNot { it in collisions }.sorted()
-                val firstImportedName = inserted.firstOrNull()
-                if (firstImportedName != null) {
-                    result.glyphs[firstImportedName]?.let { app.loadGlyph(firstImportedName, it) }
+            if (!intoNewProject) importFontBytes(app, bytes)
+            else {
+                val info = try { Storage.registry.create(unusedProjectName(Storage.registry, "Imported font")) } catch (e: Exception) {
+                    app.setStatus("Couldn't start a project for the font: ${e.message}", isError = true)
+                    null
                 }
-
-                val warnings = listOfNotNull(
-                    result.skippedCharacters.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
-                    collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
-                )
-                val skippedNote = if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}."
-                val openedNote = if (firstImportedName == null) "" else " Opened $firstImportedName."
-                app.setStatus(
-                    "Imported ${inserted.size} character(s) from the TrueType font.$openedNote$skippedNote",
-                )
-            } catch (e: Exception) {
-                app.setStatus("Import failed: ${e.message}", isError = true)
+                if (info != null) {
+                    app.projects = Storage.registry.projects
+                    closeOpenProject(app)
+                    scope.launch {
+                        try {
+                            enterProject(app, info, "Started \"${info.name}\".")
+                            importFontBytes(app, bytes)
+                        } catch (e: Throwable) {
+                            app.setStatus("Could not open \"${info.name}\": ${e.message ?: e::class.simpleName}", isError = true)
+                        }
+                    }
+                }
             }
         },
         onError = { msg -> app.setStatus(msg, isError = true) },
@@ -188,9 +236,9 @@ fun App() {
                     createGlyph = { name -> createGlyph(app, name) },
                     listGlyphNames = { Storage.listGlyphNames().also { app.glyphNames = it } },
                     fileActions = listOf(
-                        "Import a TrueType font (.ttf)" to { importVariableFontIntoApp(app) },
-                        "Open a project (.json)" to { importProjectIntoApp(app) },
-                        "Save the whole project" to {
+                        "Import a TrueType font (.ttf)" to { importVariableFontIntoApp(app, scope) },
+                        "Open a Morphont project (.json)" to { importProjectIntoApp(app) },
+                        "Save the whole project (.json)" to {
                             Storage.exportProject(app.currentGlyphName?.let { it to app.toGlyph() })
                         },
                         "Export this glyph (.json)" to {
@@ -201,7 +249,7 @@ fun App() {
                             val name = app.currentGlyphName ?: "imported"
                             Storage.importGlyph(
                                 name = name,
-                                onLoaded = { glyph -> app.loadGlyph(name, glyph) },
+                                onLoaded = { glyph -> app.loadGlyph(name, glyph); app.setStatus("Replaced \"$name\" from the file.") },
                                 onError = { msg -> app.setStatus(msg, isError = true) },
                             )
                         },
@@ -215,6 +263,23 @@ fun App() {
                     touchScale = 1.3f,
                     settings = Storage.settings,
                     fontStore = WebFontStore.host,
+                    createGlyphFrom = { name, glyph -> createGlyph(app, name, glyph) },
+                    glyphFiles = GlyphFiles(
+                        exists = Storage::glyphExists,
+                        load = Storage::loadGlyph,
+                        save = Storage::saveGlyph,
+                        delete = Storage::deleteGlyph,
+                        list = Storage::listGlyphNames,
+                        move = { old, name, glyph ->
+                            Storage.moveGlyph(old, name, glyph) {
+                                // The browser refused the write: it is back under its old name, and so is the editor.
+                                if (app.currentGlyphName == name) { app.beginBulkImport(); app.currentGlyphName = old }
+                                app.glyphNames = Storage.listGlyphNames()
+                                app.setStatus("Couldn't rename \"$old\" to \"$name\"; it's still \"$old\".", isError = true)
+                            }
+                        },
+                    ),
+                    confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
                 )
             }
 
@@ -223,7 +288,7 @@ fun App() {
             LaunchedEffect(Unit) {
                 app.projects = Storage.registry.projects
                 Storage.registry.last?.let { last ->
-                    val info = Storage.registry.open(last.id) ?: return@let
+                    val info = runCatching { Storage.registry.open(last.id) }.getOrNull() ?: Storage.registry.find(last.id) ?: return@let
                     try {
                         enterProject(app, info, "Opened \"${info.name}\".")
                     } catch (e: Throwable) {
@@ -268,6 +333,23 @@ fun App() {
                     }
             }
 
+            // Hiding or leaving the tab writes the open glyph now, so an edit still inside the debounce
+            // isn't lost when the tab is closed.
+            DisposableEffect(Unit) {
+                val flush: (Event) -> Unit = {
+                    if (pageHidden() || it.type == "pagehide") {
+                        val name = app.currentGlyphName
+                        if (name != null && app.currentProject != null) Storage.saveGlyph(name, app.toGlyph())
+                    }
+                }
+                document.addEventListener("visibilitychange", flush)
+                window.addEventListener("pagehide", flush)
+                onDispose {
+                    document.removeEventListener("visibilitychange", flush)
+                    window.removeEventListener("pagehide", flush)
+                }
+            }
+
             Box(
                 Modifier.fillMaxSize()
                     // Any press returns keyboard focus to the editor (text fields still take it after).
@@ -282,14 +364,17 @@ fun App() {
                     .editorKeys(app),
             ) {
                 if (app.currentProject == null) {
-                    ProjectsScreen(app, host.projects!!)
+                    ProjectsScreen(app, host.projects!!, starts = listOf(
+                        "Import a TrueType font (.ttf)" to { importVariableFontIntoApp(app, scope, intoNewProject = true) },
+                        "Open a Morphont project (.json)" to { importProjectIntoApp(app) },
+                    ))
                 } else if (app.currentGlyphName == null) {
                     WelcomeScreen(
                         app,
                         host,
                         actions = listOf(
-                            "Import a TrueType font" to { importVariableFontIntoApp(app) },
-                            "Open a Morphont project" to { importProjectIntoApp(app) },
+                            "Import a TrueType font (.ttf)" to { importVariableFontIntoApp(app, scope) },
+                            "Open a Morphont project (.json)" to { importProjectIntoApp(app) },
                         ),
                     )
                 } else {

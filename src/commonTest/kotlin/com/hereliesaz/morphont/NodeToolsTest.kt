@@ -9,6 +9,7 @@ import kotlin.math.sin
 import kotlin.math.tan
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -68,7 +69,10 @@ class NodeToolsTest {
         }
         assertEquals(c.points.count { it.onCurve } + 1, nc.points.count { it.onCurve })
         assertTrue(isValidCubicContour(nc))
-        assertTrue(nc.points[index].smooth, "a node on a curve is smooth")
+        // Off-centre, the halves' arms are in the ratio t : 1 - t, not mirrored: a corner, so dragging one
+        // arm doesn't re-mirror the other and bend the neighbouring segment.
+        assertFalse(nc.points[index].smooth, "an off-centre split is a corner")
+        assertTrue(assertNotNull(splitSegment(c, 0, 0.5f)).let { (h, i) -> h.points[i].smooth }, "a split at the middle is smooth")
     }
 
     @Test fun aNodeOnAStraightSideIsACorner() {

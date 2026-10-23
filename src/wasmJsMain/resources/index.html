@@ -9,11 +9,18 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <script>
+    // The saved theme, before anything paints, so the Light theme never flashes the Dark ground first.
+    try { if (JSON.parse(localStorage.getItem('morphont-settings')).dark === false) document.documentElement.dataset.theme = 'light'; } catch (e) {}
+  </script>
   <style>
-    html, body, #root { height: 100%; margin: 0; padding: 0; background: #070707; }
+    /* The ground of each theme: Theme.kt's DarkPalette and LightPalette (PaletteResourcesTest keeps these in step). */
+    :root { --ground: #070707; }
+    :root[data-theme="light"] { --ground: #2E2E2E; }
+    html, body, #root { height: 100%; margin: 0; padding: 0; background: var(--ground); }
     body { overflow: hidden; }
     /* Splash: the logo on the ground while Wasm loads; Main.kt removes it once Compose is up. */
-    #splash { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #070707; z-index: 10; }
+    #splash { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--ground); z-index: 10; }
     #splash img { width: min(40vw, 220px); height: auto; }
   </style>
 </head>

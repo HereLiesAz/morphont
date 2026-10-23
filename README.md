@@ -1,6 +1,7 @@
 # Morphont
 
-A Progressive Web App for building a variable-font character from a
+A variable-font glyph editor -- on Android, Windows, macOS, Linux and the
+web (a Progressive Web App) -- for building a variable-font character from a
 handful of hand-drawn anchors -- each axis's two extremes, plus one
 shared **regular** at the dead center of the whole design space -- and
 watching every other value along every axis fall out of the math rather
@@ -134,6 +135,27 @@ so anchors can then be reshaped without adding or removing points.
   open so several can be flipped at once, then **Grid step** (10, 25, 50 or 100
   units). The desktop top bar has the same menu without the panel shortcuts
   (those panels are always on screen there).
+- **Getting started.** The start screens open with the idea in a line and a
+  **How Morphont works** button (also under **Help** in the menu): three
+  thumbnails of one axis, and the anchors, Regular and Match steps in plain
+  words. A project's first screen offers **Import a TrueType font**, **Import
+  UFO** (desktop) and **Open a Morphont project** straight away -- each makes
+  its own project -- and an open, empty project offers **Try the sample**, an
+  "o" already drawn on every anchor so the Preview moves at once. **Help →
+  Keys and gestures** lists every key and the touch gestures no button shows.
+- **Every control names itself.** Hover (or long-press) any icon for its name;
+  a disabled one says why ("select a node first", "finish the contour first").
+  Icon buttons come in three sizes (28, 40, 48 dp; the phone dock is all 48),
+  take keyboard focus with a ring, and report their selected state to screen
+  readers; anchors, glyph tiles, chips and segmented controls carry button,
+  tab or switch roles, and the canvas describes the anchor it shows. The
+  Match menu explains each item and says when there's nothing to do.
+- **Rename and delete glyphs.** **Glyphs and files** has a **This glyph** row
+  for the open glyph: **Rename** (the new name keeps the edits and undo
+  history; an existing name is refused) and **Delete** (asks first; the next
+  glyph opens). **Replace this glyph from .json**, **Remove** in the font
+  store and **Delete** project all ask before they overwrite something undo
+  can't bring back.
 - **Settings are remembered.** Theme, every view toggle, the grid and its step,
   the glyph opacity and the Move circle choice are saved as they change and
   restored at launch: Android in its preferences, desktop in `settings.json`
@@ -277,7 +299,7 @@ so anchors can then be reshaped without adding or removing points.
   key and is still used for opening, linking and export; older imports are
   displayed correctly without deleting or renaming any glyphs. Non-printing,
   invalid and alternate names remain literal.
-- **UFO import (desktop).** In **Glyphs & file → Import UFO**, select a
+- **UFO import (desktop).** In **Glyphs and files → Import UFO**, select a
   `.ufo` directory (not a GLIF by itself) or `.ufoz` ZIP archive. Reads UFO
   2/3 default-layer `glyphs/contents.plist`, GLIF glyph names, per-glyph
   advances, font metrics, closed cubic/quadratic contours and nested affine
@@ -360,17 +382,23 @@ so anchors can then be reshaped without adding or removing points.
   other Android copy (the GitHub APK, sideloaded) and the desktop apps look at
   the GitHub Releases for the newest non-prerelease carrying their own
   installer (`.apk`; `.msi`, `.dmg`, or `.deb`/`.rpm`) and open that release.
-  Desktop compares major.minor.patch, since installers carry a run number the
-  app doesn't. The web app updates itself on reload and has no check.
+  A patch release holds every build's installers, so the newest build in it is
+  the one compared, on all four version parts. The web app updates itself on
+  reload and has no check.
 - **Font store.** Menu → Font store (or Ghosts → + → Character from the
   font store) browses the `kind: "font"` packages on
   [azphalt.store](https://azphalt.store): search, then **Install**. A package
-  is checked before anything is kept -- zip paths, sizes, and every file's
-  SHA-256 against its manifest -- and its faces are stored on this device.
+  is checked before anything is kept -- zip paths, sizes, every file's
+  SHA-256 against its manifest, and azphalt's font rules (faces under
+  `fonts/` in their declared format, nothing else but the licence) -- and its
+  faces are stored on this device, a new version beside the old until it's
+  complete.
   Under **Installed**: **Use as ghost** (TrueType faces) opens the character
   picker on that font; **Install on this computer** copies it into the user's
   font folder on desktop (`~/Library/Fonts`, `~/.local/share/fonts/morphont`
-  + `fc-cache`, or the per-user Windows font folder and its registry entry);
+  + `fc-cache`, or the per-user Windows font folder and its registry entry),
+  as `<package id>-<file>` so it never replaces a font of your own, and says
+  when the system didn't pick it up; only `.ttf`/`.otf` faces install;
   Android saves the file through the system picker and the web downloads it,
   since neither lets an app install fonts; **Remove**. Package signatures
   aren't checked yet (the store is reached over HTTPS), and paid fonts are
@@ -437,7 +465,8 @@ so anchors can then be reshaped without adding or removing points.
 - `Outline.kt` -- the cubic node/arm model: arm lookup, mirrored drags, corner/smooth, line/curve, valid deletion, pen nodes, exact quadratic-to-cubic conversion
 - `Editing.kt` -- UI-free editing geometry: bounds, affine transforms, ghost shapes, clipboard extraction, snapping, node-reduction order
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)
-- `Editor.kt` -- the shared editor screen (phone and wide layouts) and the welcome screen, used by both shells
+- `Editor.kt` -- the shared editor screen (phone and wide layouts) and the welcome screen, used by all shells
+- `Onboarding.kt` -- the sample glyph, "How Morphont works", the shared start-screen head and the keys-and-gestures list; `GlyphFiles.kt` -- rename and delete for glyphs, written once over each shell's storage
 - `AnchorCanvas.kt` / `Panels.kt` / `Controls.kt` -- the canvas renderer, preview/thumbnail canvases, and the floating parts (ghost bar, simplify card, axis strip, filmstrip, inspector sections, dialogs, keyboard shortcuts)
 - `Icons.kt` -- the monoline icon set
 - `Suggestions.kt` -- the suggested-edits engine (outline offset, stem measurement, and each suggestion)
@@ -480,8 +509,23 @@ of the way until needed.
 - **Monochrome.** Hierarchy is carried by brightness: the selected node, the
   active tool and the anchor being edited are the whitest things on screen.
   Smooth nodes are circles, corner nodes squares (filled when selected),
-  off-curve handle tips are X marks. The palette's one
-  colour, `Mono.error`, is kept for errors.
+  off-curve handle tips are X marks. Colour appears in two places only:
+  `Mono.error`, kept for errors, and the ghost outline colours (`GhostStyle`),
+  which a user picks to tell several ghosts apart.
+- **One vocabulary of parts.** Every slider is `HairSlider` (Material's slider
+  with a hairline track, so gestures and keyboard steps are stock). Buttons
+  have three weights -- borderless, `outlined`, and `selected` (the one
+  primary action on a surface) -- one label size, and dialog footers read
+  Cancel then the primary. Text sizes are roles (`Type.Micro`, `Small`,
+  `Body`, `Row`, `Title`...), never raw numbers; `Caps` is for labels of a few
+  words and has two sizes. Icon buttons are 28, 40 or 48 dp (`IconSize`) with
+  the icon at a fixed 16 or 20 dp inside. Glyph tiles (`GlyphTile`), menu
+  section heads (`MonoMenuHeader`), the start-screen head (`MorphontHero`) and
+  the start list are each defined once. Ripples are ink at low strength.
+- **Contrast.** Placeholders and small labels use `inkDim` (above 4.5:1 on
+  every panel); `inkFaint` is for disabled things only. The splash and the
+  privacy page follow the saved theme and repeat the palette's hexes, which
+  `PaletteResourcesTest` keeps in step with `Theme.kt`.
 - **Own parts:** a monoline icon set (`Icons.kt`, no icon library) and a
   hairline slider (`HairSlider`) in place of Material's thick one.
 - **Logo:** `branding/logo-inverted.png` (light, for this dark UI) is the
