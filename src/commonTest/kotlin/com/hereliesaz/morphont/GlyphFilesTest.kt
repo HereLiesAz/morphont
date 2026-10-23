@@ -60,3 +60,20 @@ class GlyphFilesTest {
         assertEquals(listOf("a"), app.glyphNames)
     }
 }
+
+class GlyphMoveTest {
+    @Test
+    fun aStoreThatCanMoveARecordIsAskedToDoItInOneStep() {
+        val store = mutableMapOf("a" to Glyph())
+        val calls = mutableListOf<String>()
+        val files = GlyphFiles(
+            exists = { it in store }, load = { store[it] },
+            save = { _, _ -> calls += "save" }, delete = { calls += "delete" }, list = { store.keys.sorted() },
+            move = { old, name, g -> calls += "move"; store.remove(old); store[name] = g },
+        )
+        val app = AppState().apply { glyphNames = files.list() }
+        assertTrue(renameGlyph(app, files, "a", "b"))
+        assertEquals(listOf("move"), calls, "save then delete would be two queued writes")
+        assertEquals(listOf("b"), app.glyphNames)
+    }
+}

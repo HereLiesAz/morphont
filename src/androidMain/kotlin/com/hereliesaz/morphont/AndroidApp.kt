@@ -219,9 +219,12 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                                     buildFamilyFromVariableFont(bytes)
                                 }
                                 val collisions = withContext(Dispatchers.IO) { storage.saveNewGlyphs(result.glyphs, forProject) }
-                                app.glyphNames = withContext(Dispatchers.IO) { storage.listGlyphNames() }
+                                // Still in the project the import began in? If another was opened meanwhile, its glyph
+                                // list and open glyph are left alone: the imported glyphs are in the first project.
+                                val stillHere = app.currentProject?.id == forProject
+                                if (stillHere) app.glyphNames = withContext(Dispatchers.IO) { storage.listGlyphNames() }
                                 val inserted = result.glyphs.keys.filterNot { it in collisions }.sorted()
-                                val firstImportedName = inserted.firstOrNull()
+                                val firstImportedName = inserted.firstOrNull()?.takeIf { stillHere }
                                 if (firstImportedName != null) {
                                     result.glyphs[firstImportedName]?.let {
                                         loadPersistentGlyph(firstImportedName, it)
@@ -233,8 +236,9 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                                 )
                                 val skippedNote = if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}."
                                 val openedNote = if (firstImportedName == null) "" else " Opened $firstImportedName."
+                                val elsewhereNote = if (stillHere) "" else " They're in the project you imported into, not the one open now."
                                 app.setStatus(
-                                    "Imported ${inserted.size} character(s) from the TrueType font.$openedNote$skippedNote",
+                                    "Imported ${inserted.size} character(s) from the TrueType font.$openedNote$skippedNote$elsewhereNote",
                                 )
                             } catch (e: Exception) {
                                 app.setStatus("Import failed: ${e.message}", true)

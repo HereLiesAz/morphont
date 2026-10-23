@@ -270,6 +270,7 @@ fun App() {
                         save = Storage::saveGlyph,
                         delete = Storage::deleteGlyph,
                         list = Storage::listGlyphNames,
+                        move = Storage::moveGlyph,
                     ),
                     confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
                 )

@@ -306,6 +306,24 @@ object Storage {
         }
     }
 
+    /**
+     * Renames a glyph in one IndexedDB transaction -- the new record is written and the old one removed
+     * together, so a failed write (quota, say) leaves the glyph under its old name instead of nowhere.
+     */
+    fun moveGlyph(old: String, name: String, glyph: Glyph) {
+        project.remove(old)
+        project[name] = glyph
+        persistAsync("Couldn't rename the glyph") {
+            writeMutex.withLock {
+                requireDatabase().writeTransaction(GLYPH_STORE) {
+                    val store = objectStore(GLYPH_STORE)
+                    store.put(storedGlyph(name, glyph))
+                    store.delete(Key(old.toJsString()))
+                }
+            }
+        }
+    }
+
     /** Removes a glyph from the open project (the store's key is the glyph name). */
     fun deleteGlyph(name: String) {
         project.remove(name)

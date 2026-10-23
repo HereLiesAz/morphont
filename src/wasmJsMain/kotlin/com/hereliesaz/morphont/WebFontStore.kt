@@ -37,6 +37,32 @@ private fun ByteArray.toInt8Array(): Int8Array = Int8Array(size).also { a -> for
 
 private fun Int8Array.toByteArray(): ByteArray = ByteArray(length) { this[it] }
 
+private fun bodyReader(response: Response): JsAny? = js("(response.body ? response.body.getReader() : null)")
+
+private fun readChunk(reader: JsAny): kotlin.js.Promise<JsAny> = js("reader.read()")
+
+private fun chunkDone(chunk: JsAny): Boolean = js("chunk.done === true")
+
+private fun chunkValue(chunk: JsAny): org.khronos.webgl.Uint8Array = js("chunk.value")
+
+private fun cancelReader(reader: JsAny) { js("reader.cancel()") }
+
+/** A growing byte buffer for streamed chunks. */
+private class ByteArrayBuilder {
+    private var data = ByteArray(64 * 1024)
+    var size = 0
+        private set
+
+    fun append(part: org.khronos.webgl.Uint8Array) {
+        val need = size + part.length
+        if (need > data.size) data = data.copyOf(maxOf(need, data.size * 2))
+        for (i in 0 until part.length) data[size + i] = part[i]
+        size = need
+    }
+
+    fun toByteArray(): ByteArray = data.copyOf(size)
+}
+
 /**
  * The browser font store: `fetch` against the store (which serves its read API cross-origin), installed
  * fonts in their own IndexedDB database, and "Download font file", since a page can't install fonts.
@@ -50,7 +76,27 @@ object WebFontStore {
         }
         check(response.ok) { "The store answered ${response.status}." }
         response.headers.get("content-length")?.toLongOrNull()?.let { check(it <= MAX_DOWNLOAD_BYTES) { "The download is larger than Morphont accepts." } }
-        Int8Array(response.arrayBuffer().await<ArrayBuffer>()).toByteArray()
+        // Content-Length can be missing or wrong, and a compressed body decodes larger than it says, so the
+        // cap is enforced on the decoded bytes as they arrive, and the transfer is abandoned past it.
+        val reader = bodyReader(response)
+        if (reader == null) {
+            val bytes = Int8Array(response.arrayBuffer().await<ArrayBuffer>()).toByteArray()
+            check(bytes.size <= MAX_DOWNLOAD_BYTES) { "The download is larger than Morphont accepts." }
+            bytes
+        } else {
+            val out = ByteArrayBuilder()
+            while (true) {
+                val chunk = readChunk(reader).await<JsAny>()
+                if (chunkDone(chunk)) break
+                val part = chunkValue(chunk)
+                if (out.size + part.length > MAX_DOWNLOAD_BYTES) {
+                    cancelReader(reader)
+                    throw IllegalStateException("The download is larger than Morphont accepts.")
+                }
+                out.append(part)
+            }
+            out.toByteArray()
+        }
     }
 
     private object Blobs : BlobStore {

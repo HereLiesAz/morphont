@@ -146,14 +146,19 @@ fun DesktopApp() {
                         val result = withContext(Dispatchers.Default) { buildFamilyFromVariableFont(bytes) }
                         val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs, forProject) }
                         val inserted = result.glyphs.keys.filterNot { it in collisions }
-                        app.glyphNames = DesktopStorage.listGlyphNames()
-                        inserted.firstOrNull()?.let(::open)
+                        // If another project was opened meanwhile, its list and open glyph are left alone.
+                        val stillHere = DesktopStorage.openProjectId == forProject
+                        if (stillHere) {
+                            app.glyphNames = DesktopStorage.listGlyphNames()
+                            inserted.firstOrNull()?.let(::open)
+                        }
                         val warnings = listOfNotNull(
                             result.skippedCharacters.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
                             collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
                         )
                         app.setStatus("Imported ${inserted.size} TrueType glyph(s)." +
-                            if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}.")
+                            (if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}.") +
+                            (if (stillHere) "" else " They're in the project you imported into, not the one open now."))
                     } catch (e: Exception) {
                         app.setStatus("Import failed: ${e.message}", true)
                     }
@@ -169,14 +174,19 @@ fun DesktopApp() {
                         val result = withContext(Dispatchers.IO) { importUfoFile(file) }
                         val collisions = withContext(Dispatchers.IO) { DesktopStorage.saveNewGlyphs(result.glyphs, forProject) }
                         val inserted = result.glyphs.keys.filterNot { it in collisions }
-                        app.glyphNames = DesktopStorage.listGlyphNames()
-                        inserted.firstOrNull()?.let(::open)
+                        // If another project was opened meanwhile, its list and open glyph are left alone.
+                        val stillHere = DesktopStorage.openProjectId == forProject
+                        if (stillHere) {
+                            app.glyphNames = DesktopStorage.listGlyphNames()
+                            inserted.firstOrNull()?.let(::open)
+                        }
                         val warnings = listOfNotNull(
                             result.skipped.takeIf { it.isNotEmpty() }?.let { "${it.size} malformed/unsupported" },
                             collisions.takeIf { it.isNotEmpty() }?.let { "${it.size} existing preserved" },
                         )
                         app.setStatus("Imported ${inserted.size} UFO glyph(s)." +
-                            if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}.")
+                            (if (warnings.isEmpty()) "" else " Skipped: ${warnings.joinToString(", ")}.") +
+                            (if (stillHere) "" else " They're in the project you imported into, not the one open now."))
                     } catch (e: Exception) {
                         app.setStatus("UFO import failed: ${e.message}", true)
                     }

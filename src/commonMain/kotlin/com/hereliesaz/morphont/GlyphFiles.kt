@@ -10,6 +10,12 @@ class GlyphFiles(
     val save: (String, Glyph) -> Unit,
     val delete: (String) -> Unit,
     val list: () -> List<String>,
+    /**
+     * Moves a glyph to a new name as one step that either happens whole or not at all, for storage whose
+     * writes are queued and so can't be ordered by [save] then [delete] (the browser's). Null where those
+     * two calls are already safe in order.
+     */
+    val move: ((String, String, Glyph) -> Unit)? = null,
 )
 
 /**
@@ -32,8 +38,12 @@ fun renameGlyph(app: AppState, files: GlyphFiles, old: String, raw: String): Boo
     }
     try {
         if (open) app.beginBulkImport()
-        files.save(name, glyph)
-        files.delete(old)
+        val move = files.move
+        if (move != null) move(old, name, glyph)
+        else {
+            files.save(name, glyph)
+            files.delete(old)
+        }
     } catch (e: Exception) {
         app.glyphNames = files.list()
         app.setStatus("Couldn't rename \"$old\": ${e.message ?: e::class.simpleName}.", true)
