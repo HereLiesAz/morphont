@@ -4,11 +4,11 @@ import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    kotlin("multiplatform") version "2.4.0"
-    id("com.android.kotlin.multiplatform.library") version "9.3.2"
-    id("org.jetbrains.compose") version "1.12.0"
-    id("org.jetbrains.kotlin.plugin.compose") version "2.4.0"
-    kotlin("plugin.serialization") version "2.4.0"
+    kotlin("multiplatform") version "2.4.21"
+    id("com.android.kotlin.multiplatform.library") version "9.4.1"
+    id("org.jetbrains.compose") version "1.12.2"
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.21"
+    kotlin("plugin.serialization") version "2.4.21"
 }
 
 group = "com.hereliesaz.morphont"
@@ -71,7 +71,7 @@ kotlin {
                 implementation(compose.material3)
                 implementation(compose.ui)
                 implementation(compose.components.resources)
-                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
                 // Version = a convey commit's short SHA; every push to convey main publishes all
                 // its variants (android, desktop, wasmJs) to GitHub Packages through HereLiesAz/workflows.
                 implementation("compose.conveyance:convey:68ca8d5")
@@ -84,14 +84,14 @@ kotlin {
         }
         val wasmJsMain by getting {
             dependencies {
-                implementation("org.jetbrains.kotlinx:kotlinx-browser:0.3")
+                implementation("org.jetbrains.kotlinx:kotlinx-browser:0.5.0")
                 implementation("com.juul.indexeddb:core:0.12.0")
             }
         }
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
             }
         }
         val androidMain by getting {
@@ -104,16 +104,25 @@ kotlin {
     }
 }
 
-// Version for the desktop installers, from the same version.properties the Android release uses.
-val desktopVersion: String = Properties().apply {
-    rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
-}.let { p -> listOf("versionMajor", "versionMinor", "versionPatch").map { p.getProperty(it, "0").trim().toIntOrNull() ?: 0 } }
-    .joinToString(".")
+// The desktop build's full version (major.minor.patch.build). The central release build exports the
+// canonical one as RELEASE_VERSION (the same number its installer files are named with); it is built
+// from the commit *before* the version bump, so version.properties there is one release behind and
+// only serves local builds.
+val desktopFullVersion: String = (providers.environmentVariable("RELEASE_VERSION").orNull
+    ?: providers.gradleProperty("releaseVersion").orNull)
+    ?.trim()?.takeIf { Regex("""\d+\.\d+\.\d+\.\d+""").matches(it) }
+    ?: Properties().apply {
+        rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+    }.let { p -> listOf("versionMajor", "versionMinor", "versionPatch", "versionBuild").map { p.getProperty(it, "0").trim().toIntOrNull() ?: 0 } }
+        .joinToString(".")
 
-// The desktop app's own version, for the update check: the same major.minor.patch its installers carry.
+// Installer version: jpackage takes major.minor.patch.
+val desktopVersion: String = desktopFullVersion.split(".").take(3).joinToString(".")
+
+// The desktop app's own version, for the update check: the full version its installers are named with.
 val generateDesktopVersion by tasks.registering {
     val out = layout.buildDirectory.dir("generated/morphontVersion/kotlin")
-    val version = desktopVersion
+    val version = desktopFullVersion
     inputs.property("version", version)
     outputs.dir(out)
     doLast {

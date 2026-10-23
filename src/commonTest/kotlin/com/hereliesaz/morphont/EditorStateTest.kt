@@ -339,7 +339,10 @@ class EditorStateTest {
         val b = app.anchors.getValue(ANCHORS[1])
         a.pushHistory()
         a.replaceGlyph(GlyphCorner(0f, mutableListOf(ContourData(mutableListOf(Pt(1f, 1f, true))))))
-        repeat(150) { b.pushHistory() } // 151 global entries: a's only entry is evicted
+        // Each anchor keeps at most 80 private entries, so spread 150 pushes over two others to push
+        // the global stack past its 150 cap: 151 entries, and a's (the oldest) is evicted.
+        val c = app.anchors.getValue(ANCHORS[2])
+        repeat(75) { b.pushHistory(); c.pushHistory() }
         repeat(150) { app.undo() }
         app.undo() // nothing left globally
         a.undo() // a's private history must have been trimmed too

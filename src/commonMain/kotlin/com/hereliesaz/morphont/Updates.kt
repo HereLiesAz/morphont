@@ -23,13 +23,13 @@ class UpdateChecker(
     val open: (AvailableUpdate) -> Unit,
 )
 
-/** Numeric parts of a version string ("v0.14.0.3" → [0, 14, 0, 3]); null when it has none. */
+/** Numeric parts of a version string ("v0.14.0.3" → [0, 14, 0, 3], "7" → [7]); null when it has none. */
 fun versionParts(version: String): List<Int>? =
-    Regex("""\d+(?:\.\d+)+""").find(version)?.value?.split('.')?.map { it.toIntOrNull() ?: return null }
+    Regex("""\d+(?:\.\d+)*""").find(version)?.value?.split('.')?.map { it.toIntOrNull() ?: return null }
 
 /**
  * Whether [candidate] is newer than [current], comparing the first [parts] numbers (missing ones count
- * as 0). Desktop compares three: its installers carry a run number the running app doesn't know.
+ * as 0).
  */
 fun isNewerVersion(candidate: String, current: String, parts: Int = 4): Boolean {
     val a = versionParts(candidate) ?: return false
@@ -46,9 +46,10 @@ const val GITHUB_REPOSITORY = "HereLiesAz/morphont"
 
 /**
  * Looks for a newer Morphont among the repository's GitHub Releases. Only published, non-prerelease
- * releases with an asset this platform can install ([assetMatches]) count, and each one's version is
- * read from that asset's name first (a rolling "latest" release is tagged without one), then its tag
- * or title. Returns the newest such release, if it is newer than [current].
+ * releases with an asset this platform can install ([assetMatches]) count. A patch release collects
+ * every build's installers (`0.15.0.1`, `0.15.0.5`, …), so each matching asset is read and the newest
+ * wins; an asset name without a version falls back to the tag, then the title. Returns the newest
+ * such build, if it is newer than [current].
  */
 object GitHubReleases {
     private val json = Json { ignoreUnknownKeys = true }
@@ -70,14 +71,16 @@ object GitHubReleases {
             val o = r as? JsonObject ?: continue
             fun s(k: String, from: JsonObject = o) = from[k]?.jsonPrimitive?.contentOrNull
             if (o["draft"]?.jsonPrimitive?.booleanOrNull == true || o["prerelease"]?.jsonPrimitive?.booleanOrNull == true) continue
-            val asset = (o["assets"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let { a -> s("name", a) } }
-                .firstOrNull(assetMatches) ?: continue
-            val version = listOfNotNull(asset, s("tag_name"), s("name")).firstNotNullOfOrNull { candidate ->
-                versionParts(candidate)?.joinToString(".")
-            } ?: continue
             val url = s("html_url") ?: continue
-            if (!isNewerVersion(version, current, parts)) continue
-            if (best == null || isNewerVersion(version, best.version, parts)) best = AvailableUpdate(version, UpdateSource.GITHUB, url)
+            val assets = (o["assets"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let { a -> s("name", a) } }
+                .filter(assetMatches)
+            for (asset in assets) {
+                val version = listOfNotNull(asset, s("tag_name"), s("name")).firstNotNullOfOrNull { candidate ->
+                    versionParts(candidate)?.takeIf { it.size > 1 }?.joinToString(".")
+                } ?: continue
+                if (!isNewerVersion(version, current, parts)) continue
+                if (best == null || isNewerVersion(version, best.version, parts)) best = AvailableUpdate(version, UpdateSource.GITHUB, url)
+            }
         }
         return best
     }

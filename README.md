@@ -1,6 +1,7 @@
 # Morphont
 
-A Progressive Web App for building a variable-font character from a
+A variable-font glyph editor -- on Android, Windows, macOS, Linux and the
+web (a Progressive Web App) -- for building a variable-font character from a
 handful of hand-drawn anchors -- each axis's two extremes, plus one
 shared **regular** at the dead center of the whole design space -- and
 watching every other value along every axis fall out of the math rather
@@ -360,8 +361,9 @@ so anchors can then be reshaped without adding or removing points.
   other Android copy (the GitHub APK, sideloaded) and the desktop apps look at
   the GitHub Releases for the newest non-prerelease carrying their own
   installer (`.apk`; `.msi`, `.dmg`, or `.deb`/`.rpm`) and open that release.
-  Desktop compares major.minor.patch, since installers carry a run number the
-  app doesn't. The web app updates itself on reload and has no check.
+  A patch release holds every build's installers, so the newest build in it is
+  the one compared, on all four version parts. The web app updates itself on
+  reload and has no check.
 - **Font store.** Menu → Font store (or Ghosts → + → Character from the
   font store) browses the `kind: "font"` packages on
   [azphalt.store](https://azphalt.store): search, then **Install**. A package

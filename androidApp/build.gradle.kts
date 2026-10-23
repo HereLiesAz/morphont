@@ -6,8 +6,9 @@ plugins {
 
 // Version: the central Android releases (HereLiesAz/workflows android-play-release.yml and
 // android-github-release.yml) pass -PversionCodeOverride/-PversionNameOverride (also
-// -PversionCode/-PversionName). Local builds fall back to version.properties. Nothing here
-// increments anything.
+// -PversionCode/-PversionName). Local builds fall back to version.properties; its versionCode is a
+// local placeholder only (Play's codes come from the central contract and are far higher), so a
+// local build is never uploaded. Nothing here increments anything.
 val versionProps = Properties().apply {
     rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
@@ -17,7 +18,7 @@ val appVersionCode = prop("versionCodeOverride", "releaseVersionCode", "versionC
     ?: 6
 val appVersionName = prop("versionNameOverride", "releaseVersionName", "versionName")
     ?: versionProps.getProperty("versionName")?.trim()?.takeIf { it.isNotEmpty() }
-    ?: listOf("versionMajor", "versionMinor", "versionPatch").joinToString(".") { versionProps.getProperty(it, "0").trim() }
+    ?: listOf("versionMajor", "versionMinor", "versionPatch", "versionBuild").joinToString(".") { versionProps.getProperty(it, "0").trim() }
 
 // Signing: the central releases inject the upload key as android.injected.signing.* properties,
 // which override this config. KEYSTORE_* (or MORPHONT_KEYSTORE_*) in the environment sign

@@ -17,15 +17,22 @@ from the Actions tab.
 
 ## Versions
 
-`version.properties` is the one source.
+`version.properties` is the one source, and the central version contract is its only writer: each
+release run commits a `chore(version)` bump (minor for features, patch otherwise; major is the
+owner's). The builds run from the commit *before* that bump, so they take the canonical version from
+the contract, never from the file they check out.
 
-- `versionMajor`, `versionMinor`, `versionPatch` are set by hand when a release means it.
+- CI tests: `.github/workflows/ci.yml` runs `desktopTest` and `testAndroidHostTest` on every pull
+  request and push to `main`; it is this repository's own CI, reported through `ci-report`.
 - Android: the central version contract derives the four-part version; Play releases take a
   versionCode above every code Play has accepted. Gradle receives `-PversionCodeOverride` /
   `-PversionNameOverride` (falling back to `version.properties` locally) and never increments
   anything itself.
-- Desktop: `major.minor.patch.<run>` on asset names, grouped under the `vmajor.minor.patch`
-  Release. macOS refuses a `0.x` bundle version, so the DMG's internal version is `1.minor.patch`.
+- Desktop: the contract's four-part version is exported as `RELEASE_VERSION`; Gradle builds the app
+  with it (the update check compares against it) and the installers are named with it
+  (`Morphont-0.15.0.1-windows-x64.msi`), grouped under the `vmajor.minor.patch` Release. jpackage
+  takes major.minor.patch; macOS refuses a `0.x` bundle version, so the DMG's internal version is
+  `1.minor.patch` (its file name keeps the real one). Local builds use `version.properties`.
 
 ## Signing
 
