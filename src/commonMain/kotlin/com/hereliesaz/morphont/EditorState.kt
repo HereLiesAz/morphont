@@ -1111,7 +1111,7 @@ class AppState {
     fun resetRegularToNaturalPath() {
         if (activeGhost != null || reduction != null) return
         val natural = naturalRegular()
-        if (natural == null) { setStatus("The three anchors must have matching nodes first — use \"Match the three anchors\".", true); return }
+        if (natural == null) { setStatus("The extremes must have matching nodes first — use \"Match the extremes' nodes\".", true); return }
         anchors.getValue("regular").replaceWithHistory(natural)
         setStatus("Regular reset to halfway between ${ANCHOR_LABELS[axisTriple()[0]]} and ${ANCHOR_LABELS[axisTriple()[2]]}. Undo puts it back.")
     }
@@ -1126,16 +1126,25 @@ class AppState {
     private fun drawnTriple() = axisTriple().filter { anchors.getValue(it).glyph.contours.isNotEmpty() }
 
     /**
-     * Every drawn anchor, on every axis. Regular is the middle of all of them, so matching can't stop at
-     * one axis: rebuilding Regular for the weight axis alone would leave it out of step with every other
-     * axis's extremes, and the whole glyph would stop interpolating.
+     * The drawn EXTREMES, on every axis. Node correspondence is worked out between these and only these:
+     * Regular is derived from them, so its own layout is never evidence of which node answers to which.
      */
-    private fun drawnStates() = ANCHORS.filter { anchors.getValue(it).glyph.contours.isNotEmpty() }
+    private fun drawnExtremes() = ANCHORS.filter { it != "regular" && anchors.getValue(it).glyph.contours.isNotEmpty() }
 
-    /** True when the drawn anchors don't share one structure (different node or contour counts), so [matchToFewestNodes] has work to do. */
+    /** True when Regular is drawn but no longer has the structure the extremes do (so it must be rebuilt from them). */
+    private fun regularNeedsRebuild(extremes: List<String>): Boolean {
+        val reg = anchors.getValue("regular").glyph
+        val first = extremes.firstOrNull() ?: return false
+        if (reg.contours.isEmpty()) return false
+        val snapshot = cornersSnapshot()
+        return compatibilityIssue(mapOf("regular" to reg, first to snapshot.getValue(first)), listOf("regular", first)) != null
+    }
+
+    /** True when the drawn extremes don't share one structure, or Regular has fallen out of step with them, so matching has work to do. */
     fun statesDiffer(): Boolean {
-        val names = drawnStates()
-        return names.size >= 2 && compatibilityIssue(cornersSnapshot(), names) != null
+        val names = drawnExtremes()
+        if (names.size >= 2 && compatibilityIssue(cornersSnapshot(), names) != null) return true
+        return regularNeedsRebuild(names)
     }
 
     /** "Extra Thin 7 · Regular 8 · Extra Black 7": each drawn state's node count. */
@@ -1143,26 +1152,41 @@ class AppState {
         drawnTriple().joinToString(" · ") { n -> "${ANCHOR_LABELS[n] ?: n} ${anchors.getValue(n).glyph.contours.sumOf { c -> c.points.count { it.onCurve } }}" }
 
     /**
-     * Rebuilds every drawn anchor on one shared structure (see [matchToFewest]) as one undo step: with only
-     * as many nodes as the sparsest has, or, with [most], with as many as the densest has (nodes added to the
-     * others). Says why when it can't.
+     * Brings the drawn extremes to one shared structure (see [resolveExtremes]) as one undo step: each node
+     * with no counterpart in the other extreme is added there, at the matching place along its outline, or --
+     * with [fewest] -- taken out of the extreme that has it. The correspondence is between the extremes; Regular
+     * plays no part in it. Afterwards Regular, which can't be matched by itself, is rebuilt from the resolved
+     * extremes if its structure no longer fits (a Regular that still fits is left exactly as it is). Says why
+     * when it can't.
      */
     private fun matchStates(most: Boolean) {
         if (activeGhost != null || reduction != null) return
-        val names = drawnStates()
+        val names = drawnExtremes()
+        if (names.size < 2) {
+            setStatus("Draw at least two extremes first. Nodes are matched from one extreme to the other, never through Regular.", true)
+            return
+        }
         val before = names.associateWith { anchors.getValue(it).glyph }
-        val out = matchToFewest(before, mostNodes = most)
-        val glyphs = out.glyphs ?: run { setStatus(out.problem ?: "Couldn't match them.", true); return }
-        val targets = names.filter { glyphs[it] != before[it] }.map { anchors.getValue(it) }
+        val out = resolveExtremes(before, if (most) ResolveMode.ADD_MISSING else ResolveMode.MATCH_FEWEST, hub = activeAnchor.takeIf { it in names })
+        val resolved = out.glyphs ?: run { setStatus(out.problem ?: "Couldn't match them.", true); return }
+        val regOld = anchors.getValue("regular").glyph
+        val sample = resolved.values.first()
+        val regularFits = regOld.contours.isNotEmpty() && compatibilityIssue(mapOf("regular" to regOld, "x" to sample), listOf("regular", "x")) == null
+        val regularNew = if (regularFits) regOld else naturalRegularOf(resolved) ?: regOld
+        val next = resolved + ("regular" to regularNew)
+        val prior = before + ("regular" to regOld)
+        val targets = next.keys.filter { next[it] != prior[it] }.map { anchors.getValue(it) }
         if (targets.isEmpty()) { setStatus("They already match."); return }
         groupUndo(
             owners = targets,
-            block = { for (n in names) if (glyphs[n] != before[n]) anchors.getValue(n).replaceWithHistory(glyphs.getValue(n)) },
+            block = { for ((n, gl) in next) if (gl != prior[n]) anchors.getValue(n).replaceWithHistory(gl) },
             undo = { targets.forEach { it.undo() } },
         )
-        val lost = out.dropped.entries.joinToString(", ") { "${ANCHOR_LABELS[it.key] ?: it.key} -${it.value} contour(s)" }
-        val across = if (names.size > 3) " (all ${names.size} drawn anchors)" else ""
-        setStatus((if (most) "Added the missing nodes$across: " else "Matched to the fewest nodes$across: ") + nodeCountSummary() + (if (lost.isEmpty()) "" else ". Dropped: $lost") + ". Undo puts it back.")
+        val count = sample.contours.sumOf { c -> c.points.count { it.onCurve } }
+        val lost = if (out.dropped > 0) " Dropped ${out.dropped} contour(s) the others lacked." else ""
+        val supplied = if (out.copied > 0) " ${out.copied} contour(s) were supplied from the extreme that has them, as they are; reshape them." else ""
+        val reg = if (regularFits || regOld.contours.isEmpty()) "" else " Regular was rebuilt from the extremes."
+        setStatus((if (most) "Added the missing nodes" else "Matched to the fewest nodes") + " across ${names.size} extreme(s): $count nodes in each.$supplied$lost$reg Undo puts it back.")
     }
 
     fun matchToFewestNodes() = matchStates(most = false)

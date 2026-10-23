@@ -352,20 +352,30 @@ so anchors can then be reshaped without adding or removing points.
   for whole contours) in any one of them deletes the same nodes from all of
   them as a single undo step, and the status line says which states changed.
   Anchors that don't match are left alone, and deleting just a handle never
-  touches the others. Where the states differ, the **Match nodes to the
-  fewest** suggestion rebuilds Extra Thin, Regular and Extra Black on one shared
-  structure with only as many nodes as the sparsest has: that state is the
-  template; the others pair their contours with its by position and size
-  (unpaired contours are dropped, and the status says so), are cut down by the
-  shape-preserving simplifier, turned to run the same way round and started at
-  the node that lines up best with the template's. One undo step.
-  **Add missing nodes** goes the other way: the densest state is the template
-  and each sparser one gains nodes (splitting its longest segments, so its
-  outline doesn't move) up to that count; it refuses if the states have
-  different numbers of contours. Both, and **Reset Regular to the middle**
-  (every Regular point back halfway between the extremes), live in the
-  dock's **states** menu (three-line icon, with each state's node count at
-  the top) as well as in the sparkle suggestions.
+  touches the others.
+- **Resolving mismatched nodes: extreme to extreme.** When the extremes
+  disagree about their nodes, the app works out which node answers to which
+  *between the extremes themselves* -- Regular's layout is never evidence, and
+  Regular is never the template. Each pair of outlines is aligned as a cyclic
+  sequence of nodes (starting anywhere, wound either way), scoring a pairing by
+  where the node sits in its own contour, which way the outline runs into and
+  out of it, how sharply it turns and how far round the contour it is. A node
+  with no good partner is *missing* from the other extreme. **Add missing
+  nodes** puts each one there, at the same fraction of the way along the
+  matching stretch of outline (a de Casteljau split, so nothing moves), and
+  nothing either extreme drew is lost; **Match nodes to the fewest** instead
+  takes out the nodes with no counterpart (shape-preserving refit). With more
+  than two extremes they are aligned one at a time to a growing shared
+  structure, and every earlier extreme receives each node it gains. Contours are
+  paired by position, size and outer/inner; a contour only one extreme has is
+  supplied to the other as it stands (Add) or dropped (Fewest). Afterwards
+  **Regular is rebuilt** from the resolved extremes -- the average of each
+  complete axis's midpoint -- *only if* its structure no longer fits; a Regular
+  that still fits (an imported one, or one you have moved) is left exactly as it
+  is. One undo step. Both, and **Reset Regular to the middle** (every Regular
+  point back halfway between the extremes), live in the dock's **match** menu
+  (three-line icon, with each anchor's node count at the top) as well as in the
+  sparkle suggestions.
 - **Snapping.** Light: within ~7px a dragged point (or a selection's edges/
   centre) pulls onto metrics, guides, ghost nodes and (more weakly) the grid,
   and lines up -- vertically or horizontally -- with other **nodes** (when
@@ -464,6 +474,7 @@ so anchors can then be reshaped without adding or removing points.
 - `Hit.kt` / `Gestures.kt` -- point hit-testing and pointer-gesture handling (zoom/pinch, touch proxy, ghost placement, rulers/guides, draw, drag with snapping, rubber-band)
 - `Outline.kt` -- the cubic node/arm model: arm lookup, mirrored drags, corner/smooth, line/curve, valid deletion, pen nodes, exact quadratic-to-cubic conversion
 - `Editing.kt` -- UI-free editing geometry: bounds, affine transforms, ghost shapes, clipboard extraction, snapping, node-reduction order
+- `NodeResolve.kt` -- extreme-to-extreme node correspondence (cyclic alignment, missing nodes placed at the matching arc position, multi-extreme merge) and Regular derived from the extremes
 - `EditorState.kt` -- Compose state holders (`AnchorState` per anchor, `AppState` overall)
 - `Editor.kt` -- the shared editor screen (phone and wide layouts) and the welcome screen, used by all shells
 - `Onboarding.kt` -- the sample glyph, "How Morphont works", the shared start-screen head and the keys-and-gestures list; `GlyphFiles.kt` -- rename and delete for glyphs, written once over each shell's storage

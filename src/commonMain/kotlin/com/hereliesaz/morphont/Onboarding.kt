@@ -115,7 +115,7 @@ fun HowItWorksDialog(onDismiss: () -> Unit, onTrySample: (() -> Unit)? = null) {
                 "and the axis name beside it switches axes. Draw Regular first, copy it to every anchor, then " +
                 "reshape each extreme. Every in-between weight is calculated, never drawn.")
             Body("Calculating needs the anchors to agree: the same contours, with the same number of nodes, in the same " +
-                "order. When they don't, the Preview says so, and the \"Match the three anchors\" tool lines them up.")
+                "order. When they don't, the Preview says so, and \"Match the extremes' nodes\" lines them up from one extreme to the other.")
             Body("The Preview sliders sweep the result. Ghosts lay another glyph, a shape or a character from any font " +
                 "behind yours for comparison.")
         }
