@@ -54,7 +54,7 @@ private fun ProjectRows(app: AppState, actions: ProjectActions, onSwitched: () -
                     }
                 }
                 deleting == project.id -> Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Delete \"${project.name}\" and all its glyphs? This can't be undone -- open it and save the whole project first if you might want it back.", fontSize = 14.sp, color = Mono.ink)
+                    Text("Delete \"${project.name}\" and all its glyphs? This can't be undone — open it and save the whole project first if you might want it back.", fontSize = Type.Body, color = Mono.ink)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MonoButton(onClick = { deleting = null }, outlined = true) { Text("Cancel") }
                         MonoButton(onClick = { deleting = null; actions.delete(project.id) }, selected = true) { Text("Delete") }
@@ -66,7 +66,7 @@ private fun ProjectRows(app: AppState, actions: ProjectActions, onSwitched: () -
                             .clickable(role = Role.Button, onClickLabel = "Open") { actions.open(project.id); onSwitched() }
                             .padding(vertical = 12.dp, horizontal = 4.dp),
                     ) {
-                        Text(project.name, fontSize = 17.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(project.name, fontSize = Type.Row, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (current) Caps("Open now", size = 10, color = Mono.ink)
                     }
                     MonoButton(onClick = { renameText = project.name; renaming = project.id }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Rename") }
@@ -108,8 +108,8 @@ fun ProjectsScreen(app: AppState, actions: ProjectActions, modifier: Modifier = 
                 Caps("Saved projects")
                 ProjectRows(app, actions) {}
             }
-            Text("Projects save as you work.", fontSize = 12.sp, color = Mono.inkDim)
-            if (app.status.isNotEmpty()) Text(app.status, fontSize = 13.sp, color = if (app.statusIsError) Mono.error else Mono.inkDim)
+            Text("Projects save as you work.", fontSize = Type.Small, color = Mono.inkDim)
+            if (app.status.isNotEmpty()) Text(app.status, fontSize = Type.Body, color = if (app.statusIsError) Mono.error else Mono.inkDim)
         }
         Scrollbar(scroll, true, Modifier.align(Alignment.CenterEnd).width(8.dp).fillMaxHeight())
     }

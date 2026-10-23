@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -118,14 +119,14 @@ fun FontStoreDialog(app: AppState, store: FontStoreHost, onUseAsGhost: (String) 
             if (tab == 0) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     MonoField(query, { query = it }, "Search fonts", Modifier.weight(1f))
-                    MonoButton(onClick = { search() }, enabled = busy == null) { Text("Search", fontSize = 13.sp) }
+                    MonoButton(onClick = { search() }, enabled = busy == null) { Text("Search") }
                 }
                 val list = results
                 when {
                     list == null -> {}
                     list.isEmpty() -> Text(
                         if (query.isBlank()) "No fonts in the store yet." else "No fonts match \"$query\".",
-                        fontSize = 13.sp, color = Mono.inkDim,
+                        fontSize = Type.Body, color = Mono.inkDim,
                     )
                     else -> for (f in list) {
                         val mine = installed.firstOrNull { it.id == f.id }
@@ -140,21 +141,21 @@ fun FontStoreDialog(app: AppState, store: FontStoreHost, onUseAsGhost: (String) 
                                         installed = store.shelf.list()
                                         message = "Installed ${f.family}." to false
                                     }
-                                }, enabled = busy == null, selected = true) { Text(if (mine != null) "Update" else "Install", fontSize = 13.sp) }
+                                }, enabled = busy == null, selected = true) { Text(if (mine != null) "Update" else "Install", fontSize = Type.Body) }
                             }
                         }
                     }
                 }
             } else {
-                if (installed.isEmpty()) Text("Nothing installed yet. Fonts you install from the store appear here.", fontSize = 13.sp, color = Mono.inkDim)
+                if (installed.isEmpty()) Text("Nothing installed yet. Fonts you install from the store appear here.", fontSize = Type.Body, color = Mono.inkDim)
                 for (font in installed) {
                     val faces = font.faces
                     StoreRow(font.family, listOfNotNull(font.author?.let { "by $it" }, "v${font.version}", font.license.ifEmpty { null }).joinToString(" · ")) {}
-                    Row(Modifier.padding(start = 10.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.padding(start = 12.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val readable = faces.firstOrNull { it.readable }
                         if (readable != null) MonoButton(onClick = {
                             run("Loading ${font.family}…") { onUseAsGhost(loadInstalledFace(app, store, font, readable)) }
-                        }, enabled = busy == null, outlined = true) { Text("Use as ghost", fontSize = 12.sp) }
+                        }, enabled = busy == null, outlined = true) { Text("Use as ghost", fontSize = Type.Small) }
                         MonoButton(onClick = {
                             run("${store.installLabel}…") {
                                 // One face failing doesn't hide what happened to the others.
@@ -172,13 +173,13 @@ fun FontStoreDialog(app: AppState, store: FontStoreHost, onUseAsGhost: (String) 
                                 }
                                 message = lines.joinToString(" ") to failed
                             }
-                        }, enabled = busy == null, outlined = true) { Text(store.installLabel, fontSize = 12.sp) }
-                        MonoButton(onClick = { removing = font }, enabled = busy == null, outlined = true) { Text("Remove", fontSize = 12.sp) }
+                        }, enabled = busy == null, outlined = true) { Text(store.installLabel, fontSize = Type.Small) }
+                        MonoButton(onClick = { removing = font }, enabled = busy == null, outlined = true) { Text("Remove") }
                     }
                 }
             }
-            busy?.let { Text(it, fontSize = 13.sp, color = Mono.inkDim) }
-            message?.let { (text, error) -> Text(text, fontSize = 13.sp, color = if (error) Mono.error else Mono.ink) }
+            busy?.let { Text(it, fontSize = Type.Body, color = Mono.inkDim) }
+            message?.let { (text, error) -> Text(text, fontSize = Type.Body, color = if (error) Mono.error else Mono.ink) }
         }
     }
 }
@@ -191,10 +192,10 @@ private fun StoreRow(title: String, detail: String, trailing: @Composable () -> 
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (detail.isNotEmpty()) Text(detail, fontSize = 11.sp, color = Mono.inkDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(title, fontSize = Type.Row, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (detail.isNotEmpty()) Text(detail, fontSize = Type.Micro, color = Mono.inkDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         trailing()
     }
-    Row(Modifier.height(4.dp)) {}
+    Spacer(Modifier.height(4.dp))
 }

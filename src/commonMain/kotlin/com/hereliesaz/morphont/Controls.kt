@@ -121,8 +121,8 @@ fun MonoMenuItem(text: String, onClick: () -> Unit, checked: Boolean? = null, en
     DropdownMenuItem(
         text = {
             Column {
-                Text(text, fontSize = 14.sp, color = if (enabled) Mono.ink else Mono.inkFaint)
-                if (detail != null) Text(detail, fontSize = 12.sp, color = Mono.inkDim, modifier = Modifier.widthIn(max = 280.dp))
+                Text(text, fontSize = Type.Body, color = if (enabled) Mono.ink else Mono.inkFaint)
+                if (detail != null) Text(detail, fontSize = Type.Small, color = Mono.inkDim, modifier = Modifier.widthIn(max = 280.dp))
             }
         },
         trailingIcon = if (checked == true) ({ Icon(MIcons.Check, null, tint = Mono.ink, modifier = Modifier.size(16.dp)) }) else null,
@@ -166,7 +166,7 @@ fun EditorMenuButton(
             section("Go to")
             MonoMenuItem("Glyphs and files…", { open = false; openBrowser() })
             if (host.projects != null) MonoMenuItem("Projects…", { open = false; projectsOpen = true })
-            MonoMenuItem("Font overview", { open = false; openFontOverview() })
+            MonoMenuItem("Font overview…", { open = false; openFontOverview() })
             if (host.fontStore != null) MonoMenuItem("Font store…", { open = false; storeOpen = true })
             if (goTo != null) {
                 MonoMenuItem("Preview", { open = false; goTo("preview") })
@@ -250,7 +250,7 @@ fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, fontSize = 13.sp, color = if (on) Mono.onPrimary else Mono.inkDim)
+        Text(label, fontSize = Type.Body, color = if (on) Mono.onPrimary else Mono.inkDim)
     }
 }
 
@@ -266,7 +266,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
                     .selectable(selected = i == selected, role = Role.Tab, onClick = { onSelect(i) })
                     .padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
-            ) { Text(label, fontSize = 12.sp, color = if (i == selected) Mono.onPrimary else Mono.inkDim) }
+            ) { Text(label, fontSize = Type.Small, color = if (i == selected) Mono.onPrimary else Mono.inkDim) }
         }
     }
 }
@@ -327,7 +327,7 @@ fun GhostBar(app: AppState, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-        Text(g.label, fontSize = 14.sp, color = Mono.ink, maxLines = 1)
+        Text(g.label, fontSize = Type.Body, color = Mono.ink, maxLines = 1)
         Spacer(Modifier.width(6.dp))
         Segmented(listOf("Place", "Nodes"), if (app.ghostTransformMode) 0 else 1) { app.setGhostNodeMode(it == 1) }
         IconAction(MIcons.FlipH, "Flip horizontally", { app.flipActiveGhost(true) }, size = IconSize.LARGE)
@@ -383,7 +383,7 @@ fun SuggestionsButton(app: AppState, suggestions: List<Suggestion>, size: Int = 
             Box(
                 Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).size(16.dp).clip(RoundedCornerShape(8.dp)).background(Mono.ink),
                 contentAlignment = Alignment.Center,
-            ) { Text(suggestions.size.coerceAtMost(9).toString(), fontSize = 10.sp, color = Mono.onPrimary) }
+            ) { Text(suggestions.size.coerceAtMost(9).toString(), fontSize = Type.Micro, color = Mono.onPrimary) }
         }
     }
 }
@@ -397,7 +397,7 @@ fun SuggestionsRow(app: AppState, suggestions: List<Suggestion>, modifier: Modif
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (suggestions.isEmpty()) Text("Nothing to suggest: no duplicate or redundant points, and the outline's direction is right.", fontSize = 13.sp, color = Mono.inkDim, modifier = Modifier.padding(horizontal = 10.dp))
+        if (suggestions.isEmpty()) Text("Nothing to suggest: no duplicate or redundant points, and the outline's direction is right.", fontSize = Type.Body, color = Mono.inkDim, modifier = Modifier.padding(horizontal = 10.dp))
         for (sg in suggestions) {
             Row(
                 Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).border(1.dp, Mono.border, RoundedCornerShape(18.dp))
@@ -405,8 +405,8 @@ fun SuggestionsRow(app: AppState, suggestions: List<Suggestion>, modifier: Modif
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(sg.label, fontSize = 13.sp, color = Mono.ink, maxLines = 1)
-                sg.detail?.let { Caps(it, size = 9) }
+                Text(sg.label, fontSize = Type.Body, color = Mono.ink, maxLines = 1)
+                sg.detail?.let { Caps(it, size = 10) }
             }
         }
         IconAction(MIcons.Close, "Hide suggestions", { app.showSuggestions = false }, size = IconSize.LARGE)
@@ -425,7 +425,7 @@ fun Toast(app: AppState, modifier: Modifier = Modifier) {
     Text(
         app.status,
         color = if (app.statusIsError) Mono.error else Mono.ink,
-        fontSize = 13.sp,
+        fontSize = Type.Body,
         maxLines = 6,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier.floating(16).widthIn(max = 520.dp).clickable(role = Role.Button, onClickLabel = "Dismiss") { app.setStatus("") }
@@ -482,7 +482,7 @@ fun AnchorFilmstrip(app: AppState, modifier: Modifier = Modifier, compact: Boole
                     .border(if (active) 1.5.dp else 1.dp, if (active) Mono.ink else Mono.border, RoundedCornerShape(10.dp))
                     .padding(4.dp),
             )
-            Text(label, fontSize = 11.sp, color = if (active) Mono.ink else Mono.inkDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, fontSize = Type.Micro, color = if (active) Mono.ink else Mono.inkDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
     if (compact) {
@@ -514,7 +514,7 @@ fun AxisSliders(app: AppState, initiallyShown: Int = 4) {
         for (axis in axes) {
             val t = app.previewValues[axis.tag] ?: 0.5f
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(axis.label, fontSize = 13.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(92.dp))
+                Text(axis.label, fontSize = Type.Body, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(92.dp))
                 HairSlider(
                     value = t,
                     onValueChange = { app.previewValues[axis.tag] = it },
@@ -525,9 +525,9 @@ fun AxisSliders(app: AppState, initiallyShown: Int = 4) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             if (Axis.ALL.size > initiallyShown) {
-                MonoButton(onClick = { all = !all }) { Text(if (all) "Fewer axes" else "${Axis.ALL.size - initiallyShown} more axes", fontSize = 12.sp, color = Mono.inkDim) }
+                MonoButton(onClick = { all = !all }) { Text(if (all) "Fewer axes" else "${Axis.ALL.size - initiallyShown} more axes") }
             }
-            MonoButton(onClick = { Axis.ALL.forEach { app.previewValues[it.tag] = 0.5f } }) { Text("Reset to Regular", fontSize = 12.sp, color = Mono.inkDim) }
+            MonoButton(onClick = { Axis.ALL.forEach { app.previewValues[it.tag] = 0.5f } }) { Text("Reset to Regular") }
         }
     }
 }
@@ -571,9 +571,9 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                 }
             }
         }
-        if (app.ghosts.isEmpty()) Text("Lay a shape, another glyph, or a character from any font over this one to compare.", fontSize = 13.sp, color = Mono.inkDim)
+        if (app.ghosts.isEmpty()) Text("Lay a shape, another glyph, or a character from any font over this one to compare.", fontSize = Type.Body, color = Mono.inkDim)
         if (app.ghosts.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Glyph opacity", fontSize = 13.sp, color = Mono.ink, maxLines = 1, modifier = Modifier.width(110.dp))
+            Text("Glyph opacity", fontSize = Type.Body, color = Mono.ink, maxLines = 1, modifier = Modifier.width(110.dp))
             HairSlider(
                 value = app.view.glyphOpacity,
                 onValueChange = { app.view.glyphOpacity = it },
@@ -589,9 +589,9 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                     .background(if (active) Mono.panelHeader else Color.Transparent)
                     .padding(horizontal = 8.dp, vertical = 5.dp),
             ) {
-                Text(g.label, fontSize = 14.sp, color = if (g.visible) Mono.ink else Mono.inkDim,
+                Text(g.label, fontSize = Type.Body, color = if (g.visible) Mono.ink else Mono.inkDim,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (g.isLinked) Text("Variable source · independent axes", fontSize = 11.sp, color = Mono.inkDim)
+                if (g.isLinked) Text("Variable source · independent axes", fontSize = Type.Micro, color = Mono.inkDim)
                 val rowScroll = rememberScrollState()
                 Box(Modifier.fillMaxWidth()) {
                     Row(
@@ -642,15 +642,15 @@ private fun GhostAxesDialog(app: AppState, ghost: GhostLayer, onDismiss: () -> U
     MonoDialog("Ghost axes: ${ghost.label}", onDismiss, actions = {
         MonoButton(onClick = { ghost.axisOverrides.keys.toList().forEach { tag ->
             Axis.ALL.firstOrNull { it.tag == tag }?.let { app.setGhostAxis(ghost.id, it, null) }
-        } }) { Text("Follow glyph axes", fontSize = 12.sp) }
+        } }) { Text("Follow glyph axes", fontSize = Type.Small) }
     }) {
         Text("These values affect this ghost only. Untouched axes follow the working glyph's selected anchor and preview.",
-            fontSize = 12.sp, color = Mono.inkDim)
+            fontSize = Type.Small, color = Mono.inkDim)
         for (axis in Axis.ALL) {
             if (ghost.referenceCorners.isNotEmpty() && axis.tag !in ghost.supportedAxes) continue
             val value = ghost.axisOverrides[axis.tag] ?: 0.5f
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(axis.label, color = Mono.ink, fontSize = 13.sp, modifier = Modifier.width(94.dp))
+                Text(axis.label, color = Mono.ink, fontSize = Type.Body, modifier = Modifier.width(94.dp))
                 HairSlider(
                     value = value, onValueChange = { app.setGhostAxis(ghost.id, axis, it) },
                     modifier = Modifier.weight(1f),
@@ -692,10 +692,10 @@ fun GuidesSection(app: AppState) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            MonoButton(onClick = { metricsOpen = true }, outlined = true) { Text("Metrics…", fontSize = 12.sp) }
-            MonoButton(onClick = { app.clearGuides() }, enabled = app.guides.isNotEmpty(), outlined = true) { Text("Clear ${app.guides.size} guides", fontSize = 12.sp) }
+            MonoButton(onClick = { metricsOpen = true }, outlined = true) { Text("Metrics…") }
+            MonoButton(onClick = { app.clearGuides() }, enabled = app.guides.isNotEmpty(), outlined = true) { Text("Clear ${app.guides.size} guides") }
         }
-        Text("Drag from a ruler to place a guide; drop it back on the ruler to remove it.", fontSize = 12.sp, color = Mono.inkDim)
+        Text("Drag from a ruler to place a guide; drop it back on the ruler to remove it.", fontSize = Type.Small, color = Mono.inkDim)
     }
     if (metricsOpen) MetricsDialog(app) { metricsOpen = false }
 }
@@ -711,7 +711,7 @@ fun MonoDialog(title: String, onDismiss: () -> Unit, actions: @Composable () -> 
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, fontSize = 22.sp, color = Mono.ink, modifier = Modifier.weight(1f))
+                Text(title, fontSize = Type.Title, color = Mono.ink, modifier = Modifier.weight(1f))
                 IconAction(MIcons.Close, "Close", onDismiss, size = IconSize.LARGE)
             }
             val dialogScroll = rememberScrollState()
@@ -747,8 +747,8 @@ fun MonoField(
             imeAction = if (onDone != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Default,
         ),
         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onDone?.invoke() }),
-        placeholder = { Text(placeholder, color = Mono.inkFaint) },
-        textStyle = TextStyle(fontSize = if (big) 22.sp else 15.sp, color = Mono.ink),
+        placeholder = { Text(placeholder, color = Mono.inkDim) },
+        textStyle = TextStyle(fontSize = if (big) Type.Title else Type.Row, color = Mono.ink),
         colors = monoTextFieldColors(),
         shape = RoundedCornerShape(14.dp),
         modifier = modifier,
@@ -787,19 +787,19 @@ private fun MetricsDialog(app: AppState, onDismiss: () -> Unit) {
             onDismiss()
         }, selected = true, enabled = problem == null) { Text("Apply") }
     }) {
-        Text("The horizontal guides the canvas draws, in font units.", fontSize = 12.sp, color = Mono.inkDim)
+        Text("The horizontal guides the canvas draws, in font units.", fontSize = Type.Small, color = Mono.inkDim)
         for ((label, state, help) in fields) {
             Column(Modifier.padding(top = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, fontSize = 14.sp, color = Mono.ink, modifier = Modifier.width(120.dp))
+                    Text(label, fontSize = Type.Body, color = Mono.ink, modifier = Modifier.width(120.dp))
                     MonoField(state.value, { s -> state.value = s.filter { it.isDigit() || it == '-' || it == '.' } }, "", Modifier.weight(1f),
                         isError = state.value.trim().toFloatOrNull() == null,
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
                 }
-                Text(help, fontSize = 11.sp, color = Mono.inkDim)
+                Text(help, fontSize = Type.Micro, color = Mono.inkDim)
             }
         }
-        problem?.let { Text(it, fontSize = 13.sp, color = Mono.error, modifier = Modifier.padding(top = 8.dp)) }
+        problem?.let { Text(it, fontSize = Type.Body, color = Mono.error, modifier = Modifier.padding(top = 8.dp)) }
     }
 }
 
@@ -824,9 +824,9 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f)) {
                     Caps("Project")
-                    Text(app.currentProject?.name ?: "", fontSize = 17.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(app.currentProject?.name ?: "", fontSize = Type.Row, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                MonoButton(onClick = { showProjects = true }, outlined = true) { Text("Projects", fontSize = 13.sp) }
+                MonoButton(onClick = { showProjects = true }, outlined = true) { Text("Projects") }
             }
             if (showProjects) ProjectsDialog(app, projectActions, onDismiss = { showProjects = false }, onSwitched = { showProjects = false; onDismiss() })
         }
@@ -844,7 +844,7 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
         }
         if (app.lastReport.isNotEmpty()) {
             MonoButton(onClick = { showReport = true }, outlined = true) {
-                Text("View latest report", fontSize = 13.sp)
+                Text("View latest report", fontSize = Type.Body)
             }
         }
         if (host.fileActions.isNotEmpty()) {
@@ -853,7 +853,7 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
                 for ((label, action) in host.fileActions) {
                     Text(
                         label,
-                        fontSize = 15.sp,
+                        fontSize = Type.Row,
                         color = Mono.ink,
                         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
                             .clickable(role = Role.Button) {
@@ -866,7 +866,7 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
         }
     }
     if (showReport) MonoDialog("Latest report", { showReport = false }) {
-        Text(app.lastReport, color = Mono.ink, fontSize = 13.sp)
+        Text(app.lastReport, color = Mono.ink, fontSize = Type.Body)
     }
 }
 
@@ -882,7 +882,7 @@ private fun ThisGlyphRow(app: AppState, host: EditorHost, files: GlyphFiles, cur
             renaming -> {
                 MonoField(newName, { newName = it }, "Glyph name", Modifier.fillMaxWidth(),
                     onDone = { if (renameGlyph(app, files, current, newName)) renaming = false })
-                Text(GLYPH_NAME_HINT, fontSize = 12.sp, color = Mono.inkDim)
+                Text(GLYPH_NAME_HINT, fontSize = Type.Small, color = Mono.inkDim)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MonoButton(onClick = { renaming = false }, outlined = true) { Text("Cancel") }
                     MonoButton(onClick = { if (renameGlyph(app, files, current, newName)) renaming = false },
@@ -891,14 +891,14 @@ private fun ThisGlyphRow(app: AppState, host: EditorHost, files: GlyphFiles, cur
             }
             deleting -> {
                 Text("Delete \"${displayGlyphName(current)}\" and every anchor drawn for it? This can't be undone, and " +
-                    "ghosts of it in other glyphs stop following it.", fontSize = 14.sp, color = Mono.ink)
+                    "ghosts of it in other glyphs stop following it.", fontSize = Type.Body, color = Mono.ink)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MonoButton(onClick = { deleting = false }, outlined = true) { Text("Cancel") }
                     MonoButton(onClick = { deleting = false; deleteGlyph(app, files, current, host.openGlyph) }, selected = true) { Text("Delete") }
                 }
             }
             else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(displayGlyphName(current), fontSize = 16.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(displayGlyphName(current), fontSize = Type.Row, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 MonoButton(onClick = { newName = current; renaming = true }, outlined = true) { Text("Rename") }
                 MonoButton(onClick = { deleting = true }, outlined = true) { Text("Delete") }
             }
@@ -913,7 +913,7 @@ fun ConfirmDialog(title: String, message: String, confirmLabel: String, onDismis
         MonoButton(onClick = onDismiss, outlined = true) { Text("Cancel") }
         MonoButton(onClick = onConfirm, selected = true) { Text(confirmLabel) }
     }) {
-        Text(message, fontSize = 14.sp, color = Mono.ink)
+        Text(message, fontSize = Type.Body, color = Mono.ink)
     }
 }
 
@@ -922,7 +922,7 @@ fun ConfirmDialog(title: String, message: String, confirmLabel: String, onDismis
 private fun ProjectGlyphPicker(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
     val names = app.glyphNames
     MonoDialog("Ghost a glyph", onDismiss) {
-        Text("Live: it takes the working character's weight, width and every other axis -- here and in the Preview.", fontSize = 13.sp, color = Mono.inkDim)
+        Text("Live: it takes the working character's weight, width and every other axis — here and in the Preview.", fontSize = Type.Body, color = Mono.inkDim)
         Box(Modifier.heightIn(max = 340.dp)) {
             val gridScroll = rememberScrollState()
             Column(Modifier.verticalScroll(gridScroll).padding(end = 10.dp)) {
@@ -990,8 +990,8 @@ private fun FontCharacterPicker(app: AppState, host: EditorHost, initialFont: St
             }
         }
         MonoField(chars, { chars = it.take(8) }, "Characters", Modifier.fillMaxWidth(), big = true)
-        Text("Each character becomes an independently adjustable ghost; weight, width and other source axes are preserved with the project.", fontSize = 12.sp, color = Mono.inkDim)
-        error?.let { Text(it, color = Mono.error, fontSize = 13.sp) }
+        Text("Each character becomes an independently adjustable ghost; weight, width and other source axes are preserved with the project.", fontSize = Type.Small, color = Mono.inkDim)
+        error?.let { Text(it, color = Mono.error, fontSize = Type.Body) }
     }
 }
 

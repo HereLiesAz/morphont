@@ -46,7 +46,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.LocalRippleConfiguration
+import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.Slider
+import androidx.compose.material.ripple.RippleAlpha
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -70,10 +74,11 @@ import compose.conveyance.tokens.conveyTypeFontFamily
  * Morphont's visual language: the glyph is the room. A near-black ground with
  * a faint pool of light behind the outline; every control floats on it as a
  * rounded, hairline-edged surface ([floating]) and stays out of the way until
- * needed. Strictly monochrome -- hierarchy is carried by brightness, so the
- * selected node, the active tool and the anchor being edited are simply the
- * whitest things on screen. The one colour left, [Mono.error], is reserved
- * for genuine errors.
+ * needed. Monochrome -- hierarchy is carried by brightness, so the selected
+ * node, the active tool and the anchor being edited are simply the whitest
+ * things on screen. Colour appears in two places only: [Mono.error], reserved
+ * for genuine errors, and [GhostStyle], the outline colours a user may give a
+ * ghost to tell several apart.
  *
  * Built on [HereLiesAz/convey](https://github.com/HereLiesAz/convey): the UI
  * is set in its Azrienoch (`conveyTypeFontFamily`), and every [MonoButton]
@@ -122,7 +127,7 @@ val LightPalette = Palette(
     primary = Color(0xFFF2F2F2), onPrimary = Color(0xFF2E2E2E),
     secondary = Color(0xFF9A9A9A), onSecondary = Color(0xFF2E2E2E),
     tertiary = Color(0xFFD2D2D2), onTertiary = Color(0xFF2E2E2E),
-    error = Color(0xFFEE6A50), onError = Color(0xFF1A0704),
+    error = Color(0xFFF58C75), onError = Color(0xFF1A0704),
     glow = Color(0xFF3E3E3E), outline = Color(0xFFE8E8E8), baseline = Color(0xFF5A5A5A), metric = Color(0xFF444444),
     grid = Color(0xFF383838), ctrlLine = Color(0xFF6A6A6A), nodeRing = Color(0xFFD0D0D0), offCurve = Color(0xFF9E9E9E),
     pathCurve = Color(0xFF909090), ghostStroke = Color(0xFF909090), ghostActive = Color(0xFFD2D2D2),
@@ -133,6 +138,29 @@ val LightPalette = Palette(
 /** Which theme is showing. One value for the whole app, so the canvas and every panel switch together. */
 object ThemeState {
     var dark by mutableStateOf(true)
+}
+
+/**
+ * The type scale: every size the UI uses, by role. Screens name a role, not a number, so a size changes in one
+ * place. ([Caps] has its own two sizes, 11 and 10.)
+ */
+object Type {
+    /** Detail lines under a row, tiny readouts. */
+    val Micro = 11.sp
+    /** Secondary text, hints, dense controls. */
+    val Small = 12.sp
+    /** Body copy, buttons and menu items. */
+    val Body = 14.sp
+    /** A row's name in a list, a field's text. */
+    val Row = 17.sp
+    /** A dialog's title, a glyph in a tab. */
+    val Title = 22.sp
+    /** A character on a glyph tile. */
+    val TileGlyph = 26.sp
+    /** The open glyph's name in the phone header. */
+    val Name = 38.sp
+    /** The wordmark. */
+    val Hero = 64.sp
 }
 
 object Mono {
@@ -259,7 +287,7 @@ fun ToolIcon(
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         IconAction(icon, label, onClick, selected = selected, enabled = enabled, size = size, disabledReason = disabledReason)
-        if (selected) Caps(name, color = Mono.ink, size = 9)
+        if (selected) Caps(name, color = Mono.ink, size = 10)
     }
 }
 
@@ -293,7 +321,7 @@ fun IconAction(
     disabledReason: String? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val tip = if (!enabled && disabledReason != null) "$label -- $disabledReason" else label
+    val tip = if (!enabled && disabledReason != null) "$label — $disabledReason" else label
     TooltipBox(
         positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
         tooltip = { MonoTooltip(tip) },
@@ -347,8 +375,8 @@ fun monoTextFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedTextColor = Mono.ink,
     unfocusedTextColor = Mono.ink,
     cursorColor = Mono.primary,
-    focusedPlaceholderColor = Mono.inkFaint,
-    unfocusedPlaceholderColor = Mono.inkFaint,
+    focusedPlaceholderColor = Mono.inkDim,
+    unfocusedPlaceholderColor = Mono.inkDim,
     focusedContainerColor = Mono.ground,
     unfocusedContainerColor = Mono.ground,
 )
@@ -388,6 +416,7 @@ private fun typographyIn(family: FontFamily): Typography {
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MorphontTheme(content: @Composable () -> Unit) {
     // Azrienoch itself, loaded straight from HereLiesAz/convey's own tokens/ConveyType.kt --
@@ -395,7 +424,10 @@ fun MorphontTheme(content: @Composable () -> Unit) {
     // No more of a stretch for this library's "official typeface" than it is for Morphont, a
     // tool for shaping that exact font, to use it as its own UI typeface too.
     val typography = typographyIn(conveyTypeFontFamily(ConveyTypePreset.Regular))
-    MaterialTheme(colorScheme = morphontColorScheme(), typography = typography, content = content)
+    // Ripples are ink at low strength, not Material's tinted default.
+    CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = Mono.ink, rippleAlpha = RippleAlpha(0.16f, 0.16f, 0.10f, 0.16f))) {
+        MaterialTheme(colorScheme = morphontColorScheme(), typography = typography, content = content)
+    }
 }
 
 /**

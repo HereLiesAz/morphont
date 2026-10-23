@@ -75,13 +75,13 @@ fun PreviewCanvas(app: AppState, modifier: Modifier = Modifier, showGhosts: Bool
         when {
             total == 0 -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Caps("Nothing drawn yet", size = 10)
-                Text("Draw Regular, then copy it to the other anchors.", fontSize = 11.sp, color = Mono.inkDim, textAlign = TextAlign.Center)
+                Text("Draw Regular, then copy it to the other anchors.", fontSize = Type.Micro, color = Mono.inkDim, textAlign = TextAlign.Center)
             }
             issue != null -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(horizontal = 6.dp)) {
                 Caps("Anchors differ", color = Mono.error, size = 10)
                 Text("Their nodes don't line up, so there's nothing to blend. Use \"Match the three anchors\".",
-                    fontSize = 11.sp, color = Mono.inkDim, textAlign = TextAlign.Center)
-                app.nodeCountSummary().takeIf { it.isNotEmpty() }?.let { Text(it, fontSize = 11.sp, color = Mono.ink, textAlign = TextAlign.Center) }
+                    fontSize = Type.Micro, color = Mono.inkDim, textAlign = TextAlign.Center)
+                app.nodeCountSummary().takeIf { it.isNotEmpty() }?.let { Text(it, fontSize = Type.Micro, color = Mono.ink, textAlign = TextAlign.Center) }
             }
             else -> {
                 val inst = interpolateGlyph(corners, app.previewValues)

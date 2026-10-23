@@ -167,7 +167,7 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
             Toast(app)
         }
         if (hint != null) {
-            Text(hint, fontSize = 14.sp, color = Mono.inkDim, modifier = Modifier.align(Alignment.Center).padding(32.dp))
+            Text(hint, fontSize = Type.Body, color = Mono.inkDim, modifier = Modifier.align(Alignment.Center).padding(32.dp))
         }
         Column(
             Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset.dp, start = 12.dp, end = 12.dp)
@@ -248,7 +248,7 @@ private fun CompactEditor(
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = openBrowser)) {
-                Text(app.currentGlyphName?.let(::displayGlyphName) ?: "", fontSize = 38.sp, lineHeight = 40.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(app.currentGlyphName?.let(::displayGlyphName) ?: "", fontSize = Type.Name, lineHeight = 40.sp, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Caps("${ANCHOR_LABELS[app.activeAnchor]} · ${nodeCount(app)} nodes")
             }
             SuggestionsButton(app, suggestions)
@@ -299,7 +299,7 @@ private fun CompactEditor(
             containerColor = Mono.panel,
             contentColor = Mono.ink,
             scrimColor = Color.Black.copy(alpha = 0.55f),
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         ) {
             Box(Modifier.fillMaxWidth()) {
                 val sheetScroll = rememberScrollState()
@@ -333,7 +333,7 @@ private fun WideEditor(
                     contentDescription = null,
                     modifier = Modifier.size(28.dp),
                 )
-                Text("Morphont", fontSize = 22.sp, fontStyle = FontStyle.Italic, color = Mono.ink)
+                Text("Morphont", fontSize = Type.Title, fontStyle = FontStyle.Italic, color = Mono.ink)
             }
             GlyphTabs(app, host, openBrowser, Modifier.weight(1f))
             ZoomControl(app.view)
@@ -411,7 +411,7 @@ private fun GlyphTabs(app: AppState, host: EditorHost, openBrowser: () -> Unit, 
                             .padding(horizontal = 10.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(displayGlyphName(name), fontSize = 20.sp, color = if (active) Mono.ink else Mono.inkDim, maxLines = 1)
+                        Text(displayGlyphName(name), fontSize = Type.Title, color = if (active) Mono.ink else Mono.inkDim, maxLines = 1)
                     }
                 }
             }
@@ -446,9 +446,10 @@ private fun ZoomControl(view: ViewSettings) {
         focusManager.clearFocus()
     }
     if (editing) {
-        OutlinedTextField(
+        MonoField(
             value = input,
-            onValueChange = { input = it },
+            onChange = { input = it },
+            placeholder = "%",
             modifier = Modifier.width(92.dp).focusRequester(inputFocus).onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) false
                 else when (event.key) {
@@ -457,15 +458,13 @@ private fun ZoomControl(view: ViewSettings) {
                     else -> false
                 }
             },
-            singleLine = true,
-            suffix = { Text("%") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { commit() }),
+            keyboardType = KeyboardType.Decimal,
+            onDone = { commit() },
         )
     } else {
         Text(
             "${(view.zoom * 100f).toInt()}%",
-            color = Mono.ink, fontSize = 14.sp,
+            color = Mono.ink, fontSize = Type.Body,
             modifier = Modifier
                 .pointerInput(view) {
                     var original = 1f
@@ -479,8 +478,8 @@ private fun ZoomControl(view: ViewSettings) {
                         },
                     )
                 }
-                .clickable { input = (view.zoom * 100f).toInt().toString(); editing = true }
-                .padding(horizontal = 8.dp, vertical = 12.dp),
+                .clickable(role = Role.Button, onClickLabel = "Set zoom") { input = (view.zoom * 100f).toInt().toString(); editing = true }
+                .padding(horizontal = 8.dp, vertical = 14.dp),
         )
     }
 }
@@ -512,7 +511,7 @@ fun WelcomeScreen(app: AppState, host: EditorHost, actions: List<Pair<String, ()
                     for (n in app.glyphNames) GlyphTile(n, onClick = { host.openGlyph(n) })
                 }
             }
-            if (app.status.isNotEmpty()) Text(app.status, fontSize = 13.sp, color = if (app.statusIsError) Mono.error else Mono.inkDim)
+            if (app.status.isNotEmpty()) Text(app.status, fontSize = Type.Body, color = if (app.statusIsError) Mono.error else Mono.inkDim)
             Spacer(Modifier.height(8.dp))
         }
         Scrollbar(welcomeScroll, true, Modifier.align(Alignment.CenterEnd).width(8.dp).fillMaxHeight())
@@ -529,7 +528,7 @@ fun StartList(items: List<Pair<String, () -> Unit>>) {
                     .padding(vertical = 14.dp, horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(label, fontSize = 17.sp, color = Mono.ink, modifier = Modifier.weight(1f))
+                Text(label, fontSize = Type.Row, color = Mono.ink, modifier = Modifier.weight(1f))
                 Icon(MIcons.Chevron, null, tint = Mono.inkDim, modifier = Modifier.size(16.dp).rotate(-90f))
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
@@ -545,12 +544,12 @@ fun NewGlyphRow(name: String, onName: (String) -> Unit, onCreate: () -> Unit) {
             MonoField(name, onName, "New glyph", Modifier.weight(1f), onDone = { if (name.isNotBlank()) onCreate() })
             MonoButton(onClick = onCreate, selected = true, enabled = name.isNotBlank()) { Text("Create") }
         }
-        Text(GLYPH_NAME_HINT, fontSize = 12.sp, color = Mono.inkDim)
+        Text(GLYPH_NAME_HINT, fontSize = Type.Small, color = Mono.inkDim)
     }
 }
 
 /** How to name a glyph so the exported font maps it to a character. */
-const val GLYPH_NAME_HINT = "Name it by its character -- A, é, 7 -- or by its code point, like uni00E9."
+const val GLYPH_NAME_HINT = "Name it by its character — A, é, 7 — or by its code point, like uni00E9."
 
 /**
  * One glyph as a square tile, the same everywhere a glyph is picked: its character large (or its name small),
@@ -567,7 +566,7 @@ fun GlyphTile(name: String, current: Boolean = false, onClickLabel: String = "Op
         contentAlignment = Alignment.Center,
     ) {
         val label = displayGlyphName(name)
-        Text(label, fontSize = if (label.length <= 2) 26.sp else 12.sp, color = if (current) Mono.onPrimary else Mono.ink, maxLines = 1,
+        Text(label, fontSize = if (label.length <= 2) Type.TileGlyph else Type.Small, color = if (current) Mono.onPrimary else Mono.ink, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.dp))
     }
 }

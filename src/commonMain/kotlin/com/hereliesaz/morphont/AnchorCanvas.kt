@@ -203,7 +203,7 @@ fun AnchorCanvas(
         val mapper = f.mapper
         val map: (Float, Float) -> Offset = { x, y -> mapper.toCanvas(x, y) }
         val hair = uiScale.coerceAtLeast(1f)
-        val labelStyle = TextStyle(color = Mono.inkFaint, fontSize = 9.sp, fontFamily = labelFamily, letterSpacing = 1.sp)
+        val labelStyle = TextStyle(color = Mono.inkDim, fontSize = 10.sp, fontFamily = labelFamily, letterSpacing = 1.sp)
 
         drawRect(bgColor, size = size)
         // A faint pool of light behind the glyph.

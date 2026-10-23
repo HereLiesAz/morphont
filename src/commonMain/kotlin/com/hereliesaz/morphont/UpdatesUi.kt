@@ -60,7 +60,7 @@ fun UpdateCheckDialog(checker: UpdateChecker, onDismiss: () -> Unit) {
                     is UpdateResult.Failed -> r.message
                     is UpdateResult.Found -> ""
                 },
-                fontSize = 14.sp, color = if (r is UpdateResult.Failed) Mono.error else Mono.ink,
+                fontSize = Type.Body, color = if (r is UpdateResult.Failed) Mono.error else Mono.ink,
             )
         }
     }
@@ -69,15 +69,15 @@ fun UpdateCheckDialog(checker: UpdateChecker, onDismiss: () -> Unit) {
 @Composable
 private fun UpdateFoundDialog(update: AvailableUpdate, checker: UpdateChecker, onDismiss: () -> Unit) {
     MonoDialog("Update available", onDismiss, actions = {
-        MonoButton(onClick = onDismiss, outlined = true) { Text("Later", fontSize = 13.sp) }
+        MonoButton(onClick = onDismiss, outlined = true) { Text("Later") }
         MonoButton(onClick = { checker.open(update); onDismiss() }, selected = true) {
-            Text("Open ${update.source.label}", fontSize = 13.sp)
+            Text("Open ${update.source.label}")
         }
     }) {
         Text(
             if (update.version.isEmpty()) "A newer Morphont is available on ${update.source.label}."
             else "Morphont ${update.version} is available on ${update.source.label}.",
-            fontSize = 14.sp, color = Mono.ink,
+            fontSize = Type.Body, color = Mono.ink,
         )
     }
 }

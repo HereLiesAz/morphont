@@ -509,8 +509,23 @@ of the way until needed.
 - **Monochrome.** Hierarchy is carried by brightness: the selected node, the
   active tool and the anchor being edited are the whitest things on screen.
   Smooth nodes are circles, corner nodes squares (filled when selected),
-  off-curve handle tips are X marks. The palette's one
-  colour, `Mono.error`, is kept for errors.
+  off-curve handle tips are X marks. Colour appears in two places only:
+  `Mono.error`, kept for errors, and the ghost outline colours (`GhostStyle`),
+  which a user picks to tell several ghosts apart.
+- **One vocabulary of parts.** Every slider is `HairSlider` (Material's slider
+  with a hairline track, so gestures and keyboard steps are stock). Buttons
+  have three weights -- borderless, `outlined`, and `selected` (the one
+  primary action on a surface) -- one label size, and dialog footers read
+  Cancel then the primary. Text sizes are roles (`Type.Micro`, `Small`,
+  `Body`, `Row`, `Title`...), never raw numbers; `Caps` is for labels of a few
+  words and has two sizes. Icon buttons are 28, 40 or 48 dp (`IconSize`) with
+  the icon at a fixed 16 or 20 dp inside. Glyph tiles (`GlyphTile`), menu
+  section heads (`MonoMenuHeader`), the start-screen head (`MorphontHero`) and
+  the start list are each defined once. Ripples are ink at low strength.
+- **Contrast.** Placeholders and small labels use `inkDim` (above 4.5:1 on
+  every panel); `inkFaint` is for disabled things only. The splash and the
+  privacy page follow the saved theme and repeat the palette's hexes, which
+  `PaletteResourcesTest` keeps in step with `Theme.kt`.
 - **Own parts:** a monoline icon set (`Icons.kt`, no icon library) and a
   hairline slider (`HairSlider`) in place of Material's thick one.
 - **Logo:** `branding/logo-inverted.png` (light, for this dark UI) is the

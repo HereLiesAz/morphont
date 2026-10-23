@@ -991,7 +991,7 @@ class AppState {
             block = { targets.forEach { it.replaceWithHistory(src.glyph.deepCopy()) } },
             undo = { targets.forEach { it.undo() } },
         )
-        setStatus("Copied ${ANCHOR_LABELS[activeAnchor]}'s outline to the other $count anchor(s) -- reshape each toward its extreme without adding or removing points.")
+        setStatus("Copied ${ANCHOR_LABELS[activeAnchor]}'s outline to the other $count anchor(s) — reshape each toward its extreme without adding or removing points.")
     }
 
     // ------------------------------------------------------------ clipboard
@@ -1111,7 +1111,7 @@ class AppState {
     fun resetRegularToNaturalPath() {
         if (activeGhost != null || reduction != null) return
         val natural = naturalRegular()
-        if (natural == null) { setStatus("The three anchors must have matching nodes first -- use \"Match the three anchors\".", true); return }
+        if (natural == null) { setStatus("The three anchors must have matching nodes first — use \"Match the three anchors\".", true); return }
         anchors.getValue("regular").replaceWithHistory(natural)
         setStatus("Regular reset to halfway between ${ANCHOR_LABELS[axisTriple()[0]]} and ${ANCHOR_LABELS[axisTriple()[2]]}. Undo puts it back.")
     }

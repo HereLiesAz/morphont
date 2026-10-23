@@ -5,17 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Morphont · Privacy Policy</title>
 <!-- Generated from docs/PRIVACY.md; edit that file, then regenerate this one. -->
+<script>
+  // Follows the app's saved theme (see index.html).
+  try { if (JSON.parse(localStorage.getItem('morphont-settings')).dark === false) document.documentElement.dataset.theme = 'light'; } catch (e) {}
+</script>
 <style>
-  :root { color-scheme: dark; }
-  body { margin: 0; background: #070707; color: #EDEDED; font: 16px/1.6 system-ui, sans-serif; }
+  /* Theme.kt's DarkPalette / LightPalette: ground, ink, inkDim, tertiary (PaletteResourcesTest keeps these in step). */
+  :root { color-scheme: dark; --ground: #070707; --ink: #EDEDED; --ink-dim: #8C8C8C; --tertiary: #BDBDBD; }
+  :root[data-theme="light"] { --ground: #2E2E2E; --ink: #F2F2F2; --ink-dim: #B4B4B4; --tertiary: #D2D2D2; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.6 system-ui, sans-serif; }
   main { max-width: 680px; margin: 0 auto; padding: 48px 20px 80px; }
+  header { display: flex; align-items: center; gap: 14px; margin: 0 0 24px; }
+  header img { width: 48px; height: 48px; }
+  header a { font-style: italic; font-size: 22px; text-decoration: none; }
   h1 { font-size: 34px; font-style: italic; font-weight: 400; margin: 0 0 8px; }
-  h2 { font: 500 12px/1 ui-monospace, monospace; letter-spacing: .16em; text-transform: uppercase; color: #8C8C8C; margin: 36px 0 12px; }
-  a { color: #EDEDED; } code { font-size: 14px; color: #BDBDBD; }
-  em { color: #8C8C8C; font-style: normal; font-size: 14px; }
+  h2 { font: 500 12px/1 ui-monospace, monospace; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-dim); margin: 36px 0 12px; }
+  a { color: var(--ink); } code { font-size: 14px; color: var(--tertiary); }
+  em { color: var(--ink-dim); font-style: normal; font-size: 14px; }
 </style>
 </head>
 <body><main>
+<header><img src="icons/icon-192.png" alt=""><a href="./">Morphont</a></header>
 <h1>Morphont Privacy Policy</h1>
 <p><em>Effective 22 October 2026. Applies to Morphont on Android, Windows, macOS, Linux and the web (PWA).</em></p>
 <p>Morphont is a glyph editor. It collects nothing.</p>

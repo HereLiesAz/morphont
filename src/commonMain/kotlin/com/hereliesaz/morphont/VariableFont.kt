@@ -612,7 +612,7 @@ class VariableFont private constructor(
             require(cmap.isNotEmpty()) { "No usable Unicode glyphs in TrueType cmap" }
 
             val fvarTable = tables["fvar"]
-            if (fvarTable == null && requireVariable) error("Missing 'fvar' table -- this isn't a variable font.")
+            if (fvarTable == null && requireVariable) error("Missing 'fvar' table — this isn't a variable font.")
             if (fvarTable != null) r.check(fvarTable.offset, 16, fvarTable.offset + fvarTable.length)
             val axesOffset = if (fvarTable == null) 0 else fvarTable.offset + r.u16(fvarTable.offset + 4)
             val axisCount = if (fvarTable == null) 0 else r.u16(fvarTable.offset + 8)

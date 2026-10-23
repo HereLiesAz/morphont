@@ -109,8 +109,8 @@ fun HowItWorksDialog(onDismiss: () -> Unit, onTrySample: (() -> Unit)? = null) {
     }) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ThreeStops()
-            Body("A variable font is a few drawings and the arithmetic between them. For each axis -- Weight, Width, " +
-                "Serif and the rest -- you draw its two extremes. Every axis shares one middle drawing, Regular.")
+            Body("A variable font is a few drawings and the arithmetic between them. For each axis — Weight, Width, " +
+                "Serif and the rest — you draw its two extremes. Every axis shares one middle drawing, Regular.")
             Body("Those drawings are the anchors: the strip of three under the canvas picks which one you're editing, " +
                 "and the axis name beside it switches axes. Draw Regular first, copy it to every anchor, then " +
                 "reshape each extreme. Every in-between weight is calculated, never drawn.")
@@ -152,14 +152,14 @@ val GESTURES: List<Pair<String, String>> = listOf(
 )
 
 @Composable
-private fun Body(text: String) = Text(text, fontSize = 14.sp, color = Mono.ink, lineHeight = 20.sp)
+private fun Body(text: String) = Text(text, fontSize = Type.Body, color = Mono.ink, lineHeight = 20.sp)
 
 @Composable
 private fun KeyRows(rows: List<Pair<String, String>>) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         for ((key, what) in rows) Row {
-            Text(key, fontSize = 13.sp, color = Mono.ink, modifier = Modifier.width(150.dp).padding(end = 8.dp))
-            Text(what, fontSize = 13.sp, color = Mono.inkDim, modifier = Modifier.weight(1f))
+            Text(key, fontSize = Type.Body, color = Mono.ink, modifier = Modifier.width(150.dp).padding(end = 8.dp))
+            Text(what, fontSize = Type.Body, color = Mono.inkDim, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -191,8 +191,8 @@ fun MorphontHero(onTrySample: (() -> Unit)? = null) {
             modifier = Modifier.width(112.dp).height(112.dp),
         )
         Column {
-            Text("Morphont", fontSize = 64.sp, lineHeight = 66.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = Mono.ink)
-            Text("Three drawings per axis. The rest is arithmetic.", fontSize = 15.sp, color = Mono.inkDim)
+            Text("Morphont", fontSize = Type.Hero, lineHeight = 66.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = Mono.ink)
+            Text("Three drawings per axis. The rest is arithmetic.", fontSize = Type.Row, color = Mono.inkDim)
         }
         MonoButton(onClick = { howOpen = true }, outlined = true) { Text("How Morphont works") }
     }
