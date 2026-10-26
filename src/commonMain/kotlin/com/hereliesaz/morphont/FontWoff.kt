@@ -66,7 +66,7 @@ private fun base128(w: ByteWriter, value: Long) {
     }
 }
 
-/** [sfnt] as a WOFF2 file, its tables stored as they are in one Brotli stream. */
+/** [sfnt] as a WOFF2 file: its tables, untransformed, in one Brotli stream. */
 internal fun woff2FromSfnt(sfnt: ByteArray): ByteArray {
     val (flavor, tables) = readSfnt(sfnt)
     // glyf must be followed directly by loca.
@@ -86,7 +86,7 @@ internal fun woff2FromSfnt(sfnt: ByteArray): ByteArray {
     }
     val stream = ByteWriter(sfnt.size)
     for (t in ordered) stream.bytes(t.data)
-    val compressed = brotliStored(stream.toByteArray())
+    val compressed = brotliCompress(stream.toByteArray())
     val total = pad4(48 + directory.size + compressed.size)
     return ByteWriter(total).apply {
         tag("wOF2"); u32(flavor)

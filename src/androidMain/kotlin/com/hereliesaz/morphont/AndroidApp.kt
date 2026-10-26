@@ -91,7 +91,12 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                     name.isEmpty() -> app.setStatus("Type a name first.", true)
                     storage.glyphExists(name) -> app.setStatus("A glyph named \"$name\" already exists.", true)
                     else -> {
-                        storage.saveGlyph(name, glyph)
+                        try {
+                            storage.saveGlyph(name, glyph)
+                        } catch (e: Exception) {
+                            app.setStatus("Couldn't create \"$name\": ${e.message ?: e::class.simpleName}", true)
+                            return false
+                        }
                         app.glyphNames = storage.listGlyphNames()
                         loadPersistentGlyph(name, glyph)
                         app.setStatus(createdMessage(name, glyph))
@@ -191,6 +196,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 storage.deleteProjectFiles(id)
                 registry.delete(id)
                 app.projects = registry.projects
+                storage.releaseUnusedFolders()
                 if (kept != null) app.setStatus("Removed from Morphont. Its glyph files are still in ${kept.label}.")
             }
 
@@ -246,6 +252,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                                     app.setStatus("\"${info.name}\" holds no glyphs yet. If your project is in a folder inside it, open that folder instead.")
                                 }
                             } catch (e: Exception) {
+                                storage.releaseUnusedFolders()
                                 app.setStatus("Couldn't open that folder: ${e.message ?: e::class.simpleName}", true)
                             }
                         }

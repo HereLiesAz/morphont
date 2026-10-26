@@ -1,5 +1,6 @@
 package com.hereliesaz.morphont
 
+import java.io.ByteArrayOutputStream
 import java.util.zip.Inflater
 import kotlin.random.Random
 import kotlin.test.Test
@@ -119,9 +120,25 @@ class FontContainerTest {
         }
         assertEquals(tags.indexOf("glyf") + 1, tags.indexOf("loca"))
         assertEquals(tablesOf(sfnt).values.sumOf { it.size.toLong() }, total)
-        // The Brotli stream: a 16-bit window, then uncompressed meta-blocks whose bytes are the tables.
+        // The Brotli stream holds the tables as they are, one after another in directory order.
         val compressedLength = r.u32(20).toInt()
         assertEquals(pad4(pos + compressedLength), woff2.size)
-        assertEquals(0, woff2[pos].toInt() and 1, "WBITS: 16")
+        val tables = tablesOf(sfnt)
+        val expected = ByteArrayOutputStream()
+        for (tag in tags) expected.write(tables.getValue(tag))
+        assertContentEquals(expected.toByteArray(), BrotliTestDecoder.decode(woff2.copyOfRange(pos, pos + compressedLength)))
+    }
+
+    @Test
+    fun theWebFormatsShrinkARealFont() {
+        val corner = GlyphCorner(600f, mutableListOf(ContourData(mutableListOf(
+            Pt(100f, 0f, true), Pt(300f, 0f, false), Pt(400f, 100f, false), Pt(500f, 300f, true),
+            Pt(500f, 500f, true), Pt(300f, 700f, true), Pt(100f, 500f, true),
+        ))))
+        val glyph = Glyph().also { it.corners["regular"] = corner }
+        val project = (0 until 300).associate { ('A' + it).toString() to glyph }
+        val sfnt = exportFont(project, FontExportOptions("Shrink Test")).bytes
+        assertTrue(woffFromSfnt(sfnt).size < sfnt.size * 2 / 3, "WOFF")
+        assertTrue(woff2FromSfnt(sfnt).size < sfnt.size * 2 / 3, "WOFF2")
     }
 }

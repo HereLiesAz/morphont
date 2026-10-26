@@ -31,7 +31,7 @@ class ProjectLocationHost(
 fun ProjectLocationRow(app: AppState, host: ProjectLocationHost, onClose: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     val project = app.currentProject ?: return
-    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.padding(top = 10.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(Modifier.weight(1f)) {
             Caps("Kept in")
             Text(project.locationLabel, fontSize = Type.Body, color = Mono.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -55,7 +55,7 @@ fun ProjectLocationRow(app: AppState, host: ProjectLocationHost, onClose: () -> 
             }
             app.newProjectsFolder?.let { home ->
                 Caps("New projects", modifier = Modifier.padding(top = 4.dp))
-                Text("Started in ${home.label}.", fontSize = Type.Body, color = Mono.ink)
+                Text("They start in ${home.label}.", fontSize = Type.Body, color = Mono.ink)
                 MonoButton(onClick = { host.newProjectsInAppStorage(); open = false }, outlined = true, modifier = Modifier.fillMaxWidth()) {
                     Text("Start new projects in app storage")
                 }

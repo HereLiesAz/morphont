@@ -105,7 +105,7 @@ fun FontExportDialog(app: AppState, host: FontExportHost, onDismiss: () -> Unit,
         val s = snapshot ?: return
         val options = FontExportOptions(
             family = family.trim(),
-            style = style.trim().ifEmpty { "Regular" },
+            style = if (outlines == FontOutlines.VARIABLE) "Regular" else style.trim().ifEmpty { "Regular" },
             outlines = outlines,
             container = container,
             instance = app.fontPreviewValues.toMap(),
@@ -180,10 +180,6 @@ fun FontExportDialog(app: AppState, host: FontExportHost, onDismiss: () -> Unit,
 
             val shown = problem ?: rangeProblem
             if (shown != null) Text(shown, fontSize = Type.Body, color = Mono.error)
-            else if (container == FontContainer.WOFF2) Text(
-                "WOFF2 files from Morphont are valid but not yet compressed, so they're about the size of a plain font.",
-                fontSize = Type.Small, color = Mono.inkDim,
-            )
         }
     }
 }

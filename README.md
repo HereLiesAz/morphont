@@ -366,7 +366,12 @@ never starts from Regular.
   (`A`, `é`, an emoji) or a production name (`uni00E9`, `u1F600`); any other
   name is kept in the font without a character. A `.notdef` box is added when
   the project has none. Glyphs drawn on another grid are scaled to the
-  project's most common units-per-em.
+  project's most common units-per-em; one that reaches beyond a font's
+  16-bit coordinates is refused by name. The editor fills even-odd and a font
+  fills non-zero, so each contour is turned the way its nesting needs: outer
+  contours clockwise for TrueType and counter-clockwise for CFF, holes against
+  them, islands inside holes outer again. A ring drawn with both contours the
+  same way therefore still comes out as a ring.
   The writers are from scratch (`Font*.kt`, no platform codec): `head`,
   `hhea`, `maxp`, `hmtx`, `OS/2`, `name`, `cmap` (format 4, and 12 for
   characters beyond the BMP), `post`, `gasp`, then `glyf`/`loca` or `CFF `,
@@ -561,7 +566,7 @@ never starts from Regular.
 - `Format.kt` / `commonTest/FormatTest.kt` -- Unicode presentation for legacy production names, independent of glyph identity
 - `FontExport.kt` / `FontExportUi.kt` -- compiled-font export: what goes in (names to characters, the frozen instance, variable axes, masters and `gvar` tuples) and the dialog and shell hook (`FontExportHost`) that asks for it; `commonTest/FontExportTest.kt` round-trips every format through `VariableFont` and checks the `gvar` encoding
 - `FontOutline.kt` / `FontTables.kt` / `FontTrueType.kt` / `FontCff.kt` / `FontBytes.kt` -- the font writers: contours on the integer grid and cubic-to-quadratic conversion, the shared sfnt tables and container, `glyf`/`loca`/`fvar`/`gvar`, the `CFF ` table, and the big-endian byte buffer
-- `FontWoff.kt` / `Deflate.kt` / `Brotli.kt` -- the WOFF and WOFF2 containers, a plain-Kotlin zlib compressor, and a Brotli stream of uncompressed blocks; `desktopTest/FontContainerTest.kt` inflates them with the JDK
+- `FontWoff.kt` / `Deflate.kt` / `Brotli.kt` / `Huffman.kt` -- the WOFF and WOFF2 containers, a plain-Kotlin zlib compressor (fixed or dynamic Huffman) and Brotli compressor (LZ77, simple and complex prefix codes), and the length-limited Huffman and bit-writer code they share; `desktopTest/FontContainerTest.kt` inflates WOFF with the JDK and reads WOFF2 back through `BrotliTestDecoder.kt`, a small decoder written from the RFC, which `BrotliRoundTripTest.kt` also drives
 - `GlyphFileNames.kt` -- the glyph-name-to-file-name scheme shared with the desktop app; `desktopTest/GlyphFileNamesParityTest.kt` keeps the two identical
 - `ProjectLocationUi.kt` -- the Kept in row and its dialog; `androidMain/GlyphFolder.kt` -- a project's glyph files as one interface over app storage or a document-picker folder, and `AndroidStorage.kt`'s moves between them
 
@@ -638,18 +643,31 @@ of the way until needed.
   Multi-touch gesture interaction still requires device-level testing.
 - **Font export.** No hinting, kerning, GPOS/GSUB, `STAT` or `HVAR`; advance
   variation uses `gvar` phantom points, which current browsers, FreeType and
-  DirectWrite honour. WOFF2 files are valid (browsers and fontTools read
-  them) but their Brotli stream is stored without compression, so they are
-  about the size of the plain font; WOFF is zlib-compressed with fixed
-  Huffman codes, a little looser than zlib's own. A glyph whose anchors don't
-  match point for point is exported from Regular alone and listed in the
-  report. Contour direction is left as drawn. Imports still read only
+  DirectWrite honour. WOFF (zlib) and WOFF2 (Brotli) are compressed by small
+  from-scratch encoders: LZ77 with hash chains and one Huffman table set per
+  table or block. They read correctly everywhere that was tried, but come out
+  a little larger than zlib's and the reference Brotli's own (no Brotli
+  dictionary, context modelling or block splitting, and WOFF2's glyf and
+  hmtx transforms aren't applied). A glyph whose anchors don't match point
+  for point is exported from one anchor alone (Regular, or the first drawn)
+  and listed in the report. Contours that cross rather than nest fill as a
+  union in the font, where the editor shows an XOR. A static font's style
+  name, and the default instance of a variable one, are whatever the dialog
+  says; a variable font's is always Regular. Imports still read only
   TrueType-outline fonts, so a CFF export can't be imported back.
 - **Project folders.** Reads and writes go through Android's document
   providers, which can be slow (a cloud provider especially) and the glyph
-  list is read on the main thread as it always was. A file is overwritten in
+  list is read on the main thread as it always was (it falls back to the last
+  list that worked if the folder stops answering). A file is overwritten in
   place, not through a temporary file, since providers can't rename over an
-  existing one. Moving and saving are checked in the Android host tests
+  existing one, so a process killed mid-write can leave that one glyph empty.
+  Only files named exactly as Morphont names them count as glyphs, and a
+  folder is adopted only if every `.json` file in it is a glyph file, so
+  notes or settings beside a project are never listed, overwritten or
+  deleted. One move runs at a time; a second is refused. A font import that
+  spans a move finishes in the folder the project is in by then. Android keeps
+  a limited number of folder permissions, so Morphont gives one back as soon as
+  no project and no "new projects" setting uses that folder. Moving and saving are checked in the Android host tests
   (`androidHostTest/AndroidFolderStorageTest.kt`, under Robolectric) against a
   stand-in document provider, not against every real one. Desktop and web have no folder
   choice yet; they use the file picker for **Save the whole project**.

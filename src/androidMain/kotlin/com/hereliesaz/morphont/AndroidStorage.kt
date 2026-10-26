@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import java.io.File
+import kotlinx.serialization.json.jsonObject
 
 private const val PREFS_NAME = "morphont"
 private const val PROJECT_KEY = "project"
@@ -121,7 +122,7 @@ class AndroidStorage(context: Context) {
     fun useProject(id: String) {
         val next = folderFor(checkNotNull(registry.find(id)) { "There is no such project." })
         // Switched under the same lock [saveNewGlyphs] checks it with.
-        synchronized(this) { projectId = id; folder = next }
+        synchronized(this) { projectId = id; folder = next; lastNames = emptyList() }
     }
 
     /**
@@ -219,11 +220,23 @@ class AndroidStorage(context: Context) {
      * with a whole font imported, and a damaged file still shows up (opening it says it can't be read)
      * instead of silently vanishing from the list.
      */
-    fun listGlyphNames(): List<String> = folder?.names()?.sorted() ?: emptyList()
+    fun listGlyphNames(): List<String> {
+        val from = folder ?: return emptyList()
+        // A folder the person chose can stop answering (deleted, access taken back, provider gone); the editor asks
+        // for this list while it draws, so it gets the last list that worked rather than an exception.
+        return try {
+            from.names().sorted().also { lastNames = it }
+        } catch (_: Exception) {
+            lastNames
+        }
+    }
+
+    private var lastNames: List<String> = emptyList()
 
     fun loadGlyph(name: String): Glyph? = folder?.let { readGlyph(it, name) }
 
-    fun glyphExists(name: String): Boolean = folder?.exists(name) == true
+    /** False when the folder can't say; whatever then tries to save the glyph meets the real error. */
+    fun glyphExists(name: String): Boolean = try { folder?.exists(name) == true } catch (_: Exception) { false }
 
     /** The glyph that was open when the current project was last used. */
     fun lastGlyphName(): String? = projectId?.let { prefs.getString(LAST_GLYPH_KEY + "_" + it, null) }
@@ -292,22 +305,24 @@ class AndroidStorage(context: Context) {
      * before the first is written, so an unencodable one aborts cleanly instead of half saving.
      */
     fun saveNewGlyphs(glyphs: Map<String, Glyph>, forProject: String? = null): List<String> {
-        // The project is checked and its folder taken in one step; the collision tests and writes all
-        // use that folder, so opening another project meanwhile can't redirect any of them.
-        val target = synchronized(this) {
-            check(forProject == null || forProject == projectId) { "You opened another project while it was importing, so nothing was saved. Import it again." }
-            activeFolder()
-        }
         val encoded = glyphs.mapValues { glyphBytes(it.value) } // an unencodable glyph aborts here, before anything is written
-        val existing = glyphs.keys.filter { target.exists(it) }
+        val id = synchronized(this) {
+            check(forProject == null || forProject == projectId) { "You opened another project while it was importing, so nothing was saved. Import it again." }
+            checkNotNull(projectId) { "No project is open." }
+        }
+        val existing = ArrayList<String>()
         for ((name, bytes) in encoded) {
-            if (name in existing) continue
-            // Each write holds the lock deleteProjectFiles takes and first checks the folder is still there
-            // (a write would quietly recreate a deleted project's folder).
+            // Each glyph is checked and written under the lock a move takes, against the folder the project is in
+            // at that moment: a move that starts mid-import carries what is already written and this carries the rest.
             synchronized(this) {
-                check(target.isPresent()) { "The project was deleted while it was importing." }
-                target.write(name, bytes)
-                moving?.touched?.add(name)
+                check(projectId == id) { "The project was closed or deleted while it was importing." }
+                val target = activeFolder()
+                check(target.isPresent()) { "The project's folder is gone." }
+                if (target.exists(name)) existing.add(name)
+                else {
+                    target.write(name, bytes)
+                    moving?.touched?.add(name)
+                }
             }
         }
         return existing
@@ -362,6 +377,13 @@ class AndroidStorage(context: Context) {
         }
     }
 
+    /** Starts a move of project [id]: only one runs at a time, since two would each treat the other's changes as deletions. */
+    private fun beginMove(id: String, info: ProjectInfo): GlyphFolder = synchronized(this) {
+        check(moving == null) { "Another move is still running. Wait for it to finish." }
+        moving = Move()
+        if (projectId == id) activeFolder() else folderFor(info)
+    }
+
     /**
      * Copies what was saved or deleted in [source] while [Move] was running into [dest], then runs [switch], all
      * under the lock saves take, so no later save can land in [source] and be lost.
@@ -384,26 +406,32 @@ class AndroidStorage(context: Context) {
      */
     fun moveProjectToFolder(id: String, tree: Uri): ProjectLocation {
         val info = checkNotNull(registry.find(id)) { "There is no such project." }
-        val parentId = DocumentsContract.getTreeDocumentId(tree)
-        val rootLabel = treeLabel(tree)
-        val (folderId, folderName) = DocumentTree.createFolder(resolver, tree, parentId, info.name)
-        val dest = TreeGlyphFolder(resolver, tree, folderId)
-        val where = ProjectLocation(tree.toString(), folderId, "$rootLabel/$folderName")
-        val source = synchronized(this) { moving = Move(); if (projectId == id) activeFolder() else folderFor(info) }
+        val source = beginMove(id, info)
+        var madeFolder: String? = null
         try {
+            val parentId = DocumentsContract.getTreeDocumentId(tree)
+            val rootLabel = treeLabel(tree)
+            val (folderId, folderName) = DocumentTree.createFolder(resolver, tree, parentId, info.name)
+            madeFolder = folderId
+            val dest = TreeGlyphFolder(resolver, tree, folderId)
+            val where = ProjectLocation(tree.toString(), folderId, "$rootLabel/$folderName")
             copyGlyphs(source, dest)
             finishMove(source, dest) {
                 registry.setLocation(id, where)
                 registry.setNewProjectsIn(ProjectLocation(tree.toString(), parentId, rootLabel))
                 if (projectId == id) folder = dest
             }
+            // The registry must be on disk before the app's copy goes, or a kill in between would point it at files that are gone.
+            prefs.edit().commit()
+            if (info.location == null) File(projectsRoot, id).deleteRecursively()
+            releaseUnusedFolders()
+            return where
         } catch (t: Throwable) {
             synchronized(this) { moving = null }
-            runCatching { DocumentsContract.deleteDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(tree, folderId)) }
+            madeFolder?.let { runCatching { DocumentsContract.deleteDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(tree, it)) } }
+            releaseUnusedFolders()
             throw t
         }
-        if (info.location == null) File(projectsRoot, id).deleteRecursively()
-        return where
     }
 
     /** Brings project [id] back into app storage. The folder it came from is left as it is, a copy of everything. */
@@ -414,7 +442,7 @@ class AndroidStorage(context: Context) {
         target.deleteRecursively()
         target.mkdirs()
         val dest = FileGlyphFolder(target)
-        val source = synchronized(this) { moving = Move(); if (projectId == id) activeFolder() else folderFor(info) }
+        val source = beginMove(id, info)
         try {
             copyGlyphs(source, dest)
             finishMove(source, dest) {
@@ -426,6 +454,7 @@ class AndroidStorage(context: Context) {
             target.deleteRecursively()
             throw t
         }
+        releaseUnusedFolders()
     }
 
     /**
@@ -434,8 +463,20 @@ class AndroidStorage(context: Context) {
      */
     fun adoptFolder(tree: Uri): ProjectInfo {
         val folderId = DocumentsContract.getTreeDocumentId(tree)
-        registry.projects.firstOrNull { it.location?.let { l -> l.tree == tree.toString() && l.folder == folderId } == true }?.let { return it }
-        check(TreeGlyphFolder(resolver, tree, folderId).isPresent()) { "Morphont can't read that folder." }
+        // The same folder may have been picked as a tree of its own or made as a subfolder of one we hold: its document id is the same either way.
+        registry.projects.firstOrNull { it.location?.let { l -> l.folder == folderId && Uri.parse(l.tree).authority == tree.authority } == true }?.let { return it }
+        val where = TreeGlyphFolder(resolver, tree, folderId)
+        check(where.isPresent()) { "Morphont can't read that folder." }
+        // A glyph file is JSON with a "corners" object. Anything else with a .json name (notes, settings) isn't ours, and
+        // opening the folder would list it as a glyph and let a save or a delete overwrite the person's file.
+        val strangers = where.names().filter { name ->
+            val text = where.read(name)?.toString(Charsets.UTF_8)
+            text == null || runCatching { kotlinx.serialization.json.Json.parseToJsonElement(text).jsonObject.containsKey("corners") }.getOrDefault(false).not()
+        }
+        check(strangers.isEmpty()) {
+            "That folder holds ${strangers.size} .json file(s) that aren't Morphont glyphs (${strangers.take(3).joinToString { "$it.json" }}). " +
+                "Pick the project's own folder, or an empty one."
+        }
         val label = treeLabel(tree)
         val info = registry.create(unusedProjectName(registry, label))
         return checkNotNull(registry.setLocation(info.id, ProjectLocation(tree.toString(), folderId, label)))
@@ -444,7 +485,25 @@ class AndroidStorage(context: Context) {
     /** The folder new projects are made in, if the person chose one. */
     val newProjectsFolder: ProjectLocation? get() = registry.newProjectsIn
 
-    fun useAppStorageForNewProjects() = registry.setNewProjectsIn(null)
+    fun useAppStorageForNewProjects() {
+        registry.setNewProjectsIn(null)
+        releaseUnusedFolders()
+    }
+
+    /**
+     * Gives back Android's standing permission for every folder no project and no "new projects" setting uses any
+     * more: after a project is removed or moved home, a move that failed, a setting undone. The system keeps only a
+     * limited number of these grants and drops the oldest, which would silently cut off a project still in use.
+     */
+    fun releaseUnusedFolders() {
+        val inUse = registry.projects.mapNotNull { it.location?.tree }.toSet() + listOfNotNull(registry.newProjectsIn?.tree)
+        for (grant in resolver.persistedUriPermissions) {
+            if (grant.uri.toString() in inUse) continue
+            runCatching {
+                resolver.releasePersistableUriPermission(grant.uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+        }
+    }
 
     /**
      * Gives the just-made project [info] a folder of its own inside the chosen one for new projects. Null when

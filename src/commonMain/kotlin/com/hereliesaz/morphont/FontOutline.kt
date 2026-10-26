@@ -193,3 +193,89 @@ internal fun quadCountsFor(contour: FontContour, tolerance: Float): IntArray {
 /** True when two contours have the same segment kinds, so their TrueType points can line up. */
 internal fun sameShape(a: FontContour, b: FontContour): Boolean =
     a.segs.size == b.segs.size && a.segs.indices.all { a.segs[it].order == b.segs[it].order }
+
+// ---------------------------------------------------------------- contour direction
+
+/**
+ * [contour] traced the other way round: the same start point and the same nodes, segments in reverse order with
+ * their controls swapped. A variable font reverses every master of a contour or none, so the points still line up.
+ */
+internal fun reversedContour(contour: FontContour): FontContour {
+    val n = contour.segs.size
+    val xs = IntArray(n + 1); val ys = IntArray(n + 1)
+    xs[0] = contour.startX; ys[0] = contour.startY
+    for (k in 1..n) { xs[k] = contour.segs[k - 1].x; ys[k] = contour.segs[k - 1].y }
+    val segs = ArrayList<FontSeg>(n)
+    for (k in n downTo 1) {
+        val s = contour.segs[k - 1]
+        segs.add(FontSeg(s.order, if (s.order == 3) s.c2x else s.c1x, if (s.order == 3) s.c2y else s.c1y, s.c1x, s.c1y, xs[k - 1], ys[k - 1]))
+    }
+    return FontContour(contour.startX, contour.startY, segs)
+}
+
+/** The contour as a polygon, curves sampled: enough to measure its area and test points against it. */
+private fun flatten(c: FontContour): List<Pair<Double, Double>> {
+    val out = ArrayList<Pair<Double, Double>>()
+    var px = c.startX.toDouble(); var py = c.startY.toDouble()
+    out.add(px to py)
+    for (s in c.segs) {
+        val steps = when (s.order) { 1 -> 1; 2 -> 6; else -> 10 }
+        for (k in 1..steps) {
+            val t = k.toDouble() / steps; val u = 1 - t
+            val x: Double; val y: Double
+            when (s.order) {
+                1 -> { x = s.x.toDouble(); y = s.y.toDouble() }
+                2 -> { x = u * u * px + 2 * u * t * s.c1x + t * t * s.x; y = u * u * py + 2 * u * t * s.c1y + t * t * s.y }
+                else -> {
+                    x = u * u * u * px + 3 * u * u * t * s.c1x + 3 * u * t * t * s.c2x + t * t * t * s.x
+                    y = u * u * u * py + 3 * u * u * t * s.c1y + 3 * u * t * t * s.c2y + t * t * t * s.y
+                }
+            }
+            out.add(x to y)
+        }
+        px = s.x.toDouble(); py = s.y.toDouble()
+    }
+    return out
+}
+
+private fun signedArea(p: List<Pair<Double, Double>>): Double {
+    var a = 0.0
+    for (i in p.indices) { val (x0, y0) = p[i]; val (x1, y1) = p[(i + 1) % p.size]; a += x0 * y1 - x1 * y0 }
+    return a / 2
+}
+
+private fun contains(p: List<Pair<Double, Double>>, x: Double, y: Double): Boolean {
+    var inside = false
+    var j = p.size - 1
+    for (i in p.indices) {
+        val (xi, yi) = p[i]; val (xj, yj) = p[j]
+        if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside
+        j = i
+    }
+    return inside
+}
+
+/**
+ * Which of [contours] have to be reversed for the font to fill them the way the editor does. The editor fills
+ * even-odd (a contour inside another is a hole whichever way it runs); a font fills non-zero, where a hole must
+ * run against the shape around it. So each contour gets the outer direction when an even number of others
+ * contain it and the opposite when an odd number do. Outer is clockwise for TrueType ([outerClockwise]) and
+ * counter-clockwise for PostScript outlines. Contours that cross rather than nest fill as a union, not as the
+ * editor's XOR; nothing here can express that.
+ */
+internal fun contourFlips(contours: List<FontContour>, outerClockwise: Boolean): BooleanArray {
+    val polygons = contours.map { flatten(it) }
+    val areas = polygons.map { signedArea(it) }
+    return BooleanArray(contours.size) { i ->
+        if (areas[i] == 0.0) return@BooleanArray false
+        var depth = 0
+        // Any point of the contour will do for the test, but not one on a neighbour's edge: use the middle of its first segment.
+        val probe = polygons[i].let { p -> (p[0].first + p[1].first) / 2 to (p[0].second + p[1].second) / 2 }
+        for (j in contours.indices) if (j != i && contains(polygons[j], probe.first, probe.second)) depth++
+        val wantClockwise = (depth % 2 == 0) == outerClockwise
+        (areas[i] < 0) != wantClockwise
+    }
+}
+
+internal fun applyFlips(contours: List<FontContour>, flips: BooleanArray): List<FontContour> =
+    contours.mapIndexed { i, c -> if (flips[i]) reversedContour(c) else c }

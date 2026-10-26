@@ -162,7 +162,7 @@ class FontExportTest {
         val broken = weighted()
         broken.corners[Axis.WEIGHT.hi] = GlyphCorner(900f, mutableListOf(ContourData(mutableListOf(Pt(0f, 0f, true), Pt(100f, 0f, true), Pt(100f, 100f, true)))))
         val result = exportFont(mapOf("A" to broken, "B" to weighted()), FontExportOptions("T", outlines = FontOutlines.VARIABLE))
-        assertTrue(result.warnings.any { "Regular alone: A" in it }, result.warnings.toString())
+        assertTrue(result.warnings.any { "(Regular, or the first one drawn): A" in it }, result.warnings.toString())
         val font = parse(result.bytes)
         assertNotNull(font.outlineAt('A'.code, mapOf("wght" to 100f)))
     }
@@ -318,5 +318,88 @@ class FontExportTest {
             assertEquals(expected, delta.toFloat(), 1f, "advance change at normalized $peak")
         }
         assertEquals(setOf(-1f, -0.5f, 0.5f, 1f), widths.keys)
+    }
+
+    private fun area(c: ContourData): Float {
+        val p = c.points.filter { it.onCurve }
+        var a = 0f
+        for (i in p.indices) { val q = p[(i + 1) % p.size]; a += p[i].x * q.y - q.x * p[i].y }
+        return a / 2f
+    }
+
+    private fun squareContour(x0: Float, y0: Float, x1: Float, y1: Float, counterClockwise: Boolean): ContourData {
+        val pts = listOf(x0 to y0, x1 to y0, x1 to y1, x0 to y1)
+        return ContourData((if (counterClockwise) pts else pts.reversed()).map { Pt(it.first, it.second, true) }.toMutableList())
+    }
+
+    private fun ringGlyph(innerSameWay: Boolean): Glyph {
+        val g = Glyph(metrics = FontMetrics())
+        g.corners["regular"] = GlyphCorner(600f, mutableListOf(
+            squareContour(50f, 0f, 550f, 700f, counterClockwise = true),
+            squareContour(150f, 100f, 450f, 600f, counterClockwise = innerSameWay),
+        ))
+        return g
+    }
+
+    @Test
+    fun aHoleThatRunsTheOuterWayStillComesOutAHole() {
+        // The editor fills even-odd, so a ring drawn with both contours the same way shows a hole; a font fills
+        // non-zero, where that ring would be solid. The export turns the inner contour against the outer.
+        for (outlines in listOf(FontOutlines.TRUETYPE, FontOutlines.CFF)) {
+            val ring = ringGlyph(innerSameWay = true)
+            val contours = fontContoursOf(ring.corners.getValue("regular"))
+            val flips = contourFlips(contours, outerClockwise = outlines == FontOutlines.TRUETYPE)
+            val fixed = applyFlips(contours, flips)
+            val areas = fixed.map { c -> var a = 0L; var px = c.startX; var py = c.startY; for (sg in c.segs) { a += px.toLong() * sg.y - sg.x.toLong() * py; px = sg.x; py = sg.y }; a }
+            assertTrue(areas[0] * areas[1] < 0, "the hole runs against its outline: $areas")
+            assertEquals(outlines == FontOutlines.TRUETYPE, areas[0] < 0, "outer is clockwise for TrueType, counter-clockwise for CFF")
+        }
+        val font = parse(exportFont(mapOf("O" to ringGlyph(true)), FontExportOptions("Ring")).bytes)
+        val shape = assertNotNull(font.outlineAt('O'.code, emptyMap()))
+        assertTrue(area(shape[0]) * area(shape[1]) < 0)
+    }
+
+    @Test
+    fun anIslandInsideAHoleIsOuterAgain() {
+        val outer = FontContour(0, 0, listOf(FontSeg(1, 0, 0, 0, 0, 1000, 0), FontSeg(1, 0, 0, 0, 0, 1000, 1000), FontSeg(1, 0, 0, 0, 0, 0, 1000), FontSeg(1, 0, 0, 0, 0, 0, 0)))
+        fun box(a: Int, b: Int) = FontContour(a, a, listOf(FontSeg(1, 0, 0, 0, 0, b, a), FontSeg(1, 0, 0, 0, 0, b, b), FontSeg(1, 0, 0, 0, 0, a, b), FontSeg(1, 0, 0, 0, 0, a, a)))
+        val flips = contourFlips(listOf(outer, box(100, 900), box(300, 700)), outerClockwise = false)
+        // all three run counter-clockwise: outer stays, the hole flips, the island inside it stays
+        assertEquals(listOf(false, true, false), flips.toList())
+    }
+
+    @Test
+    fun aReversedContourDrawsTheSameOutlineTheOtherWay() {
+        val c = fontContourOf(blob(200f), 1f)!!
+        val back = reversedContour(reversedContour(c))
+        assertEquals(c.segs.map { listOf(it.order, it.c1x, it.c1y, it.c2x, it.c2y, it.x, it.y) }, back.segs.map { listOf(it.order, it.c1x, it.c1y, it.c2x, it.c2y, it.x, it.y) })
+        assertTrue(sameShape(c, reversedContour(c)))
+    }
+
+    @Test
+    fun aGlyphBeyondTheGridIsRefusedWithItsName() {
+        val g = Glyph(metrics = FontMetrics())
+        g.corners["regular"] = GlyphCorner(500f, mutableListOf(blob(40_000f, 0f, 0f)))
+        val e = assertFailsWith<IllegalArgumentException> { exportFont(mapOf("W" to g), FontExportOptions("T")) }
+        assertContains(e.message!!, "\"W\"")
+    }
+
+    @Test
+    fun aGlyphWithNothingDrawnKeepsItsOneAdvance() {
+        val space = Glyph().also { it.corners["regular"] = GlyphCorner(310f) }
+        for (t in listOf(0f, 1f)) {
+            val font = parse(exportFont(mapOf(" " to space, "A" to weighted()), FontExportOptions("T", instance = mapOf("wght" to t))).bytes)
+            assertEquals(310f, font.advanceWidth(' '.code), "wght at $t")
+        }
+    }
+
+    @Test
+    fun aGlyphWithNoRegularAndDisagreeingAnchorsStillExportsSomething() {
+        val g = Glyph(metrics = FontMetrics())
+        g.corners[Axis.WEIGHT.lo] = corner(700f, 150f)
+        g.corners[Axis.WEIGHT.hi] = GlyphCorner(900f, mutableListOf(ContourData(mutableListOf(Pt(0f, 0f, true), Pt(100f, 0f, true), Pt(100f, 100f, true)))))
+        val result = exportFont(mapOf("A" to g), FontExportOptions("T"))
+        assertTrue(assertNotNull(parse(result.bytes).outlineAt('A'.code, emptyMap())).isNotEmpty())
+        assertTrue(result.warnings.any { "first one drawn" in it })
     }
 }

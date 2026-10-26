@@ -49,7 +49,7 @@ write it where you choose.
 
 Exporting a font writes one file to the place you pick, the same way. On Android, if you choose a
 folder for a project, Morphont asks Android to let it keep reading and writing that folder (and only
-that folder) until you remove the project or revoke the access in the system settings. Android hands
+that folder) for as long as a project there, or the choice of that folder for new projects, exists; Morphont gives the access back when neither does, and you can also revoke it in the system settings. Android hands
 Morphont the folder through its document picker; where that folder is stored (on the device, an SD
 card, or a cloud provider you've set up in your files app) is the provider's business, not Morphont's.
 

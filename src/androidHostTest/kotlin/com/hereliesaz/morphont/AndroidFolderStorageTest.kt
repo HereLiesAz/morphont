@@ -33,6 +33,7 @@ class FakeDocs : DocumentsProvider() {
         lateinit var root: File
         const val AUTH = "fake.docs"
         @Volatile var beforeCreateFile: (() -> Unit)? = null
+        @Volatile var childQueries = 0
     }
 
     override fun onCreate() = true
@@ -54,6 +55,7 @@ class FakeDocs : DocumentsProvider() {
     }
 
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor {
+        childQueries++
         val dir = file(parentDocumentId)
         if (!dir.isDirectory) throw FileNotFoundException(parentDocumentId)
         return MatrixCursor(columns).also { c -> dir.listFiles().orEmpty().forEach { add(c, it) } }
@@ -115,6 +117,7 @@ class AndroidFolderStorageTest {
         context = ApplicationProvider.getApplicationContext()
         FakeDocs.root = java.nio.file.Files.createTempDirectory("docs").toFile()
         FakeDocs.beforeCreateFile = null
+        FakeDocs.childQueries = 0
         val info = android.content.pm.ProviderInfo().apply {
             authority = FakeDocs.AUTH
             exported = true
@@ -286,7 +289,8 @@ class AndroidFolderStorageTest {
         assertTrue(File(context.filesDir, "morphont-projects/${info.id}").isDirectory)
         assertTrue(onDisk("Roundtrip", "%41.json").isFile, "the folder keeps its copy")
         storage.saveGlyph("C", glyph())
-        assertFalse(onDisk("Roundtrip", "c.json").exists())
+        assertFalse(onDisk("Roundtrip", "%43.json").exists(), "after moving home, saves no longer reach the folder")
+        assertTrue(File(context.filesDir, "morphont-projects/${info.id}").listFiles().orEmpty().size == 3, "they land in app storage")
         assertEquals(listOf("A", "B", "C"), storage.listGlyphNames())
     }
 
@@ -364,5 +368,102 @@ class AndroidFolderStorageTest {
         assertEquals(listOf("A"), collisions)
         assertEquals(1f, storage.loadGlyph("A")!!.corners["regular"]!!.width)
         assertEquals(3f, storage.loadGlyph("B")!!.corners["regular"]!!.width)
+    }
+
+    // ---- what the audit found
+
+    @Test
+    fun aFolderWithOtherJsonFilesIsNotAdopted() {
+        val (id, _) = DocumentTree.createFolder(context.contentResolver, tree(), "root", "Mixed")
+        val folder = TreeGlyphFolder(context.contentResolver, tree(), id)
+        folder.write("A", ProjectCodec.encodeGlyph(glyph()).encodeToByteArray())
+        folder.write("notes", """{"my":"notes"}""".encodeToByteArray())
+        val sub = DocumentsContract.buildTreeDocumentUri(FakeDocs.AUTH, "root/Mixed")
+        val failure = runCatching { storage.adoptFolder(sub) }.exceptionOrNull()
+        assertNotNull(failure)
+        assertTrue("notes.json" in failure.message!!)
+        assertEquals(emptyList(), storage.registry.projects.filter { it.location != null })
+        assertEquals("""{"my":"notes"}""", onDisk("Mixed", "notes.json").readText(), "their file is untouched")
+    }
+
+    @Test
+    fun handMadeFilesThatDecodeToTheSameGlyphAreNotSecondGlyphs() {
+        val (id, _) = DocumentTree.createFolder(context.contentResolver, tree(), "root", "Dupes")
+        val folder = TreeGlyphFolder(context.contentResolver, tree(), id)
+        folder.write("A", "x".encodeToByteArray())
+        onDisk("Dupes", "A.json").writeText("y")
+        onDisk("Dupes", "readme.txt").writeText("z")
+        assertEquals(listOf("A"), folder.names())
+    }
+
+    @Test
+    fun aFolderThatStopsAnsweringDoesNotBreakTheGlyphList() {
+        val info = project("Gone")
+        storage.saveGlyph("A", glyph())
+        storage.moveProjectToFolder(info.id, tree())
+        assertEquals(listOf("A"), storage.listGlyphNames())
+        onDisk("Gone").deleteRecursively()
+        assertEquals(listOf("A"), storage.listGlyphNames(), "the last list that worked")
+        storage.glyphExists("A") // answers, one way or the other, rather than throwing
+    }
+
+    @Test
+    fun aSecondMoveWhileOneRunsIsRefused() {
+        val info = project("Twice")
+        for (n in listOf("A", "B")) storage.saveGlyph(n, glyph())
+        val reached = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        FakeDocs.beforeCreateFile = { reached.countDown(); release.await(10, TimeUnit.SECONDS) }
+        var failure: Throwable? = null
+        val first = thread { try { storage.moveProjectToFolder(info.id, tree()) } catch (t: Throwable) { failure = t } }
+        assertTrue(reached.await(10, TimeUnit.SECONDS))
+        val second = runCatching { storage.moveProjectToFolder(info.id, tree()) }.exceptionOrNull()
+        assertTrue(second is IllegalStateException && "still running" in second.message!!, second.toString())
+        FakeDocs.beforeCreateFile = null
+        release.countDown()
+        first.join(20_000)
+        assertNull(failure)
+        assertEquals(listOf("A", "B"), storage.listGlyphNames())
+        assertFalse(onDisk("Twice 2").exists(), "the refused move made nothing")
+    }
+
+    @Test
+    fun aFontImportThatOutlastsAMoveFinishesInTheNewFolder() {
+        val info = project("Import mid-move")
+        storage.saveGlyph("A", glyph())
+        val reached = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        FakeDocs.beforeCreateFile = { reached.countDown(); release.await(10, TimeUnit.SECONDS) }
+        val mover = thread { storage.moveProjectToFolder(info.id, tree()) }
+        assertTrue(reached.await(10, TimeUnit.SECONDS))
+        FakeDocs.beforeCreateFile = null
+        // the move is still copying, so this import's glyphs are written to app storage and noted for the move to carry
+        val collisions = storage.saveNewGlyphs(mapOf("X" to glyph(1f), "Y" to glyph(2f)), info.id)
+        release.countDown()
+        mover.join(20_000)
+        assertEquals(emptyList(), collisions)
+        assertEquals(listOf("A", "X", "Y"), storage.listGlyphNames())
+        // and one that starts after the move writes straight into the folder
+        storage.saveNewGlyphs(mapOf("Z" to glyph(3f)), info.id)
+        assertTrue(onDisk("Import mid-move", "%5A.json").isFile)
+    }
+
+    @Test
+    fun importingManyGlyphsDoesNotListTheFolderForEachOne() {
+        val info = project("Many")
+        storage.moveProjectToFolder(info.id, tree())
+        FakeDocs.childQueries = 0
+        storage.saveNewGlyphs((0 until 100).associate { "g$it" to glyph() }, info.id)
+        assertTrue(FakeDocs.childQueries <= 4, "listed ${FakeDocs.childQueries} times")
+        assertEquals(100, storage.listGlyphNames().size)
+    }
+
+    @Test
+    fun theFolderAMoveMadeIsTheSameProjectWhenPickedAgain() {
+        val info = project("Same")
+        storage.saveGlyph("A", glyph())
+        storage.moveProjectToFolder(info.id, tree())
+        val sub = DocumentsContract.buildTreeDocumentUri(FakeDocs.AUTH, "root/Same")
+        assertEquals(info.id, storage.adoptFolder(sub).id)
     }
 }

@@ -22,7 +22,11 @@ internal interface GlyphFolder {
     /** The saved bytes, or null when there is no such glyph or it can't be read. */
     fun read(name: String): ByteArray?
 
-    /** Replaces (or creates) the glyph's file. A failure throws; it never leaves a half-written file where a whole one was. */
+    /**
+     * Replaces (or creates) the glyph's file. A failure throws. In app storage the old file stays whole until the new
+     * one is; in a chosen folder the file is rewritten in place (providers can't swap files), so a process killed
+     * mid-write can leave that one glyph empty.
+     */
     fun write(name: String, bytes: ByteArray)
 
     /** True when the glyph is gone afterwards, whether or not it was there. */
@@ -96,38 +100,54 @@ internal class TreeGlyphFolder(
 ) : GlyphFolder {
     private val ids = HashMap<String, String>()
 
+    /** True once [ids] holds a full listing; until then (and after any failure) the next lookup lists the folder. */
+    private var listed = false
+
     private fun folderUri(): Uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, folderId)
     private fun documentUri(id: String): Uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
 
-    /** File name -> document id, for every file (not folder) directly inside, read afresh. */
+    /** File name -> document id, for every file (not folder) directly inside, read afresh and remembered. */
     @Synchronized
     private fun listing(): Map<String, String> {
-        val out = LinkedHashMap<String, String>()
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, folderId)
-        val cursor = resolver.query(
-            children,
-            arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE),
-            null, null, null,
-        ) ?: throw IOException("The folder can't be read.")
-        cursor.use {
-            // Providers may return more columns than asked for, in their own order; read by name.
-            val id = it.getColumnIndexOrThrow(Document.COLUMN_DOCUMENT_ID)
-            val display = it.getColumnIndexOrThrow(Document.COLUMN_DISPLAY_NAME)
-            val mime = it.getColumnIndexOrThrow(Document.COLUMN_MIME_TYPE)
-            while (it.moveToNext()) {
-                if (it.getString(mime) == Document.MIME_TYPE_DIR) continue
-                out[it.getString(display)] = it.getString(id)
+        var attempt = 0
+        while (true) {
+            val out = LinkedHashMap<String, String>()
+            var loading = false
+            val cursor = resolver.query(
+                children,
+                arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE),
+                null, null, null,
+            ) ?: throw IOException("The folder can't be read.")
+            cursor.use {
+                // Providers may return more columns than asked for, in their own order; read by name.
+                val id = it.getColumnIndexOrThrow(Document.COLUMN_DOCUMENT_ID)
+                val display = it.getColumnIndexOrThrow(Document.COLUMN_DISPLAY_NAME)
+                val mime = it.getColumnIndexOrThrow(Document.COLUMN_MIME_TYPE)
+                while (it.moveToNext()) {
+                    if (it.getString(mime) == Document.MIME_TYPE_DIR) continue
+                    out[it.getString(display)] = it.getString(id)
+                }
+                loading = it.extras?.getBoolean(DocumentsContract.EXTRA_LOADING, false) == true
             }
+            // A cloud provider can answer with what it has so far; a short wait, once or twice, usually gets the rest.
+            if (loading && attempt < 4) { attempt++; Thread.sleep(300); continue }
+            ids.clear()
+            ids.putAll(out)
+            listed = true
+            return out
         }
-        ids.clear()
-        ids.putAll(out)
-        return out
     }
 
     @Synchronized
-    private fun idOf(fileName: String): String? = ids[fileName] ?: listing()[fileName]
+    private fun idOf(fileName: String): String? = ids[fileName] ?: if (listed) null else listing()[fileName]
 
-    override fun names(): List<String> = listing().keys.mapNotNull { glyphNameOfFile(it) }
+    /**
+     * The glyphs saved here. Only files whose name is exactly what this scheme writes count: a hand-made `A.json`
+     * beside `%41.json` would be a second "A", and every other file in the folder is left alone.
+     */
+    override fun names(): List<String> =
+        listing().keys.mapNotNull { f -> glyphNameOfFile(f)?.takeIf { glyphFileName(it) == f } }
 
     override fun exists(name: String) = idOf(glyphFileName(name)) != null
 
@@ -138,7 +158,7 @@ internal class TreeGlyphFolder(
         return try {
             resolver.openInputStream(documentUri(id))?.use { it.readBytes() }
         } catch (_: Throwable) {
-            ids.remove(fileName) // it may have been moved or deleted outside the app; look again next time
+            listed = false // it may have been moved or deleted outside the app; look again next time
             null
         }
     }
@@ -148,17 +168,25 @@ internal class TreeGlyphFolder(
         val fileName = glyphFileName(name)
         var id = idOf(fileName)
         if (id == null) {
-            val created = DocumentsContract.createDocument(resolver, folderUri(), "application/json", fileName)
-                ?: throw IOException("Couldn't create $fileName in the folder.")
-            id = DocumentsContract.getDocumentId(created)
-            ids[fileName] = id
+            val created = try {
+                DocumentsContract.createDocument(resolver, folderUri(), "application/json", fileName)
+            } catch (t: Throwable) {
+                // Most likely a file of that name is there after all (our listing was stale): look again, then write into it.
+                listed = false
+                id = idOf(fileName) ?: throw t
+                null
+            }
+            if (created != null) {
+                id = DocumentsContract.getDocumentId(created)
+                ids[fileName] = id
+            }
         }
         try {
             // "wt": truncate, then write. The file is small and goes out in one piece.
-            resolver.openOutputStream(documentUri(id), "wt")?.use { it.write(bytes) }
+            resolver.openOutputStream(documentUri(checkNotNull(id)), "wt")?.use { it.write(bytes) }
                 ?: throw IOException("Couldn't open $fileName for writing.")
         } catch (t: Throwable) {
-            ids.remove(fileName)
+            listed = false
             throw t
         }
     }
@@ -172,7 +200,7 @@ internal class TreeGlyphFolder(
         } catch (_: Throwable) {
             false
         }
-        if (deleted) ids.remove(fileName)
+        if (deleted) ids.remove(fileName) else listed = false
         return deleted
     }
 

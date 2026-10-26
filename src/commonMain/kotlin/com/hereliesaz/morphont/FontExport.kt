@@ -1,5 +1,6 @@
 package com.hereliesaz.morphont
 
+import kotlin.math.abs
 import kotlin.math.round
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -26,7 +27,7 @@ enum class FontOutlines(val label: String, val detail: String) {
 enum class FontContainer(val label: String, val detail: String) {
     PLAIN("Plain", "The font file itself."),
     WOFF("WOFF", "Compressed for the web."),
-    WOFF2("WOFF2", "The web's current format. Packed without compression for now, so larger than it could be."),
+    WOFF2("WOFF2", "The web's current format, usually the smallest."),
 }
 
 /**
@@ -123,6 +124,24 @@ private class Entry(
 )
 
 private fun scaled(v: Float, scale: Float) = round(v * scale).toInt()
+
+/** A font stores coordinates in 16 bits. */
+private const val GRID_LIMIT = 32767
+
+/** Refuses a glyph that reaches beyond the font's coordinate range, instead of letting it wrap into nonsense. */
+private fun requireOnGrid(name: String, contours: List<FontContour>) {
+    val b = controlBounds(contours)
+    require(b.all { it in -GRID_LIMIT..GRID_LIMIT }) {
+        "\"$name\" reaches ${b.maxOf { kotlin.math.abs(it) }} units from the origin; a font holds coordinates up to $GRID_LIMIT. Scale the glyph down or set smaller units per em."
+    }
+}
+
+/** True when any anchor of [g] has an outline. A glyph with none (a space) has one advance, whatever the sliders say. */
+private fun drawnAnywhere(g: Glyph) = g.corners.values.any { it.contours.isNotEmpty() }
+
+/** The anchor to export a glyph from when its anchors don't line up: Regular, or the first drawn one if Regular is empty. */
+private fun fallbackCorner(g: Glyph): GlyphCorner =
+    g.corners["regular"]?.takeIf { it.contours.isNotEmpty() } ?: g.corners.values.firstOrNull { it.contours.isNotEmpty() } ?: g.corners["regular"] ?: GlyphCorner()
 
 private fun notdefContours(upm: Int, clockwise: Boolean): Pair<Int, List<FontContour>> {
     val w = upm / 2
@@ -263,7 +282,7 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
 
     val fallback = ordered.filter { it.glyph != null && !it.compatible && it.glyph.corners.values.any { c -> c.contours.isNotEmpty() } }.map { it.name }
     if (fallback.isNotEmpty()) {
-        warnings.add("${fallback.size} glyph(s) don't match point for point across their anchors, so they're exported from Regular alone: " +
+        warnings.add("${fallback.size} glyph(s) don't match point for point across their anchors, so each is exported from one anchor alone (Regular, or the first one drawn): " +
             fallback.take(8).joinToString(", ") + if (fallback.size > 8) ", …" else "")
     }
 
@@ -272,7 +291,9 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
 
     fun corner(e: Entry, values: Map<String, Float>): GlyphCorner {
         val g = e.glyph ?: return GlyphCorner()
-        return if (e.compatible) interpolateGlyph(g.corners, values) else (g.corners["regular"] ?: GlyphCorner())
+        // Nothing drawn: the one advance it has is Regular's, whatever the other anchors' default widths say.
+        if (!drawnAnywhere(g)) return g.corners["regular"] ?: GlyphCorner()
+        return if (e.compatible) interpolateGlyph(g.corners, values) else fallbackCorner(g)
     }
 
     val timestamp = nowSeconds
@@ -294,7 +315,9 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
                 if (e.glyph == null) notdefContours(upm, clockwise = false).let { (w, c) -> PlannedGlyph(glyphNames[i], null, w, c) }
                 else {
                     val c = corner(e, instanceValues)
-                    PlannedGlyph(glyphNames[i], e.codepoint, scaled(c.width, e.scale).coerceIn(0, 0xFFFF), fontContoursOf(c, e.scale))
+                    val raw = fontContoursOf(c, e.scale)
+                    requireOnGrid(e.name, raw)
+                    PlannedGlyph(glyphNames[i], e.codepoint, scaled(c.width, e.scale).coerceIn(0, 0xFFFF), applyFlips(raw, contourFlips(raw, outerClockwise = false)))
                 }
             }
             val bounds = planned.map { controlBounds(it.contours) }
@@ -315,7 +338,9 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
                     PlannedGlyph(glyphNames[i], null, w, c)
                 } else {
                     val c = corner(e, instanceValues)
-                    val contours = fontContoursOf(c, e.scale)
+                    val raw = fontContoursOf(c, e.scale)
+                    requireOnGrid(e.name, raw)
+                    val contours = applyFlips(raw, contourFlips(raw, outerClockwise = true))
                     points.add(contours.map { fontContourToTrueType(it, quadCountsFor(it, tolerance)) })
                     PlannedGlyph(glyphNames[i], e.codepoint, scaled(c.width, e.scale).coerceIn(0, 0xFFFF), contours)
                 }
@@ -355,18 +380,24 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
                 }
                 val base = corner(e, emptyMap())
                 val baseWidth = scaled(base.width, e.scale).coerceIn(0, 0xFFFF)
-                val baseContours = fontContoursOf(base, e.scale)
+                val rawBase = fontContoursOf(base, e.scale)
+                requireOnGrid(e.name, rawBase)
+                // Directions are settled on the default master and applied to every other, so the points still line up.
+                val flips = contourFlips(rawBase, outerClockwise = true)
+                val baseContours = applyFlips(rawBase, flips)
 
                 // Every stop of every axis, as drawn at that stop with the other axes at Regular.
                 class Master(val axisIndex: Int, val stop: Stop, val contours: List<FontContour>, val width: Int)
                 val masters = ArrayList<Master>()
-                if (e.compatible) {
+                if (e.compatible && drawnAnywhere(e.glyph)) {
                     for ((ai, axis) in axes.withIndex()) {
                         val range = ranges[ai]
                         val stops = (if (range.reachesLow) LOW_STOPS else emptyList()) + (if (range.reachesHigh) HIGH_STOPS else emptyList())
                         for (stop in stops) {
                             val c = interpolateGlyph(e.glyph.corners, mapOf(axis.tag to stop.t))
-                            masters.add(Master(ai, stop, fontContoursOf(c, e.scale), scaled(c.width, e.scale).coerceIn(0, 0xFFFF)))
+                            val raw = fontContoursOf(c, e.scale)
+                            requireOnGrid(e.name, raw)
+                            masters.add(Master(ai, stop, if (raw.size == flips.size) applyFlips(raw, flips) else raw, scaled(c.width, e.scale).coerceIn(0, 0xFFFF)))
                         }
                     }
                 }
@@ -392,6 +423,9 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
                     for (ci in defaultPoints.indices) for (pi in 0 until defaultPoints[ci].size) {
                         dx[k] = mp[ci].xs[pi] - defaultPoints[ci].xs[pi]
                         dy[k] = mp[ci].ys[pi] - defaultPoints[ci].ys[pi]
+                        require(abs(dx[k]) <= GRID_LIMIT && abs(dy[k]) <= GRID_LIMIT) {
+                            "\"${e.name}\" changes by more than $GRID_LIMIT units between anchors; a variable font can't hold that."
+                        }
                         variedMaxY = maxOf(variedMaxY, mp[ci].ys[pi]); variedMinY = minOf(variedMinY, mp[ci].ys[pi])
                         k++
                     }
