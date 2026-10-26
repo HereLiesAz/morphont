@@ -1,5 +1,8 @@
 package com.hereliesaz.morphont
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
@@ -8,7 +11,24 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
+
+/**
+ * Asks where to create a file, like [ActivityResultContracts.CreateDocument] but with the MIME type chosen per
+ * request: the input is the suggested file name and its MIME type. Providers rename a file whose extension
+ * doesn't match the type they were asked for, so the type has to follow the extension.
+ */
+private class CreateFile : ActivityResultContract<Pair<String, String>, Uri?>() {
+    override fun createIntent(context: Context, input: Pair<String, String>): Intent =
+        Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType(input.second)
+            .putExtra(Intent.EXTRA_TITLE, input.first)
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
+        if (resultCode == Activity.RESULT_OK) intent?.data else null
+}
 
 /**
  * The manifest keeps this activity across rotation, resizing and theme changes (Compose re-lays itself
@@ -90,9 +110,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val saveFontLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("font/ttf"),
-    ) { uri ->
+    private val saveFontLauncher = registerForActivityResult(CreateFile()) { uri ->
         val done = pendingFontDone
         val fail = pendingFontError
         val bytes = pendingFontBytes
@@ -141,19 +159,22 @@ class MainActivity : ComponentActivity() {
                 pendingTtfError = onError
                 openTtfLauncher.launch(arrayOf("font/ttf", "application/x-font-ttf", "application/octet-stream", "*/*"))
             },
-            saveFont = { filename, bytes, onSaved, onError ->
-                // A save still waiting on the picker loses to the newer one, and says so.
-                pendingFontError?.invoke("Not saved.")
-                pendingFontBytes = bytes
-                pendingFontDone = onSaved
-                pendingFontError = onError
-                saveFontLauncher.launch(filename)
-            },
+            saveFont = { filename, bytes, onSaved, onError -> saveFile(filename, "font/ttf", bytes, onSaved, onError) },
+            saveFile = { filename, mimeType, bytes, onSaved, onError -> saveFile(filename, mimeType, bytes, onSaved, onError) },
         )
 
         setContent {
             AndroidApp(storage = storage, files = files, updates = updates.checker)
         }
+    }
+
+    private fun saveFile(filename: String, mimeType: String, bytes: ByteArray, onSaved: () -> Unit, onError: (String) -> Unit) {
+        // A save still waiting on the picker loses to the newer one, and says so.
+        pendingFontError?.invoke("Not saved.")
+        pendingFontBytes = bytes
+        pendingFontDone = onSaved
+        pendingFontError = onError
+        saveFontLauncher.launch(filename to mimeType)
     }
 
     private fun readText(uri: Uri): String =

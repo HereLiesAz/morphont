@@ -37,6 +37,19 @@ private fun ByteArray.toInt8Array(): Int8Array = Int8Array(size).also { a -> for
 
 private fun Int8Array.toByteArray(): ByteArray = ByteArray(length) { this[it] }
 
+/** Hands [bytes] to the browser as a download named [fileName]. */
+internal fun downloadBytes(fileName: String, mimeType: String, bytes: ByteArray) {
+    val blob = Blob(arrayOf<JsAny?>(bytes.toInt8Array()).toJsArray(), BlobPropertyBag(type = mimeType))
+    val url = URL.createObjectURL(blob)
+    val anchor = document.createElement("a") as HTMLAnchorElement
+    anchor.href = url
+    anchor.download = fileName
+    document.body?.appendChild(anchor)
+    anchor.click()
+    document.body?.removeChild(anchor)
+    window.setTimeout({ URL.revokeObjectURL(url); null }, 10_000)
+}
+
 private fun bodyReader(response: Response): JsAny? = js("(response.body ? response.body.getReader() : null)")
 
 private fun readChunk(reader: JsAny): kotlin.js.Promise<JsAny> = js("reader.read()")
@@ -126,17 +139,7 @@ object WebFontStore {
         }
     }
 
-    private fun download(fileName: String, bytes: ByteArray) {
-        val blob = Blob(arrayOf<JsAny?>(bytes.toInt8Array()).toJsArray(), BlobPropertyBag(type = "font/ttf"))
-        val url = URL.createObjectURL(blob)
-        val anchor = document.createElement("a") as HTMLAnchorElement
-        anchor.href = url
-        anchor.download = fileName
-        document.body?.appendChild(anchor)
-        anchor.click()
-        document.body?.removeChild(anchor)
-        window.setTimeout({ URL.revokeObjectURL(url); null }, 10_000)
-    }
+    private fun download(fileName: String, bytes: ByteArray) = downloadBytes(fileName, "font/ttf", bytes)
 
     val host: FontStoreHost by lazy {
         FontStoreHost(

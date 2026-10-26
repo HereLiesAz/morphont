@@ -320,12 +320,21 @@ class AndroidStorage(context: Context) {
         return existing
     }
 
-    /** The whole project as text; [onSkipped] gets the names of glyph files too damaged to include. */
-    fun exportProjectText(unsaved: Pair<String, Glyph>? = null, onSkipped: (List<String>) -> Unit = {}): String {
+    /**
+     * Every glyph of the open project that reads, with [unsaved] (the one being edited) in place of its stored copy,
+     * and the names of glyph files too damaged to include.
+     */
+    fun readProject(unsaved: Pair<String, Glyph>? = null): Pair<Map<String, Glyph>, List<String>> {
         val project = if (projectId == null) mutableMapOf() else projectSnapshot().toMutableMap()
         val skipped = listGlyphNames().filter { it !in project && it != unsaved?.first }
-        if (skipped.isNotEmpty()) onSkipped(skipped)
         unsaved?.let { (name, glyph) -> project[name] = glyph }
+        return project to skipped
+    }
+
+    /** The whole project as text; [onSkipped] gets the names of glyph files too damaged to include. */
+    fun exportProjectText(unsaved: Pair<String, Glyph>? = null, onSkipped: (List<String>) -> Unit = {}): String {
+        val (project, skipped) = readProject(unsaved)
+        if (skipped.isNotEmpty()) onSkipped(skipped)
         return ProjectCodec.encodeProject(project)
     }
 

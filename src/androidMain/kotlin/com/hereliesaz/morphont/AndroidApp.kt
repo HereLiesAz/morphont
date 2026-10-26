@@ -36,6 +36,8 @@ class AndroidFileActions(
     val openTtf: (onLoaded: (ByteArray) -> Unit, onError: (String) -> Unit) -> Unit,
     /** Writes a font file where the user picks; onError also when they cancel. */
     val saveFont: (filename: String, bytes: ByteArray, onSaved: () -> Unit, onError: (String) -> Unit) -> Unit,
+    /** Like [saveFont] for any file: [mimeType] should be the one [filename]'s extension means (font/otf, font/woff2...). */
+    val saveFile: (filename: String, mimeType: String, bytes: ByteArray, onSaved: () -> Unit, onError: (String) -> Unit) -> Unit,
 )
 
 private enum class OpenGlyphOutcome { OPENED, EMPTY, UNREADABLE }
@@ -322,6 +324,16 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                         renamed = { old, name -> if (storage.lastGlyphName() == old) storage.setLastGlyphName(name) },
                     ),
                     confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
+                    fontExport = FontExportHost(
+                        snapshot = {
+                            val unsaved = app.currentGlyphName?.let { it to app.toGlyph() }
+                            withContext(Dispatchers.IO) {
+                                val (glyphs, unreadable) = storage.readProject(unsaved)
+                                FontSnapshot(glyphs, unreadable)
+                            }
+                        },
+                        save = { fileName, mimeType, bytes, onSaved, onError -> files.saveFile(fileName, mimeType, bytes, onSaved, onError) },
+                    ),
                 )
             }
 
