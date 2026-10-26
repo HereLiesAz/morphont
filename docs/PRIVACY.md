@@ -9,7 +9,8 @@ Morphont is a glyph editor. It collects nothing.
 Everything you make — glyphs, their anchors, guides, ghosts and metrics — is stored **only on your
 device**:
 
-- **Android:** the app's private storage.
+- **Android:** the app's private storage, unless you move a project into a folder you choose (see
+  below), in which case its files are kept there.
 - **Desktop:** your user app-data folder (`%APPDATA%\Morphont` on Windows,
   `~/Library/Application Support/Morphont` on macOS, `~/.local/share/morphont` on Linux).
 - **Web:** your browser's IndexedDB for this site.
@@ -45,6 +46,12 @@ file you pick in your system's file dialog. Fonts you load as reference ghosts s
 that session and are not stored or transmitted. "Install on this computer" copies an installed store
 font into your user font folder; on Android and the web, "Save font file" and "Download font file"
 write it where you choose.
+
+Exporting a font writes one file to the place you pick, the same way. On Android, if you choose a
+folder for a project, Morphont asks Android to let it keep reading and writing that folder (and only
+that folder) for as long as a project there, or the choice of that folder for new projects, exists; Morphont gives the access back when neither does, and you can also revoke it in the system settings. Android hands
+Morphont the folder through its document picker; where that folder is stored (on the device, an SD
+card, or a cloud provider you've set up in your files app) is the provider's business, not Morphont's.
 
 ## Children
 

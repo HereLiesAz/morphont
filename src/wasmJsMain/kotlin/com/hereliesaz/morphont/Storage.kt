@@ -363,10 +363,15 @@ object Storage {
 
     fun glyphExists(name: String): Boolean = project.containsKey(name)
 
-    fun exportProject(unsaved: Pair<String, Glyph>? = null) {
+    /** Every glyph of the open project, with [unsaved] (the one being edited) in place of its stored copy. */
+    fun snapshotProject(unsaved: Pair<String, Glyph>? = null): Map<String, Glyph> {
         val snapshot = project.toMutableMap()
         unsaved?.let { (name, glyph) -> snapshot[name] = glyph }
-        downloadText("morphont-project.json", ProjectCodec.encodeProject(snapshot))
+        return snapshot
+    }
+
+    fun exportProject(unsaved: Pair<String, Glyph>? = null) {
+        downloadText("morphont-project.json", ProjectCodec.encodeProject(snapshotProject(unsaved)))
     }
 
     /**

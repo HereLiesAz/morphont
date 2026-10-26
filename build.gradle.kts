@@ -41,7 +41,8 @@ kotlin {
         androidResources {
             enable = true
         }
-        withHostTest {}
+        // Robolectric (androidHostTest) needs the merged resources and manifest.
+        withHostTest { isIncludeAndroidResources = true }
     }
 
     // Desktop (Windows, macOS, Linux): Compose for Desktop on the JVM, packaged by
@@ -92,6 +93,15 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
+            }
+        }
+        val androidHostTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                // Android's framework classes on the JVM, for the project-folder storage tests.
+                implementation("junit:junit:4.13.2")
+                implementation("org.robolectric:robolectric:4.14.1")
+                implementation("androidx.test:core:1.6.1")
             }
         }
         val androidMain by getting {

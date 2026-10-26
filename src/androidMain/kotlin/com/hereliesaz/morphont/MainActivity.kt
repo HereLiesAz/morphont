@@ -1,5 +1,8 @@
 package com.hereliesaz.morphont
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
@@ -8,7 +11,35 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
+
+/**
+ * Asks where to create a file, like [ActivityResultContracts.CreateDocument] but with the MIME type chosen per
+ * request: the input is the suggested file name and its MIME type. Providers rename a file whose extension
+ * doesn't match the type they were asked for, so the type has to follow the extension.
+ */
+private class CreateFile : ActivityResultContract<Pair<String, String>, Uri?>() {
+    override fun createIntent(context: Context, input: Pair<String, String>): Intent =
+        Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType(input.second)
+            .putExtra(Intent.EXTRA_TITLE, input.first)
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
+        if (resultCode == Activity.RESULT_OK) intent?.data else null
+}
+
+/** Asks for a folder, with the grants that let the app keep reading and writing it after the app restarts. */
+private class PickFolder : ActivityResultContract<Unit, Uri?>() {
+    override fun createIntent(context: Context, input: Unit): Intent =
+        Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+        )
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
+        if (resultCode == Activity.RESULT_OK) intent?.data else null
+}
 
 /**
  * The manifest keeps this activity across rotation, resizing and theme changes (Compose re-lays itself
@@ -29,6 +60,8 @@ class MainActivity : ComponentActivity() {
     private var pendingFontBytes: ByteArray? = null
     private var pendingFontDone: (() -> Unit)? = null
     private var pendingFontError: ((String) -> Unit)? = null
+    private var pendingFolderPicked: ((Uri) -> Unit)? = null
+    private var pendingFolderError: ((String) -> Unit)? = null
 
     /** A picker answered after the app was restarted, so what asked for it is gone. */
     private fun lostRequest(what: String, created: Uri? = null) {
@@ -90,9 +123,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val saveFontLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("font/ttf"),
-    ) { uri ->
+    private val saveFontLauncher = registerForActivityResult(CreateFile()) { uri ->
         val done = pendingFontDone
         val fail = pendingFontError
         val bytes = pendingFontBytes
@@ -111,6 +142,22 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             fail?.invoke("Couldn't save the font: ${e.message}")
         }
+    }
+
+    private val pickFolderLauncher = registerForActivityResult(PickFolder()) { uri ->
+        val picked = pendingFolderPicked
+        val fail = pendingFolderError
+        pendingFolderPicked = null
+        pendingFolderError = null
+        if (uri == null) return@registerForActivityResult // they backed out
+        if (picked == null) { lostRequest("Choose the folder"); return@registerForActivityResult }
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        } catch (e: SecurityException) {
+            fail?.invoke("Couldn't keep access to that folder: ${e.message}")
+            return@registerForActivityResult
+        }
+        picked(uri)
     }
 
     override fun onStop() {
@@ -141,19 +188,27 @@ class MainActivity : ComponentActivity() {
                 pendingTtfError = onError
                 openTtfLauncher.launch(arrayOf("font/ttf", "application/x-font-ttf", "application/octet-stream", "*/*"))
             },
-            saveFont = { filename, bytes, onSaved, onError ->
-                // A save still waiting on the picker loses to the newer one, and says so.
-                pendingFontError?.invoke("Not saved.")
-                pendingFontBytes = bytes
-                pendingFontDone = onSaved
-                pendingFontError = onError
-                saveFontLauncher.launch(filename)
+            saveFont = { filename, bytes, onSaved, onError -> saveFile(filename, "font/ttf", bytes, onSaved, onError) },
+            saveFile = { filename, mimeType, bytes, onSaved, onError -> saveFile(filename, mimeType, bytes, onSaved, onError) },
+            pickFolder = { onPicked, onError ->
+                pendingFolderPicked = onPicked
+                pendingFolderError = onError
+                pickFolderLauncher.launch(Unit)
             },
         )
 
         setContent {
             AndroidApp(storage = storage, files = files, updates = updates.checker)
         }
+    }
+
+    private fun saveFile(filename: String, mimeType: String, bytes: ByteArray, onSaved: () -> Unit, onError: (String) -> Unit) {
+        // A save still waiting on the picker loses to the newer one, and says so.
+        pendingFontError?.invoke("Not saved.")
+        pendingFontBytes = bytes
+        pendingFontDone = onSaved
+        pendingFontError = onError
+        saveFontLauncher.launch(filename to mimeType)
     }
 
     private fun readText(uri: Uri): String =

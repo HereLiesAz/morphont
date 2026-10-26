@@ -97,6 +97,10 @@ class EditorHost(
     val glyphFiles: GlyphFiles? = null,
     /** File actions (by label) that ask first, with the question: those that overwrite without undo. */
     val confirmBefore: Map<String, String> = emptyMap(),
+    /** Exports the project as a compiled font (TrueType, OpenType, variable, WOFF); null where the shell can't save files. */
+    val fontExport: FontExportHost? = null,
+    /** Where projects are kept, and moving them to a folder the person chooses; null where the shell has only one place. */
+    val location: ProjectLocationHost? = null,
 )
 
 // ------------------------------------------------------------ small parts
@@ -811,6 +815,7 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var showReport by remember { mutableStateOf(false) }
     var showProjects by remember { mutableStateOf(false) }
+    var showExport by remember { mutableStateOf(false) }
     var confirming by remember { mutableStateOf<String?>(null) }
     val names = app.glyphNames
     confirming?.let { label ->
@@ -830,6 +835,7 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
                 MonoButton(onClick = { showProjects = true }, outlined = true) { Text("Projects") }
             }
             if (showProjects) ProjectsDialog(app, projectActions, onDismiss = { showProjects = false }, onSwitched = { showProjects = false; onDismiss() })
+            host.location?.let { ProjectLocationRow(app, it, onClose = onDismiss) }
         }
         NewGlyphRow(name, { name = it }) { if (host.createGlyph(name)) onDismiss() }
         val current = app.currentGlyphName
@@ -863,8 +869,19 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
                             .padding(vertical = 12.dp, horizontal = 4.dp),
                     )
                 }
+                if (host.fontExport != null) Text(
+                    "Export as a font\u2026",
+                    fontSize = Type.Row,
+                    color = Mono.ink,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .clickable(role = Role.Button) { showExport = true }
+                        .padding(vertical = 12.dp, horizontal = 4.dp),
+                )
             }
         }
+    }
+    host.fontExport?.let { exportHost ->
+        if (showExport) FontExportDialog(app, exportHost, onDismiss = { showExport = false }, onExported = { showExport = false; onDismiss() })
     }
     if (showReport) MonoDialog("Latest report", { showReport = false }) {
         Text(app.lastReport, color = Mono.ink, fontSize = Type.Body)

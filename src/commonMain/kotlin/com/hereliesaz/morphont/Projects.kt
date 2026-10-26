@@ -4,15 +4,31 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.random.Random
 
-/** One named body of work: its own set of glyphs, saved continuously. [id] is the storage key; [name] is only a label. */
+/**
+ * A folder the person chose, in place of the app's own storage. [tree] is the folder they picked (on Android a
+ * document-tree URI), [folder] the document inside it that holds the glyph files, and [label] says where that is
+ * in words. Only the shell that made it can open it.
+ */
 @Serializable
-data class ProjectInfo(val id: String, val name: String)
+data class ProjectLocation(val tree: String, val folder: String, val label: String)
+
+/**
+ * One named body of work: its own set of glyphs, saved continuously. [id] is the storage key; [name] is only a
+ * label. [location] is null for a project kept in the app's own storage.
+ */
+@Serializable
+data class ProjectInfo(val id: String, val name: String, val location: ProjectLocation? = null) {
+    /** Where the glyphs are kept, for people to read. */
+    val locationLabel: String get() = location?.label ?: "App storage"
+}
 
 @Serializable
 private data class ProjectIndex(
     /** Most recently opened first. */
     val projects: List<ProjectInfo> = emptyList(),
     val lastId: String? = null,
+    /** A folder new projects are made in, when the person chose one; its [ProjectLocation.folder] is the parent. */
+    val newProjectsIn: ProjectLocation? = null,
 )
 
 /**
@@ -56,14 +72,14 @@ class ProjectRegistry(private val read: () -> String?, private val write: (Strin
     /** Registers a new project and makes it the most recent. [id] is supplied only when adopting storage that already exists. */
     fun create(name: String, id: String = newId()): ProjectInfo {
         val info = ProjectInfo(id, name.trim())
-        commit(ProjectIndex(listOf(info) + index.projects.filterNot { it.id == id }, id))
+        commit(index.copy(projects = listOf(info) + index.projects.filterNot { it.id == id }, lastId = id))
         return info
     }
 
     /** Marks [id] as the project in use now: first in the list, and the one to reopen next launch. */
     fun open(id: String): ProjectInfo? {
         val info = find(id) ?: return null
-        commit(ProjectIndex(listOf(info) + index.projects.filterNot { it.id == id }, id))
+        commit(index.copy(projects = listOf(info) + index.projects.filterNot { it.id == id }, lastId = id))
         return info
     }
 
@@ -75,7 +91,22 @@ class ProjectRegistry(private val read: () -> String?, private val write: (Strin
     }
 
     fun delete(id: String) {
-        commit(ProjectIndex(index.projects.filterNot { it.id == id }, index.lastId.takeIf { it != id }))
+        commit(index.copy(projects = index.projects.filterNot { it.id == id }, lastId = index.lastId.takeIf { it != id }))
+    }
+
+    /** Records where [id]'s glyphs are kept: a folder the person chose, or null for the app's own storage. */
+    fun setLocation(id: String, location: ProjectLocation?): ProjectInfo? {
+        val info = find(id) ?: return null
+        val moved = info.copy(location = location)
+        commit(index.copy(projects = index.projects.map { if (it.id == id) moved else it }))
+        return moved
+    }
+
+    /** The folder new projects are made in, or null when they go in the app's own storage. */
+    val newProjectsIn: ProjectLocation? get() = index.newProjectsIn
+
+    fun setNewProjectsIn(location: ProjectLocation?) {
+        commit(index.copy(newProjectsIn = location))
     }
 
     private fun newId(): String {
@@ -102,4 +133,6 @@ class ProjectActions(
     /** True if renamed; false (with a status message) if the name is unusable. */
     val rename: (String, String) -> Boolean,
     val delete: (String) -> Unit,
+    /** Opens a project that already lives in a folder the person points at; null on a surface without folders. */
+    val openFolder: (() -> Unit)? = null,
 )

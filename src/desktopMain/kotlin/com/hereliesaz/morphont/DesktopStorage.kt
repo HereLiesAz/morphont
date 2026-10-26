@@ -358,6 +358,12 @@ object DesktopStorage {
     fun pickText(title: String, onLoaded: (String) -> Unit, onError: (String) -> Unit) =
         pickBytes(title, listOf(".json"), { onLoaded(it.decodeToString()) }, onError)
 
+    fun saveBytes(title: String, suggested: String, bytes: ByteArray, onSaved: () -> Unit, onError: (String) -> Unit) {
+        val extension = suggested.substringAfterLast('.', "").lowercase()
+        val f = dialog(title, FileDialog.SAVE, if (extension.isEmpty()) emptyList() else listOf(".$extension"), suggested) ?: return
+        runCatching { f.writeBytes(bytes) }.onSuccess { onSaved() }.onFailure { onError("Couldn't write ${f.name}: ${it.message}") }
+    }
+
     fun saveText(title: String, suggested: String, text: String, onSaved: () -> Unit, onError: (String) -> Unit) {
         val f = dialog(title, FileDialog.SAVE, listOf(".json"), suggested) ?: return
         runCatching { f.writeText(text) }.onSuccess { onSaved() }.onFailure { onError("Couldn't write ${f.name}: ${it.message}") }

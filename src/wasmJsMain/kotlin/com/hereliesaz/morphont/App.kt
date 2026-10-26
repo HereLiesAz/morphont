@@ -280,6 +280,10 @@ fun App() {
                         },
                     ),
                     confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
+                    fontExport = FontExportHost(
+                        snapshot = { FontSnapshot(Storage.snapshotProject(app.currentGlyphName?.let { it to app.toGlyph() }), emptyList()) },
+                        save = { fileName, mimeType, bytes, onSaved, _ -> downloadBytes(fileName, mimeType, bytes); onSaved() },
+                    ),
                 )
             }
 
