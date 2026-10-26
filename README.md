@@ -332,6 +332,56 @@ never starts from Regular.
   saves the open glyph first. Glyphs saved before projects existed become a
   project called "Untitled" on first launch. Opening a project `.json`
   creates a new project from it instead of overwriting the open one.
+- **Project folders (Android).** **Glyphs and files → Kept in → Change**
+  moves the open project into a folder you pick (Android's document picker:
+  internal storage, an SD card, or any provider that offers folders). Morphont
+  makes a folder named for the project inside it and keeps the glyphs there as
+  ordinary files, saved as you work, in place of its private storage. They
+  survive uninstalling the app, and show up in your files app, backups and
+  sync. The folder you pick also becomes where new projects start (undo that
+  under Change → *Start new projects in app storage*). **Move back to app
+  storage** copies the project home and leaves the folder's copy alone.
+  **Open a project from a folder** (the project list) adopts a folder that
+  already holds glyphs, such as one from before a reinstall. Moving copies
+  every glyph, reads each back to check it, and picks up edits made meanwhile
+  before it switches; the app's own copy is deleted only after that. Removing
+  a project that lives in a folder forgets it and leaves the files. If the
+  folder is deleted or access to it is taken back the project says so instead
+  of opening empty; pick the folder again with *Open a project from a folder*.
+  The files use the desktop app's naming (`%41.json` for `A`, `a.json` for
+  `a`: percent-encoded, capitals escaped so `A` and `a` never share a file on
+  a case-insensitive volume), so a folder is readable on either.
+- **Export as a font.** **Glyphs and files → Export as a font…** writes the
+  open project as a compiled font, in every shell. Choose the outlines:
+  *TrueType* (static `.ttf`, quadratic curves), *OpenType / CFF* (static
+  `.otf`, Morphont's cubic curves as drawn) or *Variable TrueType* (one `.ttf`
+  holding every axis); and the wrapper: plain, WOFF or WOFF2. A static font
+  freezes the **Font overview**'s instance (Regular unless you moved its
+  sliders). A variable font gets every axis that has both extremes drawn on
+  some glyph and actually differs from Regular; imported axes that never
+  moved are left out. Morphont draws no numbers of its own, so the dialog
+  asks what each axis reaches (minimum, default, maximum; weight starts at
+  100/400/900, width at 75/100/125). Set an end equal to the default to leave
+  that side out. Each glyph becomes its character when its name is one
+  (`A`, `é`, an emoji) or a production name (`uni00E9`, `u1F600`); any other
+  name is kept in the font without a character. A `.notdef` box is added when
+  the project has none. Glyphs drawn on another grid are scaled to the
+  project's most common units-per-em.
+  The writers are from scratch (`Font*.kt`, no platform codec): `head`,
+  `hhea`, `maxp`, `hmtx`, `OS/2`, `name`, `cmap` (format 4, and 12 for
+  characters beyond the BMP), `post`, `gasp`, then `glyf`/`loca` or `CFF `,
+  and for a variable font `fvar` and `gvar`. Cubic curves become quadratics
+  within half a unit per thousand, cut so that every master of a variable
+  font has the same points. A variable font carries intermediate stops at a
+  quarter and three quarters of each side of every axis, so its straight-line
+  `gvar` interpolation follows Morphont's own forced-Bezier curve to within a
+  few units instead of the chord a three-master font would give; between
+  stops it is the nearest straight line. Axes combine additively, as they do
+  in the editor. Advance widths that change along an axis travel in `gvar`'s
+  phantom points. Outside the test suite, every format was checked with
+  fontTools (every table decompiles and recompiles; outlines and widths match
+  the editor at each stop), with the OpenType Sanitizer browsers vet web fonts
+  with, and by loading the files in Chromium through the web build.
 - **Desktop glyph filenames.** Forbidden Windows characters (notably `*`)
   and reserved DOS device names are reversibly escaped on disk, and so are
   ASCII capitals, so `A` and `a` stay distinct files on case-insensitive
@@ -509,6 +559,11 @@ never starts from Regular.
 - `Azp.kt` / `Inflate.kt` / `Sha256.kt` -- reading azphalt `.azp` packages on every target: zip with a plain-Kotlin inflater, path and size limits, `manifest.files` digest checks, the `font` block
 - `FontStore.kt` / `FontStoreUi.kt` -- the store client (Repository API search and download), the installed-font shelf over a platform `BlobStore`, and the store dialog; `DesktopFontStore.kt`, `AndroidFontStore.kt` and `WebFontStore.kt` supply HTTP, storage and install-to-system; `desktopTest/AzpTest.kt` and `commonTest/Sha256Test.kt` cover them
 - `Format.kt` / `commonTest/FormatTest.kt` -- Unicode presentation for legacy production names, independent of glyph identity
+- `FontExport.kt` / `FontExportUi.kt` -- compiled-font export: what goes in (names to characters, the frozen instance, variable axes, masters and `gvar` tuples) and the dialog and shell hook (`FontExportHost`) that asks for it; `commonTest/FontExportTest.kt` round-trips every format through `VariableFont` and checks the `gvar` encoding
+- `FontOutline.kt` / `FontTables.kt` / `FontTrueType.kt` / `FontCff.kt` / `FontBytes.kt` -- the font writers: contours on the integer grid and cubic-to-quadratic conversion, the shared sfnt tables and container, `glyf`/`loca`/`fvar`/`gvar`, the `CFF ` table, and the big-endian byte buffer
+- `FontWoff.kt` / `Deflate.kt` / `Brotli.kt` -- the WOFF and WOFF2 containers, a plain-Kotlin zlib compressor, and a Brotli stream of uncompressed blocks; `desktopTest/FontContainerTest.kt` inflates them with the JDK
+- `GlyphFileNames.kt` -- the glyph-name-to-file-name scheme shared with the desktop app; `desktopTest/GlyphFileNamesParityTest.kt` keeps the two identical
+- `ProjectLocationUi.kt` -- the Kept in row and its dialog; `androidMain/GlyphFolder.kt` -- a project's glyph files as one interface over app storage or a document-picker folder, and `AndroidStorage.kt`'s moves between them
 
 ## Design
 
@@ -581,6 +636,23 @@ of the way until needed.
 - Shift-click toggles a node/handle in the current selection, and
   Shift-marquee adds points without clearing the previous selection.
   Multi-touch gesture interaction still requires device-level testing.
+- **Font export.** No hinting, kerning, GPOS/GSUB, `STAT` or `HVAR`; advance
+  variation uses `gvar` phantom points, which current browsers, FreeType and
+  DirectWrite honour. WOFF2 files are valid (browsers and fontTools read
+  them) but their Brotli stream is stored without compression, so they are
+  about the size of the plain font; WOFF is zlib-compressed with fixed
+  Huffman codes, a little looser than zlib's own. A glyph whose anchors don't
+  match point for point is exported from Regular alone and listed in the
+  report. Contour direction is left as drawn. Imports still read only
+  TrueType-outline fonts, so a CFF export can't be imported back.
+- **Project folders.** Reads and writes go through Android's document
+  providers, which can be slow (a cloud provider especially) and the glyph
+  list is read on the main thread as it always was. A file is overwritten in
+  place, not through a temporary file, since providers can't rename over an
+  existing one. Moving and saving are checked in the Android host tests
+  (`androidHostTest/AndroidFolderStorageTest.kt`, under Robolectric) against a
+  stand-in document provider, not against every real one. Desktop and web have no folder
+  choice yet; they use the file picker for **Save the whole project**.
 - Native UFO import is currently desktop-only. Android and web do not
   yet offer a cross-platform UFO directory/ZIP parser; their TrueType
   import remains available.

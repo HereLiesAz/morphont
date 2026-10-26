@@ -54,10 +54,15 @@ private fun ProjectRows(app: AppState, actions: ProjectActions, onSwitched: () -
                     }
                 }
                 deleting == project.id -> Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Delete \"${project.name}\" and all its glyphs? This can't be undone — open it and save the whole project first if you might want it back.", fontSize = Type.Body, color = Mono.ink)
+                    val kept = project.location
+                    Text(
+                        if (kept == null) "Delete \"${project.name}\" and all its glyphs? This can't be undone — open it and save the whole project first if you might want it back."
+                        else "Remove \"${project.name}\" from Morphont? Its glyph files stay in ${kept.label}; open that folder from the project list to get it back.",
+                        fontSize = Type.Body, color = Mono.ink,
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MonoButton(onClick = { deleting = null }, outlined = true) { Text("Cancel") }
-                        MonoButton(onClick = { deleting = null; actions.delete(project.id) }, selected = true) { Text("Delete") }
+                        MonoButton(onClick = { deleting = null; actions.delete(project.id) }, selected = true) { Text(if (kept == null) "Delete" else "Remove") }
                     }
                 }
                 else -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -67,6 +72,7 @@ private fun ProjectRows(app: AppState, actions: ProjectActions, onSwitched: () -
                             .padding(vertical = 12.dp, horizontal = 4.dp),
                     ) {
                         Text(project.name, fontSize = Type.Row, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        project.location?.let { Text(it.label, fontSize = Type.Micro, color = Mono.inkDim, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         if (current) Caps("Open now", size = 10, color = Mono.ink)
                     }
                     MonoButton(onClick = { renameText = project.name; renaming = project.id }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Rename") }
@@ -104,6 +110,7 @@ fun ProjectsScreen(app: AppState, actions: ProjectActions, modifier: Modifier = 
             if (starts.isNotEmpty()) StartList(starts)
             Caps(if (app.projects.isEmpty()) "Or start an empty project" else "New project")
             NewProjectRow(actions) {}
+            actions.openFolder?.let { open -> MonoButton(onClick = open, outlined = true) { Text("Open a project from a folder\u2026") } }
             if (app.projects.isNotEmpty()) {
                 Caps("Saved projects")
                 ProjectRows(app, actions) {}
@@ -125,6 +132,7 @@ fun ProjectsDialog(app: AppState, actions: ProjectActions, onDismiss: () -> Unit
     MonoDialog("Projects", onDismiss) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             NewProjectRow(actions, onSwitched)
+            actions.openFolder?.let { open -> MonoButton(onClick = { onSwitched(); open() }, outlined = true) { Text("Open a project from a folder\u2026") } }
             ProjectRows(app, actions, onSwitched)
         }
     }

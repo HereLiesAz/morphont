@@ -154,6 +154,9 @@ fun FontExportDialog(app: AppState, host: FontExportHost, onDismiss: () -> Unit,
                 ) else {
                     Text("The numbers behind each axis: its low anchor, Regular, and its high anchor. Set a side's end equal to the default to leave that side out.",
                         fontSize = Type.Small, color = Mono.inkDim)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (caption in listOf("Low", "Regular", "High")) Caps(caption, modifier = Modifier.weight(1f), size = 10)
+                    }
                     for (axis in axes) {
                         val fields = ranges[axis.tag] ?: continue
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

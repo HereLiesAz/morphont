@@ -99,6 +99,8 @@ class EditorHost(
     val confirmBefore: Map<String, String> = emptyMap(),
     /** Exports the project as a compiled font (TrueType, OpenType, variable, WOFF); null where the shell can't save files. */
     val fontExport: FontExportHost? = null,
+    /** Where projects are kept, and moving them to a folder the person chooses; null where the shell has only one place. */
+    val location: ProjectLocationHost? = null,
 )
 
 // ------------------------------------------------------------ small parts
@@ -833,6 +835,7 @@ fun GlyphBrowser(app: AppState, host: EditorHost, onDismiss: () -> Unit) {
                 MonoButton(onClick = { showProjects = true }, outlined = true) { Text("Projects") }
             }
             if (showProjects) ProjectsDialog(app, projectActions, onDismiss = { showProjects = false }, onSwitched = { showProjects = false; onDismiss() })
+            host.location?.let { ProjectLocationRow(app, it, onClose = onDismiss) }
         }
         NewGlyphRow(name, { name = it }) { if (host.createGlyph(name)) onDismiss() }
         val current = app.currentGlyphName

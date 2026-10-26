@@ -618,6 +618,8 @@ class AppState {
     /** The project whose glyphs are being edited; null until one is started or opened. */
     var currentProject by mutableStateOf<ProjectInfo?>(null)
     var projects by mutableStateOf<List<ProjectInfo>>(emptyList())
+    /** The folder new projects are made in, when the person chose one (Android); null means the app's own storage. */
+    var newProjectsFolder by mutableStateOf<ProjectLocation?>(null)
     var currentGlyphName by mutableStateOf<String?>(null)
     var glyphNames by mutableStateOf<List<String>>(emptyList())
     var status by mutableStateOf("")

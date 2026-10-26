@@ -30,6 +30,17 @@ private class CreateFile : ActivityResultContract<Pair<String, String>, Uri?>() 
         if (resultCode == Activity.RESULT_OK) intent?.data else null
 }
 
+/** Asks for a folder, with the grants that let the app keep reading and writing it after the app restarts. */
+private class PickFolder : ActivityResultContract<Unit, Uri?>() {
+    override fun createIntent(context: Context, input: Unit): Intent =
+        Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+        )
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
+        if (resultCode == Activity.RESULT_OK) intent?.data else null
+}
+
 /**
  * The manifest keeps this activity across rotation, resizing and theme changes (Compose re-lays itself
  * out), so a file picker's pending callbacks and the editor's state survive them. Only process death
@@ -49,6 +60,8 @@ class MainActivity : ComponentActivity() {
     private var pendingFontBytes: ByteArray? = null
     private var pendingFontDone: (() -> Unit)? = null
     private var pendingFontError: ((String) -> Unit)? = null
+    private var pendingFolderPicked: ((Uri) -> Unit)? = null
+    private var pendingFolderError: ((String) -> Unit)? = null
 
     /** A picker answered after the app was restarted, so what asked for it is gone. */
     private fun lostRequest(what: String, created: Uri? = null) {
@@ -131,6 +144,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val pickFolderLauncher = registerForActivityResult(PickFolder()) { uri ->
+        val picked = pendingFolderPicked
+        val fail = pendingFolderError
+        pendingFolderPicked = null
+        pendingFolderError = null
+        if (uri == null) return@registerForActivityResult // they backed out
+        if (picked == null) { lostRequest("Choose the folder"); return@registerForActivityResult }
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        } catch (e: SecurityException) {
+            fail?.invoke("Couldn't keep access to that folder: ${e.message}")
+            return@registerForActivityResult
+        }
+        picked(uri)
+    }
+
     override fun onStop() {
         // Backgrounded or closing: write the edit still waiting on the autosave debounce.
         AndroidAutosave.flush()
@@ -161,6 +190,11 @@ class MainActivity : ComponentActivity() {
             },
             saveFont = { filename, bytes, onSaved, onError -> saveFile(filename, "font/ttf", bytes, onSaved, onError) },
             saveFile = { filename, mimeType, bytes, onSaved, onError -> saveFile(filename, mimeType, bytes, onSaved, onError) },
+            pickFolder = { onPicked, onError ->
+                pendingFolderPicked = onPicked
+                pendingFolderError = onError
+                pickFolderLauncher.launch(Unit)
+            },
         )
 
         setContent {

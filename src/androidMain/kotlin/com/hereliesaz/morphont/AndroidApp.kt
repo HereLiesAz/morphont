@@ -1,5 +1,6 @@
 package com.hereliesaz.morphont
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -38,6 +39,8 @@ class AndroidFileActions(
     val saveFont: (filename: String, bytes: ByteArray, onSaved: () -> Unit, onError: (String) -> Unit) -> Unit,
     /** Like [saveFont] for any file: [mimeType] should be the one [filename]'s extension means (font/otf, font/woff2...). */
     val saveFile: (filename: String, mimeType: String, bytes: ByteArray, onSaved: () -> Unit, onError: (String) -> Unit) -> Unit,
+    /** Asks for a folder and keeps access to it across restarts. Says nothing if they back out. */
+    val pickFolder: (onPicked: (Uri) -> Unit, onError: (String) -> Unit) -> Unit,
 )
 
 private enum class OpenGlyphOutcome { OPENED, EMPTY, UNREADABLE }
@@ -110,7 +113,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
             }
 
             val registry = storage.registry
-            remember { app.projects = registry.projects }
+            remember { app.projects = registry.projects; app.newProjectsFolder = storage.newProjectsFolder }
 
             fun reportSaveFailure(name: String, e: Throwable) =
                 app.setStatus("Couldn't save \"$name\": ${e.message ?: e::class.simpleName}. Your edits are still open; save the whole project to keep a copy.", true)
@@ -126,6 +129,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
 
             fun openProject(id: String) {
                 if (app.currentProject?.id == id) return
+                storage.openProblem(id)?.let { app.setStatus(it, true); return }
                 val info = registry.open(id) ?: return
                 flushOpenGlyph()
                 app.beginBulkImport()
@@ -140,20 +144,32 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 app.setStatus("Opened \"${info.name}\".")
             }
 
+            /** Registers a new project, in the folder new projects go in when the person chose one; [warning] says why not, if it couldn't. */
+            fun registerProject(name: String): Pair<ProjectInfo, String?> {
+                val made = registry.create(name)
+                val warning = storage.placeInNewProjectsFolder(made)
+                return (registry.find(made.id) ?: made) to warning
+            }
+
             fun createProject(raw: String): Boolean {
                 registry.nameProblem(raw)?.let { app.setStatus(it, true); return false }
-                val info = registry.create(raw)
+                val (info, warning) = registerProject(raw)
                 app.projects = registry.projects
                 openProject(info.id)
-                app.setStatus("Started \"${info.name}\". Create a glyph or import a font; everything saves as you work.")
+                app.setStatus(
+                    "Started \"${info.name}\"" + (info.location?.let { " in ${it.label}" } ?: "") + ". Create a glyph or import a font; everything saves as you work." +
+                        (warning?.let { " $it" } ?: ""),
+                    warning != null,
+                )
                 return true
             }
 
             /** A fresh project for an import started from the projects screen, opened so the import lands in it. */
             fun newProjectFor(base: String) {
-                val info = registry.create(unusedProjectName(registry, base))
+                val (info, warning) = registerProject(unusedProjectName(registry, base))
                 app.projects = registry.projects
                 openProject(info.id)
+                warning?.let { app.setStatus(it, true) }
             }
 
             fun renameProject(id: String, raw: String): Boolean {
@@ -165,6 +181,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
             }
 
             fun deleteProject(id: String) {
+                val kept = registry.find(id)?.location
                 if (app.currentProject?.id == id) {
                     app.beginBulkImport()
                     app.clearEditor()
@@ -174,6 +191,67 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 storage.deleteProjectFiles(id)
                 registry.delete(id)
                 app.projects = registry.projects
+                if (kept != null) app.setStatus("Removed from Morphont. Its glyph files are still in ${kept.label}.")
+            }
+
+            /** Saves what's open, then moves the open project into a folder the person picks (and starts new projects there). */
+            fun chooseFolderForProject() {
+                val current = app.currentProject ?: return
+                files.pickFolder(
+                    { tree ->
+                        scope.launch {
+                            try {
+                                flushOpenGlyph()
+                                app.setStatus("Moving \"${current.name}\"\u2026")
+                                val where = withContext(Dispatchers.IO) { storage.moveProjectToFolder(current.id, tree) }
+                                registry.find(current.id)?.let { if (app.currentProject?.id == it.id) app.currentProject = it }
+                                app.projects = registry.projects
+                                app.newProjectsFolder = storage.newProjectsFolder
+                                app.setStatus("Moved \"${current.name}\" to ${where.label}. It saves there as you work, and new projects start there too.")
+                            } catch (e: Exception) {
+                                app.setStatus("Couldn't move \"${current.name}\": ${e.message ?: e::class.simpleName}. It's still where it was.", true)
+                            }
+                        }
+                    },
+                    { app.setStatus(it, true) },
+                )
+            }
+
+            fun useAppStorageForProject() {
+                val current = app.currentProject ?: return
+                val from = current.location ?: return
+                scope.launch {
+                    try {
+                        flushOpenGlyph()
+                        withContext(Dispatchers.IO) { storage.moveProjectToAppStorage(current.id) }
+                        registry.find(current.id)?.let { if (app.currentProject?.id == it.id) app.currentProject = it }
+                        app.projects = registry.projects
+                        app.setStatus("Moved \"${current.name}\" back into app storage. The folder ${from.label} still holds a copy.")
+                    } catch (e: Exception) {
+                        app.setStatus("Couldn't move \"${current.name}\": ${e.message ?: e::class.simpleName}. It's still where it was.", true)
+                    }
+                }
+            }
+
+            /** Opens a project that already lives in a folder the person picks (made by this app earlier, or copied there). */
+            fun openProjectFromFolder() {
+                files.pickFolder(
+                    { tree ->
+                        scope.launch {
+                            try {
+                                val info = withContext(Dispatchers.IO) { storage.adoptFolder(tree) }
+                                app.projects = registry.projects
+                                openProject(info.id)
+                                if (app.currentProject?.id == info.id && app.glyphNames.isEmpty()) {
+                                    app.setStatus("\"${info.name}\" holds no glyphs yet. If your project is in a folder inside it, open that folder instead.")
+                                }
+                            } catch (e: Exception) {
+                                app.setStatus("Couldn't open that folder: ${e.message ?: e::class.simpleName}", true)
+                            }
+                        }
+                    },
+                    { app.setStatus(it, true) },
+                )
             }
 
             fun importProjectIntoApp() {
@@ -182,9 +260,10 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                         scope.launch {
                             try {
                                 ProjectCodec.decodeProject(text) // fail before anything is created
-                                val info = registry.create(unusedProjectName(registry, "Imported project"))
+                                val (info, warning) = registerProject(unusedProjectName(registry, "Imported project"))
                                 app.projects = registry.projects
                                 openProject(info.id)
+                                warning?.let { app.setStatus(it, true) }
                                 val names = withContext(Dispatchers.IO) { storage.importProjectText(text) }
                                 app.beginBulkImport()
                                 app.glyphNames = names
@@ -309,7 +388,16 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         runCatching { keyboardFocus.requestFocus() }
                     },
-                    projects = ProjectActions(::createProject, ::openProject, ::renameProject, ::deleteProject),
+                    projects = ProjectActions(::createProject, ::openProject, ::renameProject, ::deleteProject, ::openProjectFromFolder),
+                    location = ProjectLocationHost(
+                        chooseFolder = ::chooseFolderForProject,
+                        useAppStorage = ::useAppStorageForProject,
+                        newProjectsInAppStorage = {
+                            storage.useAppStorageForNewProjects()
+                            app.newProjectsFolder = null
+                            app.setStatus("New projects start in app storage.")
+                        },
+                    ),
                     touchScale = 1.35f,
                     settings = storage.settings,
                     fontStore = AndroidFontStore.host(context, files),
