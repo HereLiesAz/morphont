@@ -11,10 +11,10 @@ import kotlin.math.min
  * `ANCHORS` layout from `Model.kt`. Bounds are checked against the font,
  * its containing table and each glyph/variation block.
  *
- * No compiled-font *writing* here -- see the README for why that's a
- * separate, deferred effort. And no CFF/OTF (PostScript outlines)
- * support -- only TrueType (`glyf`/`loca`/`gvar`) fonts, which is what
- * Azrienoch (and most variable fonts) actually ship as.
+ * Nothing here writes a font -- that is FontExport.kt and the Font*.kt
+ * writers. And no CFF/OTF (PostScript outlines) support when reading --
+ * only TrueType (`glyf`/`loca`/`gvar`) fonts, which is what Azrienoch (and
+ * most variable fonts) actually ship as.
  *
  * Scope deliberately excludes:
  * - `avar` (segment remapping) -- rare, and the font this was built

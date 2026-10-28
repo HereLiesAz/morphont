@@ -286,6 +286,16 @@ fun DesktopApp() {
                         renamed = { old, _ -> if (PendingSave.name == old) { PendingSave.name = null; PendingSave.glyph = null } },
                     ),
                     confirmBefore = mapOf("Replace this glyph from .json" to "This replaces the open glyph with the file's, on every anchor, and can't be undone. Export this glyph first to keep a copy."),
+                    fontExport = FontExportHost(
+                        snapshot = {
+                            val unsaved = app.currentGlyphName?.let { it to app.toGlyph() }
+                            withContext(Dispatchers.IO) {
+                                val (project, skipped) = readableGlyphs(DesktopStorage.listGlyphNames(), DesktopStorage::loadGlyph)
+                                FontSnapshot(projectForExport(project, unsaved), skipped)
+                            }
+                        },
+                        save = { fileName, _, bytes, onSaved, onError -> DesktopStorage.saveBytes("Export font", fileName, bytes, onSaved, onError) },
+                    ),
                 )
             }
 
