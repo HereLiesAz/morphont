@@ -38,6 +38,7 @@ class AndroidStorage(context: Context) {
     val registry = ProjectRegistry(
         read = { prefs.getString(PROJECT_INDEX_KEY, null) },
         write = { prefs.edit().putString(PROJECT_INDEX_KEY, it).apply() },
+        keepDamaged = { prefs.edit().putString("$PROJECT_INDEX_KEY.damaged", it).apply() },
     )
 
     /** Theme and view settings, kept with the rest of the app's preferences. */
@@ -154,7 +155,7 @@ class AndroidStorage(context: Context) {
 
     private fun activeFolder(): GlyphFolder = checkNotNull(folder) { "No project is open." }
 
-    private fun glyphBytes(glyph: Glyph): ByteArray = ProjectCodec.encodeGlyph(glyph).toByteArray(Charsets.UTF_8)
+    private fun glyphBytes(glyph: Glyph): ByteArray = ProjectCodec.encodeGlyphCompact(glyph).toByteArray(Charsets.UTF_8)
 
     private fun readGlyph(from: GlyphFolder, name: String): Glyph? = try {
         from.read(name)?.let { ProjectCodec.decodeGlyph(it.toString(Charsets.UTF_8)) }

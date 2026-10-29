@@ -291,6 +291,7 @@ fun App() {
             // left. With no project yet, the start screen asks for one.
             LaunchedEffect(Unit) {
                 app.projects = Storage.registry.projects
+                Storage.registry.loadProblem?.let { app.setStatus(it, true) }
                 Storage.registry.last?.let { last ->
                     val info = runCatching { Storage.registry.open(last.id) }.getOrNull() ?: Storage.registry.find(last.id) ?: return@let
                     try {

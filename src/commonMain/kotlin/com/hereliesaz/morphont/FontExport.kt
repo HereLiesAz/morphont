@@ -236,6 +236,12 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
     require(project.isNotEmpty()) { "The project has no glyphs to export." }
     require(options.family.isNotBlank()) { "Give the font a family name." }
     val warnings = ArrayList<String>()
+    // An advance outside 0..65535 doesn't fit hmtx; it is clamped, and the glyph is named in a warning.
+    val clampedWidths = LinkedHashSet<String>()
+    fun clampWidth(width: Int, name: String): Int {
+        if (width !in 0..0xFFFF) clampedWidths.add(name)
+        return width.coerceIn(0, 0xFFFF)
+    }
 
     // ---- which glyph is which character
     val claimed = HashMap<Int, String>()
@@ -317,7 +323,7 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
                     val c = corner(e, instanceValues)
                     val raw = fontContoursOf(c, e.scale)
                     requireOnGrid(e.name, raw)
-                    PlannedGlyph(glyphNames[i], e.codepoint, scaled(c.width, e.scale).coerceIn(0, 0xFFFF), applyFlips(raw, contourFlips(raw, outerClockwise = false)))
+                    PlannedGlyph(glyphNames[i], e.codepoint, clampWidth(scaled(c.width, e.scale), e.name), applyFlips(raw, contourFlips(raw, outerClockwise = false)))
                 }
             }
             val bounds = planned.map { controlBounds(it.contours) }
@@ -342,7 +348,7 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
                     requireOnGrid(e.name, raw)
                     val contours = applyFlips(raw, contourFlips(raw, outerClockwise = true))
                     points.add(contours.map { fontContourToTrueType(it, quadCountsFor(it, tolerance)) })
-                    PlannedGlyph(glyphNames[i], e.codepoint, scaled(c.width, e.scale).coerceIn(0, 0xFFFF), contours)
+                    PlannedGlyph(glyphNames[i], e.codepoint, clampWidth(scaled(c.width, e.scale), e.name), contours)
                 }
             }
             val bounds = points.map { pointBounds(it) }
@@ -379,7 +385,7 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
                     return@mapIndexed PlannedGlyph(glyphNames[i], null, w, c)
                 }
                 val base = corner(e, emptyMap())
-                val baseWidth = scaled(base.width, e.scale).coerceIn(0, 0xFFFF)
+                val baseWidth = clampWidth(scaled(base.width, e.scale), e.name)
                 val rawBase = fontContoursOf(base, e.scale)
                 requireOnGrid(e.name, rawBase)
                 // Directions are settled on the default master and applied to every other, so the points still line up.
@@ -397,7 +403,7 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
                             val c = interpolateGlyph(e.glyph.corners, mapOf(axis.tag to stop.t))
                             val raw = fontContoursOf(c, e.scale)
                             requireOnGrid(e.name, raw)
-                            masters.add(Master(ai, stop, if (raw.size == flips.size) applyFlips(raw, flips) else raw, scaled(c.width, e.scale).coerceIn(0, 0xFFFF)))
+                            masters.add(Master(ai, stop, if (raw.size == flips.size) applyFlips(raw, flips) else raw, clampWidth(scaled(c.width, e.scale), e.name)))
                         }
                     }
                 }
@@ -490,6 +496,10 @@ fun exportFont(project: Map<String, Glyph>, options: FontExportOptions, nowSecon
         FontContainer.PLAIN -> sfnt
         FontContainer.WOFF -> woffFromSfnt(sfnt)
         FontContainer.WOFF2 -> woff2FromSfnt(sfnt)
+    }
+    if (clampedWidths.isNotEmpty()) {
+        warnings.add("${clampedWidths.size} glyph(s) have an advance width outside 0 to 65535 after scaling, so it was clamped: " +
+            clampedWidths.take(5).joinToString { "\"$it\"" } + if (clampedWidths.size > 5) ", …" else "")
     }
     return FontExportResult(bytes, "$stem.$extension", mimeOf(extension), glyphCount, warnings)
 }

@@ -192,7 +192,11 @@ class FontShelf(private val blobs: BlobStore) {
         cache = fonts
     }
 
-    private fun safeKey(s: String) = s.map { if (it.isLetterOrDigit() || it in "-._") it else '_' }.joinToString("")
+    /** One safe path segment: letters, digits and "-._" only, and never a run of dots alone ("." and ".." climb out of the shelf). */
+    private fun safeKey(s: String): String {
+        val key = s.map { if (it.isLetterOrDigit() || it in "-._") it else '_' }.joinToString("")
+        return if (key.isEmpty() || key.all { it == '.' }) "dots${key.length}" else key
+    }
 
     private companion object {
         const val INDEX = "index.json"

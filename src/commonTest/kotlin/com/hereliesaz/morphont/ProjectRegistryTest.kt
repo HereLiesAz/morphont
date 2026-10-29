@@ -16,6 +16,23 @@ class ProjectRegistryTest {
         assertNull(r.last)
     }
 
+    @Test fun anUnreadableListIsSetAsideNotOverwritten() {
+        val disk = Disk().apply { text = "{ not json" }
+        var kept: String? = null
+        val r = ProjectRegistry({ disk.text }, { disk.text = it }, keepDamaged = { kept = it })
+        assertEquals("{ not json", kept)
+        assertNotNull(r.loadProblem)
+        assertEquals(emptyList(), r.projects)
+        r.create("After")
+        assertEquals("{ not json", kept) // still the damaged text, not the new list
+    }
+
+    @Test fun aReadableListHasNoLoadProblem() {
+        val disk = Disk()
+        registry(disk).create("One")
+        assertNull(registry(disk).loadProblem)
+    }
+
     @Test fun createTrimsAndBecomesLast() {
         val r = registry()
         val a = r.create("  Azrienoch  ")

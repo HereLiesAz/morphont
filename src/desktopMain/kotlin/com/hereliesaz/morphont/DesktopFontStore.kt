@@ -65,7 +65,7 @@ object DesktopFontStore {
         }
     }
 
-    /** Keys are the shelf's own ("index.json", "face/<id>/<n>-<file>"): already safe path segments. */
+    /** Keys are the shelf's own ("index.json", "face/<id>/<version>/<n>-<file>"); [FontShelf] makes every segment safe (no "..", no separators). */
     class FileBlobs(private val root: File) : BlobStore {
         private fun file(key: String) = File(root, key)
 

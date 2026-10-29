@@ -110,6 +110,17 @@ class FontExportTest {
     }
 
     @Test
+    fun importedVariableFontKeepsEachAnchorsOwnAdvanceWidth() {
+        // weighted(): advance 700 at the thin end, 800 at Regular, 900 at the black end. Importing the exported
+        // variable font used to give all 29 anchors the default advance.
+        val exported = exportFont(mapOf("A" to weighted()), FontExportOptions("Test", outlines = FontOutlines.VARIABLE))
+        val glyph = assertNotNull(buildFamilyFromVariableFont(exported.bytes).glyphs["A"])
+        assertEquals(800f, glyph.corners.getValue("regular").width, 1f)
+        assertEquals(700f, glyph.corners.getValue(Axis.WEIGHT.lo).width, 1f)
+        assertEquals(900f, glyph.corners.getValue(Axis.WEIGHT.hi).width, 1f)
+    }
+
+    @Test
     fun variableFontBetweenStopsStaysCloseToMorphontsOwnCurve() {
         val glyph = weighted(regular = 300f, thin = 100f, black = 400f)
         val font = parse(exportFont(mapOf("A" to glyph), FontExportOptions("Test", outlines = FontOutlines.VARIABLE)).bytes)

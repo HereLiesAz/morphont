@@ -384,8 +384,9 @@ never starts from Regular.
   within half a unit per thousand, cut so that every master of a variable
   font has the same points. A variable font carries intermediate stops at a
   quarter and three quarters of each side of every axis, so its straight-line
-  `gvar` interpolation follows Morphont's own forced-Bezier curve to within a
-  few units instead of the chord a three-master font would give; between
+  `gvar` interpolation follows Morphont's own forced-Bezier curve to within
+  1/16 of how far Regular sits from the straight line between the extremes
+  (about 6 units for a 100-unit offset) instead of the chord a three-master font would give; between
   stops it is the nearest straight line. Axes combine additively, as they do
   in the editor. Advance widths that change along an axis travel in `gvar`'s
   phantom points. Outside the test suite, every format was checked with
@@ -635,9 +636,10 @@ of the way until needed.
 - The clipboard is in-app only (not the OS clipboard). Android's root now
   receives keyboard focus for editor shortcuts; actual hardware combinations
   still need device-level verification.
-- Reference fonts loaded from a file are held for the session only (install
-  from the store to keep one); either way they must be TrueType-outline
-  (`glyf`); CFF/OTF isn't parsed.
+- A character laid over a glyph as a ghost is copied into the project (its outlines,
+  and a variable font's masters), so it is saved and exported with the project; the font
+  file itself is kept only if you install it from the store. Either way it must be
+  TrueType-outline (`glyf`); CFF/OTF isn't parsed.
 - Metrics are stored per glyph (so imported fonts' values travel with each
   glyph); glyphs without saved metrics use the default FontMetrics instead
   of leaking the previously opened glyph's values. Guides, metrics,
@@ -661,6 +663,25 @@ of the way until needed.
   name, and the default instance of a variable one, are whatever the dialog
   says; a variable font's is always Regular. Imports still read only
   TrueType-outline fonts, so a CFF export can't be imported back.
+- **Font import.** Reads TrueType (`glyf`) fonts only. A simple glyph's advance
+  width follows `gvar`'s phantom points, so each anchor gets the width the font
+  has at that position; a composite glyph's advance, and a font that keeps its
+  spacing only in `HVAR`, give every anchor the default advance. `avar` is
+  ignored, and a composite glyph's own `gvar` offset deltas (an accent that
+  shifts with weight) are not applied. Composites nest up to four deep; a
+  point-matching composite, or a deeper one, is listed as skipped rather than
+  imported blank. Every character becomes a glyph with 29 anchors, stored
+  without indentation; a very large font still needs memory in proportion.
+- **Export.** An advance width outside 0 to 65535 is clamped and the glyph
+  named in the report. A cubic that needs more than 12 quadratics to stay in
+  tolerance is cut at 12 without a warning. There are no name IDs 16 and 17,
+  so a style such as "Light" lands in ID 2.
+- **Building.** The `convey` dependency comes from GitHub Packages, which
+  wants a token even to read a public package: set `GITHUB_TOKEN` (with
+  `read:packages`) or `GH_TOKEN`. Without one nothing builds, which also
+  means a fork's pull request cannot run CI.
+- **Installers.** Desktop installers are unsigned, so Windows SmartScreen and
+  macOS Gatekeeper warn on first run (right-click, Open, on macOS).
 - **Project folders.** Reads and writes go through Android's document
   providers, which can be slow (a cloud provider especially) and the glyph
   list is read on the main thread as it always was (it falls back to the last

@@ -2,6 +2,7 @@ package com.hereliesaz.morphont
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class ProjectCodecTest {
@@ -37,5 +38,28 @@ class ProjectCodecTest {
         assertTrue(Axis.WEIGHT.hi in migrated.corners)
         assertEquals(111f, migrated.corners.getValue(Axis.WEIGHT.lo).width)
         assertEquals(999f, migrated.corners.getValue(Axis.WEIGHT.hi).width)
+    }
+
+    @Test
+    fun aFileThatIsNotAGlyphIsRefused() {
+        assertFailsWith<Exception> { ProjectCodec.decodeGlyph("{}") }
+        assertFailsWith<Exception> { ProjectCodec.decodeGlyph("""{"theme":"dark"}""") }
+        assertFailsWith<Exception> { ProjectCodec.decodeGlyph("[1, 2]") }
+    }
+
+    @Test
+    fun aBlankGlyphStillRoundTrips() {
+        // A glyph with nothing drawn encodes to little more than its outline format, and must still be accepted.
+        val back = ProjectCodec.decodeGlyph(ProjectCodec.encodeGlyphCompact(Glyph()))
+        assertTrue(back.corners.values.all { it.contours.isEmpty() })
+    }
+
+    @Test
+    fun compactAndIndentedEncodingsDecodeTheSame() {
+        val glyph = Glyph()
+        glyph.corners.getValue("regular").contours += ContourData(mutableListOf(Pt(1f, 2f, true), Pt(3f, 4f, false)))
+        val compact = ProjectCodec.encodeGlyphCompact(glyph)
+        assertTrue(compact.length < ProjectCodec.encodeGlyph(glyph).length)
+        assertEquals(ProjectCodec.decodeGlyph(ProjectCodec.encodeGlyph(glyph)), ProjectCodec.decodeGlyph(compact))
     }
 }

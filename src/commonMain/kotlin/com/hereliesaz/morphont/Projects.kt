@@ -37,13 +37,33 @@ private data class ProjectIndex(
  * per-project storage owned by the platform; this only tracks which projects
  * exist, what they are called, and which was open last.
  */
-class ProjectRegistry(private val read: () -> String?, private val write: (String) -> Unit) {
+class ProjectRegistry(
+    private val read: () -> String?,
+    private val write: (String) -> Unit,
+    /** Where to put the text of a list that couldn't be read, before the next save replaces it. */
+    private val keepDamaged: (String) -> Unit = {},
+) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** Set when the stored list was there but unreadable: it was set aside and the list started empty. */
+    var loadProblem: String? = null
+        private set
+
     private var index: ProjectIndex = load()
 
     private fun load(): ProjectIndex {
         val raw = read() ?: return ProjectIndex()
-        return runCatching { json.decodeFromString<ProjectIndex>(raw) }.getOrDefault(ProjectIndex())
+        return try {
+            json.decodeFromString<ProjectIndex>(raw)
+        } catch (e: Exception) {
+            // Never overwrite a list we couldn't read without keeping a copy: projects kept in a chosen folder
+            // are known only from it.
+            val kept = runCatching { keepDamaged(raw) }.isSuccess
+            loadProblem = "The project list was damaged and couldn't be read" +
+                (if (kept) "; a copy was set aside (projects.json.corrupt / morphont-projects-damaged)." else ".") +
+                " Projects stored in the app are listed again; ones kept in a folder you chose need adding back."
+            ProjectIndex()
+        }
     }
 
     private fun commit(next: ProjectIndex) {

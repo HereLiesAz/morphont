@@ -51,15 +51,33 @@ internal class FileGlyphFolder(val dir: File) : GlyphFolder {
 
     private fun file(name: String) = File(dir, "${encodedName(name)}.json")
 
-    override fun names(): List<String> =
-        dir.listFiles().orEmpty()
+    /**
+     * [AtomicFile] may move the old file aside to "x.json.bak" while it writes a new one, and a process killed
+     * in that window leaves only the backup. Reading through [AtomicFile] puts such a backup back; do it for every
+     * leftover before listing or checking for a file.
+     */
+    private fun restoreLeftovers() {
+        for (f in dir.listFiles().orEmpty()) {
+            if (f.isFile && f.name.endsWith(".json.bak")) {
+                runCatching { AtomicFile(File(dir, f.name.removeSuffix(".bak"))).openRead().close() }
+            }
+        }
+    }
+
+    override fun names(): List<String> {
+        restoreLeftovers()
+        return dir.listFiles().orEmpty()
             .filter { it.isFile && it.name.endsWith(".json") }
             .mapNotNull { decodedName(it.name.removeSuffix(".json")) }
+    }
 
-    override fun exists(name: String) = file(name).isFile
+    override fun exists(name: String): Boolean {
+        restoreLeftovers()
+        return file(name).isFile
+    }
 
     override fun read(name: String): ByteArray? = try {
-        file(name).readBytes()
+        AtomicFile(file(name)).readFully()
     } catch (_: Throwable) {
         null
     }

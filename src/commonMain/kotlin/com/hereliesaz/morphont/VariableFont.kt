@@ -20,10 +20,11 @@ import kotlin.math.min
  * - `avar` (segment remapping) -- rare, and the font this was built
  *   against doesn't have one; axis normalization here is the plain
  *   piecewise-linear default the spec falls back to without it.
- * - Per-anchor advance-width variation (`HVAR` / gvar phantom points) --
- *   this app cares about node *shape*, not spacing; every anchor gets the
- *   glyph's single default advance width. A real limitation, not an
- *   oversight -- documented in the README rather than silently wrong.
+ * - `HVAR`. A simple glyph's advance width does vary per anchor: it is read
+ *   from the glyph's own gvar phantom points ([advanceWidthAt]). A composite
+ *   glyph's advance, and any font that keeps its spacing only in `HVAR`,
+ *   gets the single default advance on every anchor -- documented in the
+ *   README's Known gaps.
  * - Composite glyphs' own gvar deltas (which move a component's
  *   *offset*, e.g. shifting an accent) -- each component's shape is
  *   varied correctly via its own glyph's gvar data, but the static
@@ -76,7 +77,7 @@ private data class CompositeComponent(
 /** Upper bound on cmap entries read: every Unicode code point once (see the cmap reader). */
 private const val MAX_CMAP_MAPPINGS = 0x110000L
 
-private const val MAX_COMPOSITE_DEPTH = 1
+private const val MAX_COMPOSITE_DEPTH = 4
 
 private data class TupleVariation(
     val peak: FloatArray, // per-axis, or NaN if this axis unconstrained (peak==0)
@@ -113,6 +114,35 @@ class VariableFont private constructor(
     fun advanceWidth(codepoint: Int): Float? {
         val gid = cmap[codepoint] ?: return null
         return defaultAdvanceWidth(gid)
+    }
+
+    /**
+     * The advance width of [codepoint] at [axisCoords]: the default advance plus the horizontal movement of the
+     * glyph's two horizontal phantom points (the left and right side bearings' anchors, after the outline's own
+     * points) that gvar applies there. Only simple glyphs carry that movement here; a composite, or a glyph with
+     * no gvar data, keeps its default advance.
+     */
+    fun advanceWidthAt(codepoint: Int, axisCoords: Map<String, Float>): Float? {
+        val gid = cmap[codepoint] ?: return null
+        val base = defaultAdvanceWidth(gid)
+        val raw = rawSimpleGlyph(gid) ?: return base
+        val n = raw.xs.size
+        val tuples = tuplesFor(gid, n + 4)
+        if (tuples.isEmpty()) return base
+        val userVec = axes.map { normalizeAxis(it, axisCoords[it.tag] ?: it.default) }.toFloatArray()
+        var delta = 0f
+        for (tv in tuples) {
+            val scalar = tupleScalar(tv, userVec)
+            if (scalar == 0f) continue
+            val numbers = tv.pointNumbers
+            // Phantom points are never inferred: one the tuple doesn't list doesn't move.
+            fun dx(point: Int): Int {
+                val at = if (numbers == null) point else numbers.indexOf(point)
+                return if (at < 0) 0 else tv.deltaX.getOrElse(at) { 0 }
+            }
+            delta += (dx(n + 1) - dx(n)) * scalar
+        }
+        return kotlin.math.round(base + delta).coerceAtLeast(0f)
     }
 
     /**
@@ -251,7 +281,9 @@ class VariableFont private constructor(
             p += 4
             val wordArgs = flags and 0x0001 != 0
             val argsAreXY = flags and 0x0002 != 0
-            if (!argsAreXY) { compositeCache[glyphId] = null; return null } // point-matching composites unsupported
+            // Point-matching composites place a component by lining two points up. That isn't supported, and it must
+            // not read as an empty glyph: the import reports the character as skipped instead of dropping its outline.
+            if (!argsAreXY) throw IllegalArgumentException("point-matching composite glyph (not supported)")
             var dx: Float; var dy: Float
             if (wordArgs) { check(p, 4); dx = r.i16(p).toFloat(); dy = r.i16(p + 2).toFloat(); p += 4 }
             else { check(p, 2); dx = r.i8(p).toFloat(); dy = r.i8(p + 1).toFloat(); p += 2 }

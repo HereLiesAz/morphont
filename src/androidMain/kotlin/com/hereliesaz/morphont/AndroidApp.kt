@@ -446,6 +446,7 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
             }
 
             LaunchedEffect(Unit) {
+                registry.loadProblem?.let { app.setStatus(it, true) }
                 app.glyphNames = storage.listGlyphNames()
 
                 Axis.ALL.firstOrNull { it.tag == storage.selectedAxisTag() }?.let {

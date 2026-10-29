@@ -312,6 +312,7 @@ fun DesktopApp() {
             // Reopen where the last session left off; with no project yet, the start screen asks for one.
             LaunchedEffect(Unit) {
                 registry.last?.let { openProject(it.id) }
+                registry.loadProblem?.let { app.setStatus(it, true) }
                 runCatching { focus.requestFocus() }
             }
 
