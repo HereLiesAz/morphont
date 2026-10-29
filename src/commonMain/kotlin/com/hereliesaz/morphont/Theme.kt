@@ -30,7 +30,9 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TooltipScope
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.composed
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material3.Text
@@ -109,8 +111,8 @@ val DarkPalette = Palette(
     secondary = Color(0xFF7A7A7A), onSecondary = Color(0xFF070707),
     tertiary = Color(0xFFBDBDBD), onTertiary = Color(0xFF070707),
     error = Color(0xFFE4573D), onError = Color(0xFF1A0704),
-    glow = Color(0xFF161616), outline = Color(0xFFD9D9D9), baseline = Color(0xFF2C2C2C), metric = Color(0xFF1C1C1C),
-    grid = Color(0xFF121212), ctrlLine = Color(0xFF3A3A3A), nodeRing = Color(0xFFBDBDBD), offCurve = Color(0xFF7A7A7A),
+    glow = Color(0xFF161616), outline = Color(0xFFD9D9D9), baseline = Color(0xFF5A5A5A), metric = Color(0xFF505050),
+    grid = Color(0xFF3A3A3A), ctrlLine = Color(0xFF666666), nodeRing = Color(0xFFBDBDBD), offCurve = Color(0xFF7A7A7A),
     pathCurve = Color(0xFF6A6A6A), ghostStroke = Color(0xFF5A5A5A), ghostActive = Color(0xFFBDBDBD),
     rulerBg = Color(0xFF0A0A0A), rulerLine = Color(0xFF1A1A1A), measure = Color(0xFF9A9A9A),
     mark = Color.White, hairline = Color(0xFF181818), previewGround = Color(0xFF0D0D0D),
@@ -128,8 +130,8 @@ val LightPalette = Palette(
     secondary = Color(0xFF9A9A9A), onSecondary = Color(0xFF2E2E2E),
     tertiary = Color(0xFFD2D2D2), onTertiary = Color(0xFF2E2E2E),
     error = Color(0xFFF58C75), onError = Color(0xFF1A0704),
-    glow = Color(0xFF3E3E3E), outline = Color(0xFFE8E8E8), baseline = Color(0xFF5A5A5A), metric = Color(0xFF444444),
-    grid = Color(0xFF383838), ctrlLine = Color(0xFF6A6A6A), nodeRing = Color(0xFFD0D0D0), offCurve = Color(0xFF9E9E9E),
+    glow = Color(0xFF3E3E3E), outline = Color(0xFFE8E8E8), baseline = Color(0xFF7A7A7A), metric = Color(0xFF707070),
+    grid = Color(0xFF585858), ctrlLine = Color(0xFF8A8A8A), nodeRing = Color(0xFFD0D0D0), offCurve = Color(0xFF9E9E9E),
     pathCurve = Color(0xFF909090), ghostStroke = Color(0xFF909090), ghostActive = Color(0xFFD2D2D2),
     rulerBg = Color(0xFF292929), rulerLine = Color(0xFF3C3C3C), measure = Color(0xFFB4B4B4),
     mark = Color.White, hairline = Color(0xFF3A3A3A), previewGround = Color(0xFF262626),
@@ -155,6 +157,8 @@ object Type {
     val Row = 17.sp
     /** A dialog's title, a glyph in a tab. */
     val Title = 22.sp
+    /** Button labels. */
+    val Button = 13.sp
     /** A character on a glyph tile. */
     val TileGlyph = 26.sp
     /** The open glyph's name in the phone header. */
@@ -243,7 +247,7 @@ fun MonoButton(
         elevation = ButtonDefaults.buttonElevation(0.dp, 0.dp, 0.dp, 0.dp, 0.dp),
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
         // One label size for every button, so no call site picks its own.
-        content = { ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp)) { content() } },
+        content = { ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(fontSize = Type.Button)) { content() } },
     )
 }
 
@@ -259,6 +263,16 @@ fun Caps(text: String, modifier: Modifier = Modifier, color: Color = Mono.inkDim
         letterSpacing = 1.6.sp,
         maxLines = 1,
     )
+}
+
+/**
+ * A ring that shows while the element after it in the chain has keyboard focus, as [IconAction] draws. Put it
+ * before the `clickable`/`selectable`/`toggleable` that takes the focus.
+ */
+fun Modifier.focusRing(shape: Shape): Modifier = composed {
+    var focused by remember { mutableStateOf(false) }
+    this.border(if (focused) 1.5.dp else 0.dp, if (focused) Mono.ink else Color.Transparent, shape)
+        .onFocusChanged { focused = it.isFocused }
 }
 
 /** A floating rounded surface (dock, pills, sheets' cards): one step above the ground, hairline edge. */
@@ -365,7 +379,7 @@ fun TooltipScope.MonoTooltip(text: String) {
         contentColor = Mono.ink,
         shape = RoundedCornerShape(10.dp),
         modifier = Modifier.border(1.dp, Mono.border, RoundedCornerShape(10.dp)),
-    ) { Text(text, fontSize = 12.sp) }
+    ) { Text(text, fontSize = Type.Small) }
 }
 
 @Composable
@@ -444,12 +458,14 @@ fun HairSlider(
     modifier: Modifier = Modifier,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     enabled: Boolean = true,
+    /** What the slider sets, for screen readers; without it a reader announces a bare percentage. */
+    label: String? = null,
 ) {
     val ink = if (enabled) Mono.ink else Mono.inkFaint
     Slider(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
+        modifier = if (label != null) modifier.semantics { contentDescription = label } else modifier,
         enabled = enabled,
         valueRange = valueRange,
         colors = monoSliderColors(),
@@ -459,7 +475,7 @@ fun HairSlider(
             val fraction = ((state.value - state.valueRange.start) / span).coerceIn(0f, 1f)
             Canvas(Modifier.fillMaxWidth().height(2.dp)) {
                 val y = size.height / 2f
-                drawLine(Mono.borderBright, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+                drawLine(Mono.secondary, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
                 drawLine(ink, Offset(0f, y), Offset(fraction * size.width, y), 1.5.dp.toPx())
             }
         },
@@ -527,7 +543,7 @@ fun Scrollbar(state: ScrollState, vertical: Boolean, modifier: Modifier = Modifi
 /** How a ghost's outline can look: dotted or solid, in one of a few colours (index 0 is the quiet grey ghosts always had). */
 object GhostStyle {
     val colors: List<Pair<String, Color>> = listOf(
-        "Grey" to Color(0xFF5A5A5A),
+        "Grey" to Color(0xFF8C8C8C),
         "Red" to Color(0xFFE5484D),
         "Amber" to Color(0xFFF5A623),
         "Green" to Color(0xFF46C37B),

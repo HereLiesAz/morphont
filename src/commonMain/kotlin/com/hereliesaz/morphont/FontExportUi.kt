@@ -26,6 +26,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** What a platform save reports when the user dismisses the picker without choosing a place. */
+const val SAVE_CANCELLED = "Not saved."
+
 /** The open project as the export sees it: every glyph that reads, and the names of those that didn't. */
 class FontSnapshot(val glyphs: Map<String, Glyph>, val unreadable: List<String>)
 
@@ -127,7 +130,10 @@ fun FontExportDialog(app: AppState, host: FontExportHost, onDismiss: () -> Unit,
                 app.setStatus("Exported ${result.fileName}: ${result.glyphCount} glyphs, ${(result.bytes.size + 512) / 1024} KB." +
                     (if (notes.isEmpty()) "" else " " + notes.joinToString(" ")), notes.isNotEmpty())
                 onExported()
-            }, { problem = it })
+            }, {
+                // Backing out of the save picker is a choice, not a failure: no red error.
+                if (it == SAVE_CANCELLED) { problem = null; app.setStatus("Save cancelled; nothing was written.") } else problem = it
+            })
         }
     }
 

@@ -155,8 +155,9 @@ compose.desktop {
             macOS {
                 bundleID = "com.hereliesaz.morphont"
                 iconFile.set(rootProject.file("branding/desktop/morphont.icns"))
-                // macOS rejects a 0.x bundle version; the DMG carries 1.x of the same minor.patch.
-                packageVersion = desktopVersion.split(".").let { v -> listOf(maxOf(1, v[0].toInt()), v[1], v[2]).joinToString(".") }
+                // macOS rejects a 0.x bundle version, so the DMG's major is one above the app's (0.17.2 -> 1.17.2).
+                // Always +1, never max(1, major): that would send 0.x to 1.x but 1.0.0 to 1.0.0, a version going backwards.
+                packageVersion = desktopVersion.split(".").let { v -> listOf(v[0].toInt() + 1, v[1], v[2]).joinToString(".") }
             }
             windows {
                 iconFile.set(rootProject.file("branding/desktop/morphont.ico"))

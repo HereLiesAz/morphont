@@ -2,16 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Morphont</title>
-  <meta name="description" content="Build a variable-font character from five hand-drawn anchors and watch every weight and width in between fall out of the math." />
-  <meta name="theme-color" content="#070707" />
+  <meta name="description" content="Build a variable-font character from a handful of hand-drawn anchors and watch every weight and width in between fall out of the math." />
+  <meta name="theme-color" content="#070707" id="theme-color" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <script>
     // The saved theme, before anything paints, so the Light theme never flashes the Dark ground first.
-    try { if (JSON.parse(localStorage.getItem('morphont-settings')).dark === false) document.documentElement.dataset.theme = 'light'; } catch (e) {}
+    try {
+      if (JSON.parse(localStorage.getItem('morphont-settings')).dark === false) {
+        document.documentElement.dataset.theme = 'light';
+        document.getElementById('theme-color').setAttribute('content', '#2E2E2E');
+      }
+    } catch (e) {}
   </script>
   <style>
     /* The ground of each theme: Theme.kt's DarkPalette and LightPalette (PaletteResourcesTest keeps these in step). */
@@ -19,6 +24,8 @@
     :root[data-theme="light"] { --ground: #2E2E2E; }
     html, body, #root { height: 100%; margin: 0; padding: 0; background: var(--ground); }
     body { overflow: hidden; }
+    /* The editor handles its own pinch and pan; the browser's page zoom (Ctrl +/-, accessibility zoom) stays available. */
+    canvas { touch-action: none; }
     /* Splash: the logo on the ground while Wasm loads; Main.kt removes it once Compose is up. */
     #splash { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--ground); z-index: 10; }
     #splash img { width: min(40vw, 220px); height: auto; }
@@ -30,9 +37,17 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('service-worker.js').catch(() => {
-          // offline install is a nice-to-have, not a hard requirement -- fail quietly
-        });
+        navigator.serviceWorker.register('service-worker.js')
+          .then(() => navigator.serviceWorker.ready)
+          .then((registration) => {
+            // The bundle and the Wasm module loaded before the worker took control, so it never saw them:
+            // hand it what this page fetched, so the very first visit works offline too.
+            const urls = performance.getEntriesByType('resource').map((e) => e.name).filter((u) => u.startsWith(location.origin));
+            if (registration.active) registration.active.postMessage({ type: 'cache-urls', urls });
+          })
+          .catch(() => {
+            // offline install is a nice-to-have, not a hard requirement -- fail quietly
+          });
       });
     }
   </script>

@@ -1,6 +1,6 @@
 # Morphont Privacy Policy
 
-_Effective 22 October 2026. Applies to Morphont on Android, Windows, macOS, Linux and the web (PWA)._
+_Effective 29 October 2026. Applies to Morphont on Android, Windows, macOS, Linux and the web (PWA)._
 
 Morphont is a glyph editor. It collects nothing.
 
@@ -42,8 +42,9 @@ internet access. The store's own handling of requests is covered by its operator
 ## Files you open or save
 
 When you import a font or project, or export a glyph or project, Morphont reads or writes only the
-file you pick in your system's file dialog. Fonts you load as reference ghosts stay in memory for
-that session and are not stored or transmitted. "Install on this computer" copies an installed store
+file you pick in your system's file dialog. A character you lay over a glyph as a reference ghost is
+copied into your project (its outlines, from the font you chose), so it is saved with the project and
+included when you export or share it; nothing is transmitted. The font file itself is not kept. "Install on this computer" copies an installed store
 font into your user font folder; on Android and the web, "Save font file" and "Download font file"
 write it where you choose.
 

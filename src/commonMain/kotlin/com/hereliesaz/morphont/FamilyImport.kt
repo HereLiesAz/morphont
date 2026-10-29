@@ -50,11 +50,13 @@ fun buildFamilyFromVariableFont(bytes: ByteArray): FamilyImportResult {
         // raw "Index ... out of bounds" and discarded the entire import.
         try {
             val corners = LinkedHashMap<String, GlyphCorner>()
-            val width = font.advanceWidth(codepoint) ?: 0f
+            val defaultWidth = font.advanceWidth(codepoint) ?: 0f
             val sharedOutline = if (defaultOnly) font.outlineAt(codepoint, emptyMap()) else null
             for (anchor in ANCHORS) {
                 val outline = if (defaultOnly) sharedOutline else font.outlineAt(codepoint, coordsPerAnchor.getValue(anchor))
                 requireNotNull(outline) { "unsupported or unresolved composite" }
+                // Each anchor keeps the advance the font gives it there (a wide master is wider), not one default.
+                val width = if (defaultOnly) defaultWidth else font.advanceWidthAt(codepoint, coordsPerAnchor.getValue(anchor)) ?: defaultWidth
                 corners[anchor] = GlyphCorner(width, outline.map { it.deepCopy() }.toMutableList())
             }
             glyphs[codepoint.toChar().toString()] = Glyph(corners, metrics = font.metrics, outlineFormat = OUTLINE_CUBIC)

@@ -55,10 +55,13 @@ private external interface StoredGlyph : JsAny {
 
 private fun emptyStoredGlyph(): StoredGlyph = js("({})")
 
+/** Asks the browser not to evict this site's IndexedDB under storage pressure. Best effort: it may decline, silently. */
+private fun requestPersistentStorage() { js("if (navigator.storage && navigator.storage.persist) { navigator.storage.persist().catch(function () {}); }") }
+
 private fun storedGlyph(name: String, glyph: Glyph): StoredGlyph {
     val record = emptyStoredGlyph()
     record.name = name
-    record.json = ProjectCodec.encodeGlyph(glyph)
+    record.json = ProjectCodec.encodeGlyphCompact(glyph)
     return record
 }
 
@@ -104,6 +107,7 @@ object Storage {
                 throw IllegalStateException("The browser wouldn't save the project list (storage full or blocked).")
             }
         },
+        keepDamaged = { text -> window.localStorage.setItem("morphont-projects-damaged", text) },
     )
 
     /** Theme and view settings: a few dozen bytes, kept in localStorage next to the project list. */
@@ -145,6 +149,7 @@ object Storage {
                 }
             }
 
+            requestPersistentStorage()
             try {
                 val unreadable = mutableListOf<String>()
                 val loaded = opened.transaction(GLYPH_STORE) {

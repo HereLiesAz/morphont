@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -51,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
@@ -179,7 +181,7 @@ fun EditorMenuButton(
             }
             section("Theme")
             MonoMenuItem("Dark", { ThemeState.dark = true }, checked = ThemeState.dark)
-            MonoMenuItem("Light", { ThemeState.dark = false }, checked = !ThemeState.dark)
+            MonoMenuItem("Grey", { ThemeState.dark = false }, checked = !ThemeState.dark)
             section("View and settings")
             MonoMenuItem("Snap", { v.snap = !v.snap }, checked = v.snap)
             MonoMenuItem("Metrics", { v.showMetrics = !v.showMetrics }, checked = v.showMetrics)
@@ -247,10 +249,11 @@ fun StatesMenuButton(app: AppState, size: Int = IconSize.LARGE) {
 fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
-            .height(32.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .heightIn(min = 40.dp)
+            .clip(RoundedCornerShape(20.dp))
             .background(if (on) Mono.ink else Color.Transparent)
-            .border(1.dp, if (on) Mono.ink else Mono.border, RoundedCornerShape(16.dp))
+            .border(1.dp, if (on) Mono.ink else Mono.border, RoundedCornerShape(20.dp))
+            .focusRing(RoundedCornerShape(20.dp))
             .toggleable(value = on, role = Role.Switch, onValueChange = { onClick() })
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
@@ -266,8 +269,9 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
         options.forEachIndexed { i, label ->
             Box(
                 Modifier
-                    .height(28.dp)
+                    .heightIn(min = 40.dp)
                     .background(if (i == selected) Mono.ink else Color.Transparent)
+                    .focusRing(RoundedCornerShape(14.dp))
                     .selectable(selected = i == selected, role = Role.Tab, onClick = { onSelect(i) })
                     .padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
@@ -366,6 +370,7 @@ fun SimplifyCard(app: AppState, modifier: Modifier = Modifier) {
                 onValueChange = { r.removeCount = kotlin.math.round(it).toInt().coerceIn(0, r.order.size) },
                 valueRange = 0f..r.order.size.toFloat(),
                 modifier = Modifier.fillMaxWidth().padding(end = 10.dp),
+                label = "Nodes to remove",
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -386,9 +391,9 @@ fun SuggestionsButton(app: AppState, suggestions: List<Suggestion>, size: Int = 
         IconAction(MIcons.Spark, "Suggested edits (${suggestions.size})", { app.showSuggestions = !app.showSuggestions }, selected = app.showSuggestions, size = size, enabled = suggestions.isNotEmpty() || app.showSuggestions)
         if (suggestions.isNotEmpty() && !app.showSuggestions) {
             Box(
-                Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).size(16.dp).clip(RoundedCornerShape(8.dp)).background(Mono.ink),
+                Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).defaultMinSize(minWidth = 16.dp, minHeight = 16.dp).clip(RoundedCornerShape(8.dp)).background(Mono.ink).padding(horizontal = 3.dp),
                 contentAlignment = Alignment.Center,
-            ) { Text(suggestions.size.coerceAtMost(9).toString(), fontSize = Type.Micro, color = Mono.onPrimary) }
+            ) { Text(if (suggestions.size > 9) "9+" else suggestions.size.toString(), fontSize = Type.Micro, color = Mono.onPrimary, maxLines = 1) }
         }
     }
 }
@@ -428,13 +433,13 @@ fun Toast(app: AppState, modifier: Modifier = Modifier) {
         app.setStatus("")
     }
     Text(
-        app.status,
+        if (app.statusIsError) "⚠ ${app.status}" else app.status,
         color = if (app.statusIsError) Mono.error else Mono.ink,
         fontSize = Type.Body,
         maxLines = 6,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier.floating(16).widthIn(max = 520.dp).clickable(role = Role.Button, onClickLabel = "Dismiss") { app.setStatus("") }
-            .semantics { liveRegion = LiveRegionMode.Polite }.padding(horizontal = 16.dp, vertical = 10.dp),
+            .semantics { liveRegion = if (app.statusIsError) LiveRegionMode.Assertive else LiveRegionMode.Polite }.padding(horizontal = 16.dp, vertical = 10.dp),
     )
 }
 
@@ -474,6 +479,7 @@ fun AnchorFilmstrip(app: AppState, modifier: Modifier = Modifier, compact: Boole
         val active = app.activeAnchor == name
         Column(
             m.clip(RoundedCornerShape(12.dp))
+                .focusRing(RoundedCornerShape(12.dp))
                 .selectable(selected = active, role = Role.Tab, onClick = { app.activeAnchor = name })
                 .semantics(mergeDescendants = true) { contentDescription = "$label anchor" },
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -518,14 +524,18 @@ fun AxisSliders(app: AppState, initiallyShown: Int = 4) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         for (axis in axes) {
             val t = app.previewValues[axis.tag] ?: 0.5f
+            // An axis whose extremes are not both drawn moves nothing, so it is dimmed and says so.
+            val drawn = app.axisIsDrawn(axis)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(axis.label, fontSize = Type.Body, color = Mono.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(92.dp))
+                Text(axis.label, fontSize = Type.Body, color = if (drawn) Mono.ink else Mono.inkDim, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(92.dp))
                 HairSlider(
                     value = t,
                     onValueChange = { app.previewValues[axis.tag] = it },
                     modifier = Modifier.weight(1f),
+                    enabled = drawn,
+                    label = if (drawn) "${axis.label} preview" else "${axis.label} preview, unavailable: draw both extremes first",
                 )
-                Caps(fmt2(t), size = 10, modifier = Modifier.width(40.dp).padding(start = 8.dp))
+                Caps(if (drawn) fmt2(t) else "not drawn", size = 10, modifier = Modifier.width(64.dp).padding(start = 8.dp))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -584,6 +594,7 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                 onValueChange = { app.view.glyphOpacity = it },
                 modifier = Modifier.weight(1f),
                 valueRange = 0.1f..1f,
+                label = "Glyph opacity",
             )
             Caps("${(app.view.glyphOpacity * 100).toInt()}%", size = 10, modifier = Modifier.width(44.dp).padding(start = 8.dp))
         }
@@ -607,13 +618,17 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                         Segmented(listOf("Over", "Beside"), if (g.beside) 1 else 0) { g.beside = it == 1 }
                         Segmented(listOf("Dotted", "Solid"), if (g.solid) 1 else 0) { g.solid = it == 1 }
                         for ((i, entry) in GhostStyle.colors.withIndex()) {
-                            Box(
-                                Modifier.size(24.dp).clip(CircleShape)
-                                    .background(entry.second)
-                                    .border(if (g.color == i) 2.dp else 0.dp, Mono.ink, CircleShape)
-                                    .clickable(onClickLabel = "Outline colour: ${entry.first}") { g.color = i }
-                                    .semantics { contentDescription = "Outline colour: ${entry.first}" },
-                            )
+                            Box(Modifier.size(40.dp).clip(CircleShape).focusRing(CircleShape)
+                                .selectable(selected = g.color == i, role = Role.RadioButton, onClick = { g.color = i })
+                                .semantics { contentDescription = "Outline colour: ${entry.first}" },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    Modifier.size(24.dp).clip(CircleShape)
+                                        .background(entry.second)
+                                        .border(if (g.color == i) 2.dp else 0.dp, Mono.ink, CircleShape),
+                                )
+                            }
                         }
                         if (g.isLinked) IconAction(
                             MIcons.Axes, "Ghost weight, width and axes",
@@ -659,6 +674,7 @@ private fun GhostAxesDialog(app: AppState, ghost: GhostLayer, onDismiss: () -> U
                 HairSlider(
                     value = value, onValueChange = { app.setGhostAxis(ghost.id, axis, it) },
                     modifier = Modifier.weight(1f),
+                    label = "${axis.label} for this ghost",
                 )
                 IconAction(MIcons.Close, "Follow ${axis.label}", {
                     app.setGhostAxis(ghost.id, axis, null)
@@ -1022,6 +1038,8 @@ private fun FontCharacterPicker(app: AppState, host: EditorHost, initialFont: St
 fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
     if (e.type != KeyEventType.KeyDown || app.currentGlyphName == null) return@onKeyEvent false
     val mod = e.isCtrlPressed || e.isMetaPressed
+    // Single letters pick tools only when bare: Ctrl+P, Ctrl+D and Ctrl+M belong to the browser and the OS.
+    val bare = !mod && !e.isAltPressed
     val t = app.commandTarget
     val step = if (e.isShiftPressed) 10f else 1f
     // Simplify preview and ghost Place mode: node-level commands would act on nodes the user can't see.
@@ -1044,7 +1062,7 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
             app.activeGhost != null -> app.activeGhostId = null
             else -> t.selection = emptySet()
         }
-        e.key == Key.P -> {
+        bare && e.key == Key.P -> {
             val blocked = app.penBlockedReason
             if (blocked != null) app.setStatus(blocked.replaceFirstChar(Char::uppercase) + ".", true)
             else if (!app.nodeEditsLocked) {
@@ -1053,19 +1071,19 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
                 if (t.drawingContourIndex == null) t.startNewContour()
             }
         }
-        e.key == Key.V -> {
+        bare && e.key == Key.V -> {
             if (t.drawingContourIndex != null) t.finishContour()
             app.nodeMoveMode = false
             app.nodeTool = null
         }
-        e.key == Key.M -> {
+        bare && e.key == Key.M -> {
             if (!app.nodeEditsLocked) {
                 if (t.drawingContourIndex != null) t.finishContour()
                 app.nodeMoveMode = true
                 app.nodeTool = null
             }
         }
-        e.key == Key.A || e.key == Key.D || e.key == Key.C -> {
+        bare && (e.key == Key.A || e.key == Key.D || e.key == Key.C) -> {
             if (!app.nodeEditsLocked) {
                 if (t.drawingContourIndex != null) t.finishContour()
                 app.nodeMoveMode = false
@@ -1077,9 +1095,13 @@ fun Modifier.editorKeys(app: AppState): Modifier = onKeyEvent { e ->
         e.key == Key.DirectionRight -> t.nudgeSelected(step, 0f)
         e.key == Key.DirectionUp -> t.nudgeSelected(0f, step)
         e.key == Key.DirectionDown -> t.nudgeSelected(0f, -step)
-        e.key == Key.Equals || e.key == Key.Plus -> app.view.zoom = (app.view.zoom * 1.25f).coerceAtMost(40f)
-        e.key == Key.Minus -> app.view.zoom = (app.view.zoom / 1.25f).coerceAtLeast(0.1f)
-        e.key == Key.Zero -> app.view.resetView()
+        // [ and ] walk the selection through the nodes, so a keyboard alone can reach every one.
+        e.key == Key.LeftBracket && bare -> t.selectAdjacentNode(forward = false)
+        e.key == Key.RightBracket && bare -> t.selectAdjacentNode(forward = true)
+        // With Ctrl/Cmd these are the browser's own page zoom; leave them to it.
+        !mod && (e.key == Key.Equals || e.key == Key.Plus) -> app.view.zoom = (app.view.zoom * 1.25f).coerceAtMost(40f)
+        !mod && e.key == Key.Minus -> app.view.zoom = (app.view.zoom / 1.25f).coerceAtLeast(0.1f)
+        !mod && e.key == Key.Zero -> app.view.resetView()
         else -> return@onKeyEvent false
     }
     true

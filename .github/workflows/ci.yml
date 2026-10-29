@@ -1,6 +1,7 @@
 name: CI
 
-# Runs the shared test suite on the JVM targets (desktop and the Android host) for every pull request
+# Runs the shared test suite on the JVM targets (desktop and the Android host), and builds the web
+# distribution, for every pull request
 # and every push to main, so a failing test turns the check red. This is the repository's own CI: the
 # HereLiesAz/workflows policy lets a target run its CI locally, declared by the ci-report step below.
 on:
@@ -41,6 +42,14 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew desktopTest testAndroidHostTest --continue --stacktrace
+
+      # What GitHub Pages ships. Nothing else here compiles the Kotlin/Wasm target, so without this a change
+      # that only breaks the web build would pass CI and fail on main.
+      - name: Build the web distribution
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew wasmJsBrowserDistribution --stacktrace
 
       - name: Upload test reports
         if: failure()

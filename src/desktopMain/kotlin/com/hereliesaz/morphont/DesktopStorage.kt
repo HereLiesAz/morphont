@@ -84,7 +84,7 @@ internal fun replaceProjectDirectory(directory: File, project: Map<String, Glyph
     var installed = false
     try {
         project.forEach { (name, glyph) ->
-            Files.writeString(stage.resolve(desktopGlyphFileName(name)), ProjectCodec.encodeGlyph(glyph))
+            Files.writeString(stage.resolve(desktopGlyphFileName(name)), ProjectCodec.encodeGlyphCompact(glyph))
         }
         Files.move(directory.toPath(), backup)
         backedUp = true
@@ -120,11 +120,31 @@ internal fun recoverProjectDirectory(base: File, glyphs: File) {
 }
 
 /**
+ * Removes what a crash in the middle of a save leaves behind: `morphont-stage-*` folders beside the projects, and
+ * `morphont-glyph-*.tmp` files inside them. Only anything a day old goes, so a save in progress is never touched.
+ * (`morphont-backup-*` folders are crash *recovery*, see [recoverProjectDirectory], and stay.)
+ */
+internal fun sweepStrays(projectsRoot: File, now: Long = System.currentTimeMillis()) {
+    val cutoff = now - 24L * 60 * 60 * 1000
+    for (entry in projectsRoot.listFiles().orEmpty()) {
+        if (!entry.isDirectory) continue
+        if (entry.name.startsWith("morphont-stage-")) {
+            if (entry.lastModified() <= cutoff) entry.deleteRecursively()
+        } else if (!entry.name.startsWith("morphont-")) {
+            entry.listFiles().orEmpty()
+                .filter { it.isFile && it.name.startsWith("morphont-glyph-") && it.name.endsWith(".tmp") && it.lastModified() <= cutoff }
+                .forEach { it.delete() }
+        }
+    }
+}
+
+/**
  * Brings storage and [registry] into agreement. Glyphs saved before projects
  * existed (`base/glyphs`) become a project named "Untitled", and any project
  * folder the registry has lost track of is registered rather than orphaned.
  */
 internal fun adoptStoredProjects(base: File, projectsRoot: File, registry: ProjectRegistry): ProjectRegistry {
+    runCatching { sweepStrays(projectsRoot) }
     val legacy = File(base, "glyphs")
     if (legacy.isDirectory && !legacy.listFiles().isNullOrEmpty()) {
         val id = "legacy"
@@ -193,6 +213,7 @@ object DesktopStorage {
                     temp.writeText(text)
                     Files.move(temp.toPath(), registryFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
                 },
+                keepDamaged = { text -> File(base, "projects.json.corrupt").writeText(text) },
             ),
         )
     }
@@ -259,7 +280,7 @@ object DesktopStorage {
         // the shared <glyph>.json.tmp filename.
         val temp = Files.createTempFile(directory.toPath(), "morphont-glyph-", ".tmp")
         try {
-            Files.writeString(temp, ProjectCodec.encodeGlyph(glyph))
+            Files.writeString(temp, ProjectCodec.encodeGlyphCompact(glyph))
             try {
                 Files.move(temp, target.toPath(),
                     StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
@@ -294,7 +315,7 @@ object DesktopStorage {
             dir
         }
         val collisions = glyphs.keys.filter { resolveGlyphFile(directory, it).exists() }
-        glyphs.forEach { (name, glyph) -> if (name !in collisions) ProjectCodec.encodeGlyph(glyph) }
+        glyphs.forEach { (name, glyph) -> if (name !in collisions) ProjectCodec.encodeGlyphCompact(glyph) }
         glyphs.forEach { (name, glyph) ->
             if (name !in collisions) saveGlyphIn(directory, name, glyph)
         }

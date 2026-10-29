@@ -1,6 +1,10 @@
 package com.hereliesaz.morphont
 
 import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -55,12 +59,18 @@ private object PendingSave {
 
 /** Desktop entry point: one window around the shared [EditorScreen]. */
 fun main() = application {
+    // 1440x900 where it fits; smaller screens (a 1366x768 laptop) get a window that fits them.
+    val screen = java.awt.Toolkit.getDefaultToolkit().screenSize
+    val startWidth = minOf(1440, screen.width - 80).coerceAtLeast(640)
+    val startHeight = minOf(900, screen.height - 120).coerceAtLeast(480)
     Window(
         onCloseRequest = { PendingSave.flush(); exitApplication() },
         title = "Morphont",
         icon = painterResource(Res.drawable.morphont_logo),
-        state = rememberWindowState(width = 1440.dp, height = 900.dp),
+        state = rememberWindowState(width = startWidth.dp, height = startHeight.dp),
     ) {
+        // Never smaller than the layout can use.
+        window.minimumSize = java.awt.Dimension(640, 480)
         DesktopApp()
     }
 }
@@ -302,6 +312,7 @@ fun DesktopApp() {
             // Reopen where the last session left off; with no project yet, the start screen asks for one.
             LaunchedEffect(Unit) {
                 registry.last?.let { openProject(it.id) }
+                registry.loadProblem?.let { app.setStatus(it, true) }
                 runCatching { focus.requestFocus() }
             }
 
@@ -340,7 +351,18 @@ fun DesktopApp() {
                 
             }
 
-            Box(Modifier.fillMaxSize().focusRequester(focus).focusable().editorKeys(app)) {
+            Box(
+                Modifier.fillMaxSize()
+                    // Any press returns keyboard focus to the editor (text fields still take it after), so
+                    // the shortcuts keep working once a dialog or text field has been used.
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            runCatching { focus.requestFocus() }
+                        }
+                    }
+                    .focusRequester(focus).focusable().editorKeys(app),
+            ) {
                 if (app.currentProject == null) {
                     ProjectsScreen(app, host.projects!!, starts = listOf(
                         "Import a TrueType font (.ttf)" to { importFont(intoNewProject = true) },

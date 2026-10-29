@@ -67,7 +67,7 @@ fun computeTravelPathOverlay(app: AppState): TravelPathOverlay? {
 
 /** The interpolated glyph at the Preview sliders, with linked ghosts interpolated alongside it -- or a quiet note when it can't be shown yet. */
 @Composable
-fun PreviewCanvas(app: AppState, modifier: Modifier = Modifier, showGhosts: Boolean = true) {
+fun PreviewCanvas(app: AppState, modifier: Modifier = Modifier, showGhosts: Boolean = true, compact: Boolean = false) {
     val corners = app.cornersSnapshot()
     val total = corners.values.sumOf { c -> c.contours.sumOf { it.points.size } }
     val issue = if (total == 0) null else app.compatibility()
@@ -75,13 +75,17 @@ fun PreviewCanvas(app: AppState, modifier: Modifier = Modifier, showGhosts: Bool
         when {
             total == 0 -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Caps("Nothing drawn yet", size = 10)
-                Text("Draw an extreme, then start the other from it.", fontSize = Type.Micro, color = Mono.inkDim, textAlign = TextAlign.Center)
+                if (!compact) Text("Draw an extreme, then start the other from it.", fontSize = Type.Micro, color = Mono.inkDim, textAlign = TextAlign.Center)
             }
             issue != null -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(horizontal = 6.dp)) {
-                Caps("Anchors differ", color = Mono.error, size = 10)
-                Text("Their nodes don't line up, so there's nothing to blend. Use \"Match the extremes' nodes\".",
-                    fontSize = Type.Micro, color = Mono.inkDim, textAlign = TextAlign.Center)
-                app.nodeCountSummary().takeIf { it.isNotEmpty() }?.let { Text(it, fontSize = Type.Micro, color = Mono.ink, textAlign = TextAlign.Center) }
+                // The thumbnail is too small for the explanation: it names the problem, and a tap opens the full preview.
+                if (compact) { Caps("Anchors", color = Mono.error, size = 10); Caps("differ", color = Mono.error, size = 10) }
+                else Caps("Anchors differ", color = Mono.error, size = 10)
+                if (!compact) {
+                    Text("Their nodes don't line up, so there's nothing to blend. Use \"Match the extremes' nodes\".",
+                        fontSize = Type.Micro, color = Mono.inkDim, textAlign = TextAlign.Center)
+                    app.nodeCountSummary().takeIf { it.isNotEmpty() }?.let { Text(it, fontSize = Type.Micro, color = Mono.ink, textAlign = TextAlign.Center) }
+                }
             }
             else -> {
                 val inst = interpolateGlyph(corners, app.previewValues)

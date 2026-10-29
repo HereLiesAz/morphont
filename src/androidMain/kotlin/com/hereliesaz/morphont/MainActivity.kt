@@ -113,7 +113,7 @@ class MainActivity : ComponentActivity() {
         if (pendingSaveText == null) { lostRequest("Export it", created = uri); return@registerForActivityResult }
         try {
             val text = pendingSaveText ?: error("Nothing queued for export")
-            contentResolver.openOutputStream(uri, "w")?.bufferedWriter()?.use { it.write(text) }
+            contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(text) }
                 ?: error("No writable stream returned")
             pendingSaveDone?.invoke()
         } catch (e: Exception) {
@@ -131,12 +131,12 @@ class MainActivity : ComponentActivity() {
         pendingFontDone = null
         pendingFontError = null
         if (uri == null) {
-            fail?.invoke("Not saved.")
+            fail?.invoke(SAVE_CANCELLED)
             return@registerForActivityResult
         }
         if (bytes == null) { lostRequest("Save the font", created = uri); return@registerForActivityResult }
         try {
-            contentResolver.openOutputStream(uri, "w")?.use { it.write(bytes) }
+            contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
                 ?: error("No writable stream returned")
             done?.invoke()
         } catch (e: Exception) {
@@ -204,7 +204,7 @@ class MainActivity : ComponentActivity() {
 
     private fun saveFile(filename: String, mimeType: String, bytes: ByteArray, onSaved: () -> Unit, onError: (String) -> Unit) {
         // A save still waiting on the picker loses to the newer one, and says so.
-        pendingFontError?.invoke("Not saved.")
+        pendingFontError?.invoke(SAVE_CANCELLED)
         pendingFontBytes = bytes
         pendingFontDone = onSaved
         pendingFontError = onError

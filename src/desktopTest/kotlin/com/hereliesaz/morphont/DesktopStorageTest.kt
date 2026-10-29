@@ -23,6 +23,25 @@ class DesktopStorageTest {
     }
 
     @Test
+    fun strayStagingLeftoversAreSweptButFreshOnesAndBackupsStay() {
+        val root = Files.createTempDirectory("morphont-sweep-test-")
+        try {
+            val now = System.currentTimeMillis()
+            val day = 24L * 60 * 60 * 1000
+            val oldStage = Files.createDirectory(root.resolve("morphont-stage-old")).toFile().apply { setLastModified(now - 2 * day) }
+            val freshStage = Files.createDirectory(root.resolve("morphont-stage-fresh")).toFile()
+            val backup = Files.createDirectory(root.resolve("morphont-backup-p-x")).toFile().apply { setLastModified(now - 2 * day) }
+            val project = Files.createDirectory(root.resolve("p1"))
+            val oldTmp = Files.createFile(project.resolve("morphont-glyph-1.tmp")).toFile().apply { setLastModified(now - 2 * day) }
+            val freshTmp = Files.createFile(project.resolve("morphont-glyph-2.tmp")).toFile()
+            val glyph = Files.createFile(project.resolve("A.json")).toFile().apply { setLastModified(now - 2 * day) }
+            sweepStrays(root.toFile(), now)
+            assertFalse(oldStage.exists()); assertFalse(oldTmp.exists())
+            assertTrue(freshStage.exists()); assertTrue(freshTmp.exists()); assertTrue(backup.exists()); assertTrue(glyph.exists())
+        } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test
     fun interruptedSwapRecoversPriorDirectoryAtStartup() {
         val root = Files.createTempDirectory("morphont-recovery-test-")
         try {

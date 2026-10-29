@@ -57,6 +57,7 @@ object MIcons {
     val Smooth = icon("smooth", listOf("M4 12h5.6M14.4 12H20", circle(12f, 12f, 2.4f)), listOf("M3 10.4 4.6 12 3 13.6 1.4 12z", "M21 10.4 22.6 12 21 13.6 19.4 12z"))
     val Delete = icon("delete", listOf("M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"))
     val Plus = icon("plus", listOf("M12 5v14M5 12h14"))
+    val Minus = icon("minus", listOf("M5 12h14"))
     val Close = icon("close", listOf("M6 6l12 12M18 6 6 18"))
     val Check = icon("check", listOf("M5 12.5 10 17 19 7"))
     val Chevron = icon("chevron", listOf("m6 9 6 6 6-6"))
