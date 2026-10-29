@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -66,6 +67,7 @@ import androidx.compose.ui.input.key.type
 import kotlinx.coroutines.launch
 import kotlin.math.exp
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,6 +80,13 @@ import androidx.compose.ui.unit.sp
 
 /** Below this width the editor is the phone layout (one canvas, axis strip, dock); above it, the desktop layout. */
 private val COMPACT_BREAKPOINT = 900.dp
+
+/**
+ * A phone on its side is under 900dp wide but barely 360dp tall: the stacked layout would leave the canvas a sliver
+ * between its header, strip, dock and status bar. Short screens at least this wide get the wide layout instead.
+ */
+private val SHORT_HEIGHT = 480.dp
+private val SHORT_MIN_WIDTH = 560.dp
 
 private val hairline get() = Mono.hairline
 
@@ -120,8 +129,9 @@ fun EditorScreen(app: AppState, host: EditorHost, modifier: Modifier = Modifier)
                 }
             },
     ) {
-        if (maxWidth < COMPACT_BREAKPOINT) CompactEditor(app, host, { browserOpen = true }, { fontOverviewOpen = true })
-        else WideEditor(app, host, { browserOpen = true }, { fontOverviewOpen = true })
+        val compact = maxWidth < COMPACT_BREAKPOINT && !(maxHeight < SHORT_HEIGHT && maxWidth >= SHORT_MIN_WIDTH)
+        if (compact) CompactEditor(app, host, { browserOpen = true }, { fontOverviewOpen = true })
+        else WideEditor(app, host, { browserOpen = true }, { fontOverviewOpen = true }, inspectorWidth = if (maxWidth < COMPACT_BREAKPOINT) 280.dp else 360.dp)
     }
     if (browserOpen) GlyphBrowser(app, host) { browserOpen = false }
     if (fontOverviewOpen) FontOverview(app, host) { fontOverviewOpen = false }
@@ -153,12 +163,15 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
             },
         )
         val target = app.editTarget(app.activeAnchor)
+        var offerCopy = false
         val hint = when {
             target.drawingContourIndex != null && target.glyph.contours.getOrNull(target.drawingContourIndex!!)?.points.isNullOrEmpty() ->
                 "Tap for a corner node, drag for a smooth curve. Switch back to Select to close the contour."
             app.activeGhost == null && nodeCount(app) == 0 && app.activeAnchor == "regular" -> "Regular is derived from the extremes. Open an extreme and draw it."
-            app.activeGhost == null && nodeCount(app) == 0 && app.otherExtremeIsDrawn() ->
-                "Start from the other extreme (the copy button), then reshape it. Keep its nodes."
+            app.activeGhost == null && nodeCount(app) == 0 && app.otherExtremeIsDrawn() -> {
+                offerCopy = true
+                "The other extreme is drawn. Start from a copy of it, then reshape it. Keep its nodes."
+            }
             app.activeGhost == null && nodeCount(app) == 0 -> "Draw this extreme: pick the pen and tap out an outline. Regular follows."
             else -> null
         }
@@ -176,7 +189,10 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
             Toast(app)
         }
         if (hint != null) {
-            Text(hint, fontSize = Type.Body, color = Mono.inkDim, modifier = Modifier.align(Alignment.Center).padding(32.dp))
+            Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(hint, fontSize = Type.Body, color = Mono.inkDim)
+                if (offerCopy) MonoButton(onClick = { app.startOtherExtremeFromThis() }, selected = true) { Text("Start from the other extreme") }
+            }
         }
         Column(
             Modifier.align(Alignment.BottomCenter).padding(bottom = bottomInset.dp, start = 12.dp, end = 12.dp)
@@ -261,7 +277,7 @@ private fun CompactEditor(
                 Caps("${ANCHOR_LABELS[app.activeAnchor]} · ${nodeCount(app)} nodes")
             }
             SuggestionsButton(app, suggestions)
-            IconAction(MIcons.Undo, "Undo", { app.undo() })
+            IconAction(MIcons.Undo, "Undo", { app.undo() }, enabled = app.canUndo)
             IconAction(MIcons.Redo, "Redo", { app.redo() }, enabled = app.canRedo)
             EditorMenuButton(app, host, openBrowser, openFontOverview, goTo = { sheet = when (it) { "preview" -> Sheet.PREVIEW; "ghosts" -> Sheet.GHOSTS; else -> Sheet.GUIDES } })
         }
@@ -270,17 +286,19 @@ private fun CompactEditor(
             Box(Modifier.fillMaxWidth()) {
                 PreviewCanvas(
                     app,
-                    Modifier.align(Alignment.BottomEnd).size(84.dp, 104.dp).floating(14).clickable { sheet = Sheet.PREVIEW }.padding(10.dp),
+                    Modifier.align(Alignment.BottomEnd).size(84.dp, 104.dp).floating(14).clickable(role = Role.Button, onClickLabel = "Open the preview") { sheet = Sheet.PREVIEW }.padding(10.dp),
+                    compact = true,
                 )
             }
         }
         val dockScroll = rememberScrollState()
         Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp).floating(30)) {
             Row(
-                Modifier.fillMaxWidth().height(76.dp).horizontalScroll(dockScroll)
-                    .padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
+                Modifier.fillMaxWidth().heightIn(min = 76.dp).horizontalScroll(dockScroll)
+                    .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(3.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                // Top-aligned, so the active tool's caption grows downward instead of lifting it off the row.
+                verticalAlignment = Alignment.Top,
             ) {
             ToolIcon(MIcons.Select, "Select", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.nodeTool == null && app.activeGhost == null && app.reduction == null, size = IconSize.LARGE)
             ToolIcon(MIcons.Move, "Move node", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = IconSize.LARGE)
@@ -288,14 +306,17 @@ private fun CompactEditor(
             ToolIcon(MIcons.AddNode, "Add node", { nodeToolSelect(app, NodeTool.ADD) }, selected = app.nodeTool == NodeTool.ADD, size = IconSize.LARGE, name = "Add")
             ToolIcon(MIcons.SubtractNode, "Subtract node", { nodeToolSelect(app, NodeTool.SUBTRACT) }, selected = app.nodeTool == NodeTool.SUBTRACT, size = IconSize.LARGE, name = "Subtract")
             ToolIcon(MIcons.ConvertNode, "Convert node", { nodeToolSelect(app, NodeTool.CONVERT) }, selected = app.nodeTool == NodeTool.CONVERT, size = IconSize.LARGE, name = "Convert")
+            IconAction(MIcons.Duplicate, "Start the other extreme from this one", { app.startOtherExtremeFromThis() }, size = IconSize.LARGE, enabled = app.startOtherExtremeBlockedReason() == null, disabledReason = app.startOtherExtremeBlockedReason())
             NodeActions(app, size = IconSize.LARGE)
+            // One finger drags a selection box, so zoom has buttons as well as the pinch.
+            IconAction(MIcons.Plus, "Zoom in", { app.view.zoom = (app.view.zoom * 1.25f).coerceAtMost(40f) }, size = IconSize.LARGE)
+            IconAction(MIcons.Minus, "Zoom out", { app.view.zoom = (app.view.zoom / 1.25f).coerceAtLeast(0.1f) }, size = IconSize.LARGE)
             IconAction(MIcons.ResetView, "Reset zoom and pan", { app.view.resetView() }, size = IconSize.LARGE)
             IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = IconSize.LARGE)
             IconAction(MIcons.Guides, "Guides", { sheet = Sheet.GUIDES }, size = IconSize.LARGE)
             ToolIcon(MIcons.Ghost, "Ghosts", { sheet = Sheet.GHOSTS }, selected = app.activeGhost != null, size = IconSize.LARGE)
             ToolIcon(MIcons.Simplify, "Simplify", { app.startReduction() }, selected = app.reduction != null, size = IconSize.LARGE, enabled = app.activeGhost == null, disabledReason = "finish editing the ghost first")
             StatesMenuButton(app, size = IconSize.LARGE)
-            IconAction(MIcons.Duplicate, "Start the other extreme from this one", { app.startOtherExtremeFromThis() }, size = IconSize.LARGE, enabled = app.startOtherExtremeBlockedReason() == null, disabledReason = app.startOtherExtremeBlockedReason())
             }
             Scrollbar(dockScroll, false, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp))
         }
@@ -331,11 +352,12 @@ private fun CompactEditor(
 private fun WideEditor(
     app: AppState, host: EditorHost, openBrowser: () -> Unit,
     openFontOverview: () -> Unit,
+    inspectorWidth: androidx.compose.ui.unit.Dp = 360.dp,
 ) {
     val suggestions = rememberSuggestions(app)
     val drawing = app.editTarget(app.activeAnchor).drawingContourIndex != null
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 androidx.compose.foundation.Image(
                     painterResource(Res.drawable.morphont_logo),
@@ -347,14 +369,16 @@ private fun WideEditor(
             GlyphTabs(app, host, openBrowser, Modifier.weight(1f))
             ZoomControl(app.view)
             IconAction(MIcons.FontGrid, "View entire font", openFontOverview, size = IconSize.MEDIUM)
-            IconAction(MIcons.Undo, "Undo", { app.undo() }, size = IconSize.MEDIUM)
-        IconAction(MIcons.Redo, "Redo", { app.redo() }, size = IconSize.MEDIUM, enabled = app.canRedo)
-        EditorMenuButton(app, host, openBrowser, openFontOverview, goTo = null, size = IconSize.MEDIUM)
+            IconAction(MIcons.Undo, "Undo (Ctrl/⌘ Z)", { app.undo() }, size = IconSize.MEDIUM, enabled = app.canUndo)
+            IconAction(MIcons.Redo, "Redo (Ctrl/⌘ Shift Z)", { app.redo() }, size = IconSize.MEDIUM, enabled = app.canRedo)
+            EditorMenuButton(app, host, openBrowser, openFontOverview, goTo = null, size = IconSize.MEDIUM)
             MonoButton(onClick = openBrowser, selected = true) { Text("Glyphs and files") }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(hairline))
         Row(Modifier.weight(1f).fillMaxWidth()) {
-            Column(Modifier.width(60.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            val railScroll = rememberScrollState()
+            Box(Modifier.width(60.dp).fillMaxHeight()) {
+            Column(Modifier.fillMaxSize().verticalScroll(railScroll).padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 ToolIcon(MIcons.Select, "Select (V)", { selectTool(app) }, selected = !drawing && !app.nodeMoveMode && app.nodeTool == null && app.activeGhost == null && app.reduction == null, size = IconSize.MEDIUM)
                 ToolIcon(MIcons.Move, "Move node (M)", { moveNodeTool(app) }, selected = !drawing && app.nodeMoveMode, size = IconSize.MEDIUM)
                 ToolIcon(MIcons.Pen, "Pen (P)", { penTool(app) }, selected = drawing, size = IconSize.MEDIUM, enabled = app.penBlockedReason == null, disabledReason = app.penBlockedReason)
@@ -368,12 +392,14 @@ private fun WideEditor(
                 SuggestionsButton(app, suggestions, size = IconSize.MEDIUM)
                 IconAction(MIcons.ResetView, "Reset zoom and pan (0)", { app.view.resetView() }, size = IconSize.MEDIUM)
             }
+            Scrollbar(railScroll, true, Modifier.align(Alignment.CenterEnd).width(4.dp).fillMaxHeight())
+            }
             Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
-            Stage(app, host, 1f, Modifier.weight(1f).fillMaxHeight(), suggestions, bottomInset = 18) {
+            Stage(app, host, host.touchScale, Modifier.weight(1f).fillMaxHeight(), suggestions, bottomInset = 18) {
                 AnchorFilmstrip(app)
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(hairline))
-            Box(Modifier.width(360.dp).fillMaxHeight()) {
+            Box(Modifier.width(inspectorWidth).fillMaxHeight()) {
                 val inspectorScroll = rememberScrollState()
                 Column(Modifier.fillMaxSize().verticalScroll(inspectorScroll).padding(end = 8.dp)) {
                     Box(Modifier.padding(20.dp)) { PreviewSection(app) }
@@ -391,13 +417,14 @@ private fun WideEditor(
 @Composable
 private fun GlyphTabs(app: AppState, host: EditorHost, openBrowser: () -> Unit, modifier: Modifier) {
     val names = remember(app.currentGlyphName, app.glyphNames) { host.listGlyphNames() }
-    val index = names.indexOf(app.currentGlyphName).coerceAtLeast(0)
     val shown = names
     val scroll = rememberScrollState()
-    androidx.compose.runtime.LaunchedEffect(app.currentGlyphName, names, scroll.maxValue) {
+    // Where the open tab starts, in pixels, as laid out -- dp and font scale make a fixed per-tab guess wrong.
+    var activeTabStart by remember { mutableStateOf(-1) }
+    androidx.compose.runtime.LaunchedEffect(app.currentGlyphName, names, scroll.maxValue, activeTabStart) {
         // Keep glyph ordering stable. Bring the active tile into view instead
         // of rotating the whole list on each selection.
-        if (names.isNotEmpty()) scroll.animateScrollTo((index * 45).coerceAtMost(scroll.maxValue))
+        if (names.isNotEmpty() && activeTabStart >= 0) scroll.animateScrollTo(activeTabStart.coerceIn(0, scroll.maxValue))
     }
     val scope = rememberCoroutineScope()
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
@@ -413,8 +440,10 @@ private fun GlyphTabs(app: AppState, host: EditorHost, openBrowser: () -> Unit, 
                 for (name in shown) {
                     val active = name == app.currentGlyphName
                     Box(
-                        Modifier.height(34.dp).widthIn(min = 38.dp).clip(RoundedCornerShape(10.dp))
+                        Modifier.heightIn(min = 40.dp).widthIn(min = 40.dp).clip(RoundedCornerShape(10.dp))
                             .background(if (active) Mono.panelHeader else Color.Transparent)
+                            .then(if (active) Modifier.onGloballyPositioned { c -> activeTabStart = c.positionInParent().x.toInt() } else Modifier)
+                            .focusRing(RoundedCornerShape(10.dp))
                             .clickable(role = Role.Button, onClickLabel = "Open") { host.openGlyph(name) }
                             .semantics { contentDescription = "Glyph $name"; selected = active }
                             .padding(horizontal = 10.dp),
@@ -472,7 +501,7 @@ private fun ZoomControl(view: ViewSettings) {
         )
     } else {
         Text(
-            "${(view.zoom * 100f).toInt()}%",
+            "${kotlin.math.round(view.zoom * 100f).toInt()}%",
             color = Mono.ink, fontSize = Type.Body,
             modifier = Modifier
                 .pointerInput(view) {
@@ -487,7 +516,7 @@ private fun ZoomControl(view: ViewSettings) {
                         },
                     )
                 }
-                .clickable(role = Role.Button, onClickLabel = "Set zoom") { input = (view.zoom * 100f).toInt().toString(); editing = true }
+                .clickable(role = Role.Button, onClickLabel = "Set zoom") { input = kotlin.math.round(view.zoom * 100f).toInt().toString(); editing = true }
                 .padding(horizontal = 8.dp, vertical = 14.dp),
         )
     }
@@ -533,7 +562,7 @@ fun StartList(items: List<Pair<String, () -> Unit>>) {
     Column {
         for ((label, action) in items) {
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button, onClick = action)
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).focusRing(RoundedCornerShape(14.dp)).clickable(role = Role.Button, onClick = action)
                     .padding(vertical = 14.dp, horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -570,6 +599,7 @@ fun GlyphTile(name: String, current: Boolean = false, onClickLabel: String = "Op
         Modifier.size(56.dp).clip(RoundedCornerShape(12.dp))
             .background(if (current) Mono.ink else Mono.panelHeader)
             .border(1.dp, if (current) Mono.ink else Mono.border, RoundedCornerShape(12.dp))
+            .focusRing(RoundedCornerShape(12.dp))
             .clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick)
             .semantics { contentDescription = "Glyph $name"; selected = current },
         contentAlignment = Alignment.Center,

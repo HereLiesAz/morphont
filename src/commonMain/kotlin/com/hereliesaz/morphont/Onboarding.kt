@@ -111,7 +111,7 @@ fun HowItWorksDialog(onDismiss: () -> Unit, onTrySample: (() -> Unit)? = null) {
             ThreeStops()
             Body("A variable font is a few drawings and the arithmetic between them. For each axis — Weight, Width, " +
                 "Serif and the rest — you draw only its two extremes. Everything between them is calculated.")
-            Body("Those drawings are the anchors: the strip of three under the canvas picks which one you're editing, " +
+            Body("Those drawings are the anchors: the strip of three (above the canvas on a phone, floating below it on a wide screen) picks which one you're editing, " +
                 "and the axis name beside it switches axes. Draw one extreme, start the other from a copy of it and " +
                 "reshape it. The middle drawing, Regular, is derived from the extremes and follows them; move it " +
                 "if you want, but there's nothing to draw there. An axis you haven't drawn simply doesn't vary.")
@@ -137,6 +137,7 @@ val KEYBOARD_SHORTCUTS: List<Pair<String, String>> = listOf(
     "Ctrl/⌘ A" to "Select all",
     "Ctrl/⌘ Z" to "Undo",
     "Ctrl/⌘ Shift Z, Ctrl Y" to "Redo",
+    "[ / ]" to "Select the previous / next node",
     "+ / −" to "Zoom in / out",
     "0" to "Reset zoom and pan",
 )
@@ -145,8 +146,10 @@ val KEYBOARD_SHORTCUTS: List<Pair<String, String>> = listOf(
 val GESTURES: List<Pair<String, String>> = listOf(
     "Tap a node" to "Select it (Shift-click adds to the selection)",
     "Long-press a node" to "Toggle it between smooth and corner (Alt-click with a mouse)",
-    "Drag on empty canvas" to "Select with a box",
-    "Pinch, two-finger drag" to "Zoom and pan (wheel and trackpad on desktop)",
+    "Drag on empty canvas" to "Select with a box (Shift adds to the selection)",
+    "Pinch, two-finger drag" to "Zoom and pan",
+    "Mouse wheel, trackpad" to "Scroll to zoom; Shift + scroll or a sideways swipe pans",
+    "Ctrl/⌘ + drag, middle or right drag" to "Pans with a mouse, whatever the tool",
     "Move circle" to "The circle that appears beside a selected node drags it without your finger covering it; " +
         "turn it on or off in Guides",
     "Long-press any tool" to "Shows its name",

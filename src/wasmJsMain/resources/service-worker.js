@@ -3,8 +3,8 @@
 // from the cache only when the network is unreachable. Only good same-origin responses are cached, so a
 // transient 404/5xx can't replace a working offline copy, and other sites' requests (the font store, the
 // update check) pass straight through.
-const CACHE_NAME = "morphont-v2";
-const SHELL_FILES = ["./", "index.html", "manifest.webmanifest"];
+const CACHE_NAME = "morphont-v3";
+const SHELL_FILES = ["./", "index.html", "manifest.webmanifest", "morphont.js"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -36,5 +36,20 @@ self.addEventListener("fetch", (event) => {
         return response;
       })
       .catch(() => caches.match(request)),
+  );
+});
+
+// The page tells the worker which files it fetched before the worker was in control (the compiled bundle and
+// its Wasm module have hashed names the worker can't list), so a first visit is cached too.
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data || data.type !== "cache-urls" || !Array.isArray(data.urls)) return;
+  const urls = data.urls.filter((u) => typeof u === "string" && new URL(u, self.location.href).origin === self.location.origin);
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(urls.map((u) =>
+        cache.match(u).then((hit) => hit || fetch(u).then((r) => (r.ok && r.type === "basic" ? cache.put(u, r) : undefined))),
+      )),
+    ).catch(() => {}),
   );
 });

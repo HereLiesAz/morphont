@@ -23,6 +23,7 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.pow
 import kotlin.math.min
 import kotlin.math.sqrt
 
@@ -238,8 +239,17 @@ suspend fun PointerInputScope.handleAnchorGestures(
 
         if (event.type == PointerEventType.Scroll) {
             val change = event.changes.firstOrNull() ?: return@awaitEachGesture
-            val dir = change.scrollDelta.y
-            if (dir != 0f) zoomAbout(f0, change.position, if (dir > 0f) 1f / 1.15f else 1.15f)
+            val dx = change.scrollDelta.x
+            val dy = change.scrollDelta.y
+            val shift = event.keyboardModifiers.isShiftPressed
+            // Sideways swipes (and Shift + wheel) pan; a wheel notch (+-1) zooms 1.15x as before, and the small
+            // fractional deltas of a trackpad zoom in proportion instead of jumping a full notch per event.
+            if (dx != 0f || (shift && dy != 0f)) {
+                val step = if (dx != 0f) dx else dy
+                panBy(f0, Offset(-step * 40f * f0.density, 0f))
+            } else if (dy != 0f) {
+                zoomAbout(f0, change.position, 1.15f.pow(-dy.coerceIn(-3f, 3f)))
+            }
             change.consume()
             return@awaitEachGesture
         }
@@ -390,10 +400,12 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 }
                 target.addDrawPoint(x, y)
                 // Dragging on from the new node pulls out its arms (same undo step as the node).
-                followOrPinch(f, down.id, f.dragStartSlopPx) { pos, _ ->
+                val placed = followOrPinch(f, down.id, f.dragStartSlopPx) { pos, _ ->
                     val arm = f.mapper.toFont(pos)
                     target.dragDrawArm(arm.x, arm.y)
                 }
+                // A second finger turned this touch into a pinch: it was never a tap, so take the node back.
+                if (!placed) target.discardLastDrawPoint()
             } else {
                 onPointHit()
                 followOrPinch(f, down.id, Float.MAX_VALUE) { _, _ -> }
@@ -432,6 +444,8 @@ suspend fun PointerInputScope.handleAnchorGestures(
                 val early = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
                     awaitHoldEnd(down.id, startPos, f.dragStartSlopPx)
                 }
+                // The hold has now lasted long enough to count: a second buzz and a note say releasing will flip the node.
+                if (early == null) { onPointHit(); app.setStatus("Release to switch this node between smooth and corner.") }
                 when (early ?: awaitHoldEnd(down.id, startPos, f.dragStartSlopPx)) {
                     HoldEnd.RELEASED -> {
                         if (early == null) target.toggleNodeSmooth(hitKey)
@@ -466,7 +480,15 @@ suspend fun PointerInputScope.handleAnchorGestures(
 
         // Empty space: rubber band (or pinch on touch).
         val preserved = if (event.keyboardModifiers.isShiftPressed) target.selection else emptySet()
-        if (preserved.isEmpty()) target.selection = emptySet()
+        // Ctrl/Cmd + drag with a mouse pans (no middle button needed); it never starts a marquee.
+        if (down.type == PointerType.Mouse && (event.keyboardModifiers.isCtrlPressed || event.keyboardModifiers.isMetaPressed)) {
+            var last = startPos
+            followOrPinch(f, down.id, 0.5f) { pos, _ ->
+                panBy(f, pos - last)
+                last = pos
+            }
+            return@awaitEachGesture
+        }
         var rubberBanding = false
         val completed = followOrPinch(f, down.id, f.rubberBandSlopPx) { current, _ ->
             rubberBanding = true
@@ -485,6 +507,9 @@ suspend fun PointerInputScope.handleAnchorGestures(
             }
             target.selection = preserved + newSel
         }
+        // The selection is cleared only once this is known to be a tap on empty space or a marquee: a pinch that
+        // begins on empty space keeps what was selected.
+        if (completed && !rubberBanding && preserved.isEmpty()) target.selection = emptySet()
         if (rubberBanding || !completed) feedback.rubberRect = null
         if (rubberBanding && target.selection.isNotEmpty()) app.moveCircleVisible = true
     }

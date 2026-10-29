@@ -136,7 +136,7 @@ never starts from Regular.
   Ctrl/Cmd on an edge skews. Each drag is one undo step (no separate commit).
 - **Menu.** The ⋯ at the top opens a menu instead of the glyph list. **Go to**:
   Glyphs and files, Projects, Font overview, **Font store** and (on a phone, where they are
-  sheets) Preview, Ghosts, Guides and metrics. **Theme**: Dark or Light.
+  sheets) Preview, Ghosts, Guides and metrics. **Theme**: Dark or Grey (the `light` palette in the code).
   **View and settings**: Snap, Metrics, Rulers, Guides, Measurements, Ghosts,
   Travel paths, Move circle and Grid, each a checkable item that leaves the menu
   open so several can be flipped at once, then **Grid step** (10, 25, 50 or 100
@@ -166,7 +166,7 @@ never starts from Regular.
 - **Settings are remembered.** Theme, every view toggle, the grid and its step,
   the glyph opacity and the Move circle choice are saved as they change and
   restored at launch: Android in its preferences, desktop in `settings.json`
-  beside the project list, the web build in localStorage. The Light theme is a dark grey (a step up from
+  beside the project list, the web build in localStorage. The Grey theme (the `light` palette) is a dark grey (a step up from
   the near-black Dark one), still dark enough for white text and icons, so both
   themes share the same ink, marks and hairlines; on Android the status and
   navigation bar icons stay light on both.
@@ -263,9 +263,14 @@ never starts from Regular.
   Scrollbars use one shared pointer recognizer for tap/drag. Middle- or
   right-mouse dragging pans empty canvas space (including during simplify);
   a gesture beginning on the cross-circle moves only its node even with a
-  secondary mouse button. The wheel zooms. Desktop zoom percentage is
-  editable (Enter to confirm) or draggable (10–4000%). Reset View (0)
-  resets pan and zoom.
+  secondary mouse button; so does Ctrl/Cmd + drag on empty canvas. The wheel
+  zooms in proportion to how far it turns (a trackpad's small steps zoom
+  smoothly), and Shift + wheel or a sideways swipe pans. Desktop zoom
+  percentage is editable (Enter to confirm) or draggable (10–4000%); the
+  phone dock has Zoom in and Zoom out buttons. Reset View (0) resets pan and
+  zoom. Keyboard: [ and ] select the previous and next node. Single-letter
+  tool keys and the zoom keys ignore Ctrl/Cmd, so the browser's own
+  shortcuts keep working.
 - **Font overview.** In the phone's scrollable dock or desktop header,
   open the full-screen **Font** grid to inspect all glyphs as real
   interpolated outlines. Its shared Weight, Width and other axis sliders
@@ -406,12 +411,12 @@ never starts from Regular.
   ↔/↕ and ±15°. Point order never changes, so anchors stay compatible.
 - **View.** A stable metric-based frame (it no longer refits while you drag),
   shared zoom/pan across panels: mouse wheel or pinch to zoom, two fingers to
-  pan, View → Fit to reset.
+  pan, Reset View (the dock or rail button, or 0) to reset.
 - **Guides.** Static metric lines (ascender, cap, x-height, baseline,
-  descender, origin/advance) from editable metrics (View → Metrics…; a font
+  descender, origin/advance) from editable metrics (Guides → Metrics…; a font
   import brings its own `hhea`/`OS/2` values). Rulers on top and left: drag
   out of one to create a guide, drag a guide to move it, drop it back on a
-  ruler to delete it. Optional grid (View → Grid step). **Measurements**
+  ruler to delete it. Optional grid (the Grid chip in Guides cycles its step). **Measurements**
   draws every contour's width/height, each ghost's width, and the
   selection's extent, live -- for comparing the widths of a character's
   parts.
@@ -576,15 +581,16 @@ The glyph is the room. One full-bleed canvas shows the anchor being edited;
 every control floats on it as a rounded, hairline-edged surface and stays out
 of the way until needed.
 
-- **Phone:** glyph name and node count up top, with Start the other extreme, Undo and
-  the glyph browser; directly beneath, the **anchor filmstrip** (the picked
+- **Phone:** glyph name and node count up top, with Suggestions, Undo, Redo and
+  the menu; directly beneath, the **anchor filmstrip** (the picked
   axis's three anchors as live thumbnails -- tap one to edit it). A tool
-  **dock** (Select, Move node, Node tools, Pen, Reset View, Guides, Ghosts,
-  Simplify) at the bottom; it scrolls horizontally as needed. Preview opens a sheet
-  with the sliders.
+  **dock** (Select, Move node, Pen, Node tools, Start the other extreme, the
+  node actions, Zoom in/out, Reset View, Guides, Ghosts, Simplify) at the bottom; it
+  scrolls horizontally as needed. Preview opens a sheet with the sliders. A phone
+  on its side (under 480dp tall, 560dp or wider) gets the wide layout, so the canvas keeps its room.
 - **Gestures:** two-finger pinch zooms, two-finger drag pans; one finger
   edits. Mouse wheel zooms on desktop.
-- **Wide screens (web ≥900dp, tablets):** glyph tabs, a tool rail, an
+- **Wide screens (web ≥900dp, tablets, phones on their side):** glyph tabs, a tool rail, an
   **anchor filmstrip** of live thumbnails under the canvas, and an inspector
   column (Preview + sliders, Ghosts, Guides).
 - **Floating, contextual:** the node actions live in the tool rail/dock and

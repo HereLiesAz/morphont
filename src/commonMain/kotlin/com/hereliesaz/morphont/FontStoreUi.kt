@@ -118,7 +118,7 @@ fun FontStoreDialog(app: AppState, store: FontStoreHost, onUseAsGhost: (String) 
             Segmented(listOf("azphalt.store", "Installed (${installed.size})"), tab) { tab = it }
             if (tab == 0) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MonoField(query, { query = it }, "Search fonts", Modifier.weight(1f))
+                    MonoField(query, { query = it }, "Search fonts", Modifier.weight(1f), onDone = { if (busy == null) search() })
                     MonoButton(onClick = { search() }, enabled = busy == null) { Text("Search") }
                 }
                 val list = results

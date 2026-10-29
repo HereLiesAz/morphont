@@ -67,6 +67,7 @@ private fun FontAxisControls(values: Map<String, Float>, onChange: (String, Floa
                     value = value,
                     onValueChange = { onChange(axis.tag, it) },
                     modifier = Modifier.weight(1f),
+                    label = "${axis.label} preview",
                 )
                 Caps(fmt2(value), size = 10, modifier = Modifier.width(38.dp))
             }

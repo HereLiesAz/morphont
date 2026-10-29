@@ -432,10 +432,16 @@ fun AndroidApp(storage: AndroidStorage, files: AndroidFileActions, updates: Upda
                 )
             }
 
-            BackHandler(enabled = app.activeGhost != null || app.reduction != null) {
+            // Back backs out of the current edit the way Esc does on a keyboard, before it leaves the app.
+            BackHandler(
+                enabled = app.activeGhost != null || app.reduction != null ||
+                    app.commandTarget.drawingContourIndex != null || app.commandTarget.selection.isNotEmpty(),
+            ) {
                 when {
                     app.reduction != null -> app.reduction = null
+                    app.commandTarget.drawingContourIndex != null -> app.commandTarget.finishContour()
                     app.activeGhost != null -> app.activeGhostId = null
+                    else -> app.commandTarget.selection = emptySet()
                 }
             }
 

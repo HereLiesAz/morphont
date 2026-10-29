@@ -131,7 +131,7 @@ class MainActivity : ComponentActivity() {
         pendingFontDone = null
         pendingFontError = null
         if (uri == null) {
-            fail?.invoke("Not saved.")
+            fail?.invoke(SAVE_CANCELLED)
             return@registerForActivityResult
         }
         if (bytes == null) { lostRequest("Save the font", created = uri); return@registerForActivityResult }
@@ -204,7 +204,7 @@ class MainActivity : ComponentActivity() {
 
     private fun saveFile(filename: String, mimeType: String, bytes: ByteArray, onSaved: () -> Unit, onError: (String) -> Unit) {
         // A save still waiting on the picker loses to the newer one, and says so.
-        pendingFontError?.invoke("Not saved.")
+        pendingFontError?.invoke(SAVE_CANCELLED)
         pendingFontBytes = bytes
         pendingFontDone = onSaved
         pendingFontError = onError

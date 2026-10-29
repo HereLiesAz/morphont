@@ -165,6 +165,13 @@ class AnchorState(initial: GlyphCorner) {
         glyph = updated
     }
 
+    /** Takes back the node [addDrawPoint] just placed, as if it never happened (a pen touch that became a pinch). */
+    fun discardLastDrawPoint() {
+        if (history.size <= 1) return
+        glyph = history.removeAt(history.lastIndex).deepCopy()
+        onHistoryDrop?.invoke(false)
+    }
+
     /**
      * Pen drag, continuing the [addDrawPoint] that started it (same undo
      * step): the node just placed turns smooth, its out-arm follows the
@@ -211,6 +218,23 @@ class AnchorState(initial: GlyphCorner) {
         if (!node.onCurve) return
         pushHistory()
         glyph = setSmooth(glyph, listOf(key), !node.smooth)
+    }
+
+    /** Selects the node after (or before) the selected one in contour order, wrapping round; the first when none is selected. */
+    fun selectAdjacentNode(forward: Boolean) {
+        val nodes = glyph.contours.flatMapIndexed { ci, c ->
+            c.points.indices.filter { c.points[it].onCurve && !isRetracted(c.points, it) }.map { ci to it }
+        }
+        if (nodes.isEmpty()) return
+        val current = selectedNodes().minWithOrNull(compareBy({ it.first }, { it.second }))
+        val at = current?.let { nodes.indexOf(it) } ?: -1
+        selection = setOf(
+            when {
+                at < 0 -> if (forward) nodes.first() else nodes.last()
+                forward -> nodes[(at + 1) % nodes.size]
+                else -> nodes[(at - 1 + nodes.size) % nodes.size]
+            },
+        )
     }
 
     fun selectAll() {
@@ -457,7 +481,11 @@ class AppState {
     val anchors: Map<String, AnchorState> = ANCHORS.associateWith { AnchorState(GlyphCorner()) }
     /** [owners] are the objects whose private history holds one snapshot for this entry (several for a grouped edit). */
     private class UndoEntry(val owners: MutableList<Any>, val action: () -> Unit)
-    private val undoActions = mutableListOf<UndoEntry>()
+    // Observable, so Undo can dim when there is nothing to undo.
+    private val undoActions = mutableStateListOf<UndoEntry>()
+
+    /** Whether there is anything to Undo. */
+    val canUndo: Boolean get() = undoActions.isNotEmpty()
 
     private companion object {
         /** As long as the undo history ([undoActions] keeps 150): no older retired ghost can be asked for. */
@@ -965,6 +993,7 @@ class AppState {
             it.sourceGlyph?.let { src -> cacheLinked(src) }
         }
         metrics = glyph.metrics ?: FontMetrics()
+        val lostUndo = undoActions.isNotEmpty()
         undoActions.clear()
         retiredGhosts.clear()
         redoStack.clear()
@@ -978,7 +1007,7 @@ class AppState {
         lastNatural = null
         nodeMoveMode = false
         nodeTool = null
-        setStatus("Loaded \"$name\".")
+        setStatus(if (lostUndo) "Loaded \"$name\". Undo history for the glyph you left was cleared." else "Loaded \"$name\".")
     }
 
     /** Clears the open glyph (used after loading a whole project, since the previously open glyph may no longer exist under that name). */
@@ -1026,6 +1055,10 @@ class AppState {
     /** The other extreme of [name]'s axis; null for Regular. */
     fun partnerOf(name: String): String? =
         Axis.ALL.firstOrNull { it.lo == name }?.hi ?: Axis.ALL.firstOrNull { it.hi == name }?.lo
+
+    /** Whether both extremes of [axis] have been drawn: until then its preview slider has nothing to move. */
+    fun axisIsDrawn(axis: Axis): Boolean =
+        anchors[axis.lo]?.glyph?.contours?.isNotEmpty() == true && anchors[axis.hi]?.glyph?.contours?.isNotEmpty() == true
 
     /** True when the open anchor is an extreme whose partner on its axis has been drawn. */
     fun otherExtremeIsDrawn(): Boolean = partnerOf(activeAnchor)?.let { anchors.getValue(it).glyph.contours.isNotEmpty() } == true
