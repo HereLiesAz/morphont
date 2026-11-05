@@ -109,6 +109,9 @@ kotlin {
                 implementation("androidx.activity:activity-compose:1.13.0")
                 // Play's in-app update API: whether a Play-installed copy has an update waiting.
                 implementation("com.google.android.play:app-update-ktx:2.1.0")
+                // app-update-ktx drags in androidx.fragment 1.1.0, which Play flags as outdated.
+                // Pin a current release so resolution picks it over the transitive one.
+                implementation("androidx.fragment:fragment:1.8.9")
             }
         }
     }
