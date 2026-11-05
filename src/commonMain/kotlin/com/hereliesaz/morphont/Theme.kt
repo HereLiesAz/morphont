@@ -540,7 +540,7 @@ fun Scrollbar(state: ScrollState, vertical: Boolean, modifier: Modifier = Modifi
     }
 }
 
-/** How a ghost's outline can look: dotted or solid, in one of a few colours (index 0 is the quiet grey ghosts always had). */
+/** How a ghost's outline can look: in one of a few colours (index 0 is the quiet grey ghosts always had). */
 object GhostStyle {
     val colors: List<Pair<String, Color>> = listOf(
         "Grey" to Color(0xFF8C8C8C),

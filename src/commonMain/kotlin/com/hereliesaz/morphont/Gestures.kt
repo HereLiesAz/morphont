@@ -663,6 +663,25 @@ internal fun matchedHandleSnap(
 }
 
 /**
+ * Straightens a dragged handle: when the handle at ([cx], [cy]) lies within [tolerance] (font units) of the line
+ * through [other] (the node's other handle) and [node], it is put on that line, on the far side of the node from
+ * [other], at the same distance from the node it already had. Null when it is not close to that line, is on the
+ * wrong side of the node, or the node and [other] coincide.
+ */
+internal fun collinearHandleSnap(node: Offset, other: Offset, cx: Float, cy: Float, tolerance: Float): Offset? {
+    val dx = node.x - other.x; val dy = node.y - other.y
+    val len = hypot(dx, dy)
+    if (len < 1e-3f) return null
+    val ux = dx / len; val uy = dy / len
+    val hx = cx - node.x; val hy = cy - node.y
+    val along = hx * ux + hy * uy
+    if (along <= 0f) return null
+    val perp = abs(hx * uy - hy * ux)
+    if (perp > tolerance) return null
+    return Offset(node.x + ux * along, node.y + uy * along)
+}
+
+/**
  * Points a dragged handle must not snap to: the handles being dragged, and -- on a mirrored node only --
  * the twin that moves with them. On a corner node the other handle stays put, so it is a target: a handle
  * lines up vertically or horizontally with its own node's other handle.
@@ -713,7 +732,20 @@ private suspend fun AwaitPointerEventScope.dragSelection(
     // so it is not a target either), each vertically or horizontally.
     val handleMode = keys.none { (ci, pi) -> origGlyph.contours.getOrNull(ci)?.points?.getOrNull(pi)?.onCurve == true }
     val skip = if (handleMode) handleSnapSkip(origGlyph, keys) else keys.toSet()
-    val targets = if (snapEnabled && f.app.view.snap) snapTargetsFor(f, target, skip, handleMode) else null
+    // A dragged handle also snaps exactly level or plumb with its own node, and onto the straight line through
+    // its node and the node's other handle.
+    val ownNode = if (handleMode && primaryPt != null) primary?.let { (ci, pi) ->
+        origGlyph.contours.getOrNull(ci)?.points?.let { pts -> armOwner(pts, pi)?.let { pts[it] } }
+    } else null
+    val otherArm = if (handleMode && primaryPt != null && ownNode != null && !ownNode.smooth) primary?.let { (ci, pi) ->
+        origGlyph.contours.getOrNull(ci)?.points?.let { pts ->
+            oppositeArm(pts, pi)?.takeIf { !isRetracted(pts, it) }?.let { pts[it] }
+        }
+    } else null
+    val baseTargets = if (snapEnabled && f.app.view.snap) snapTargetsFor(f, target, skip, handleMode) else null
+    val targets = if (baseTargets != null && ownNode != null)
+        baseTargets.copy(xs = baseTargets.xs + SnapTarget(ownNode.x, "node"), ys = baseTargets.ys + SnapTarget(ownNode.y, "node"))
+    else baseTargets
     var pushed = false
     followOrPinch(f, downId, slop, allowPinch = allowPinch) { pos, _ ->
         if (!pushed) { if (recordHistory) target.pushHistory(); pushed = true }
@@ -744,6 +776,13 @@ private suspend fun AwaitPointerEventScope.dragSelection(
                         vertical, line, primaryPt.x + dx, primaryPt.y + dy, snapTolerance(f) * 1.6f,
                     )?.let { dx = it.x - primaryPt.x; dy = it.y - primaryPt.y }
                 }
+            }
+            // Level with nothing, but in line with the node's other handle: straighten the node.
+            if (handleMode && primaryPt != null && ownNode != null && otherArm != null && r.xLine == null && r.yLine == null) {
+                collinearHandleSnap(
+                    Offset(ownNode.x, ownNode.y), Offset(otherArm.x, otherArm.y),
+                    primaryPt.x + dx, primaryPt.y + dy, snapTolerance(f),
+                )?.let { dx = it.x - primaryPt.x; dy = it.y - primaryPt.y }
             }
         }
         target.replaceGlyph(dragPoints(origGlyph, keys, dx, dy))

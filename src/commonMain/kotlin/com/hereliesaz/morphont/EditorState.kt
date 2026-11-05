@@ -342,12 +342,12 @@ class GhostLayer(
     initialAxisOverrides: Map<String, Float> = emptyMap(),
     referenceCorners: Map<String, GlyphCorner> = emptyMap(),
     supportedAxes: List<String> = emptyList(),
-    solid: Boolean = false,
+    filled: Boolean = true,
     color: Int = 0,
 ) {
     var label by mutableStateOf(label)
-    /** Outline solid instead of dotted, and its colour (an index into [GhostStyle.colors]). */
-    var solid by mutableStateOf(solid)
+    /** Whether the inside is tinted (the outline is always solid), and the outline's colour (an index into [GhostStyle.colors]). */
+    var filled by mutableStateOf(filled)
     var color by mutableStateOf(color)
     val axisOverrides = mutableStateMapOf<String, Float>().apply { putAll(initialAxisOverrides) }
     var referenceCorners by mutableStateOf(referenceCorners)
@@ -419,7 +419,7 @@ class GhostLayer(
         axisOverrides.clear(); axisOverrides.putAll(d.axisOverrides)
         referenceCorners = d.referenceCorners
         supportedAxes = d.supportedAxes
-        solid = d.solid
+        filled = d.filled
         color = d.color
         val contours = d.contours.map { it.deepCopy() }.toMutableList()
         if (state.glyph.contours != contours) state.replaceGlyph(GlyphCorner(0f, contours))
@@ -428,7 +428,7 @@ class GhostLayer(
     fun toData() = GhostData(
         label, if (isLinked) emptyList() else state.glyph.contours.map { it.deepCopy() },
         visible, sourceGlyph, matrix, beside, axisOverrides.toMap(),
-        referenceCorners, supportedAxes, solid, color,
+        referenceCorners, supportedAxes, filled, color,
     )
 }
 
@@ -831,7 +831,7 @@ class AppState {
     private fun ghostFromData(it: GhostData) = GhostLayer(
         nextGhostId++, it.label, it.contours, it.visible, it.sourceGlyph,
         it.matrix.takeIf { m -> m.size == 6 } ?: IDENTITY_MATRIX, it.beside,
-        it.axisOverrides, it.referenceCorners, it.supportedAxes, it.solid, it.color,
+        it.axisOverrides, it.referenceCorners, it.supportedAxes, it.filled, it.color,
     )
 
     /**
@@ -1090,6 +1090,34 @@ class AppState {
         )
         activeAnchor = partner
         setStatus("Started ${ANCHOR_LABELS[partner]} from $from. Reshape it, keeping its nodes; Regular follows both.")
+    }
+
+    /** Why a thin and bold draft can't be made from Regular now, or null when it can: Regular is drawn and neither weight extreme is. */
+    fun weightDraftBlockedReason(): String? {
+        if (activeGhost != null || reduction != null) return "finish editing the ghost or Simplify first"
+        if (anchors.getValue("regular").glyph.contours.isEmpty()) return "draw Regular first"
+        val w = Axis.WEIGHT
+        if (anchors.getValue(w.lo).glyph.contours.isNotEmpty() || anchors.getValue(w.hi).glyph.contours.isNotEmpty())
+            return "a weight extreme is already drawn"
+        return null
+    }
+
+    /**
+     * Fills the empty weight extremes with [thin] and [bold], drafted from Regular, and opens the thin one to be
+     * tweaked (one undo step). Never overwrites a drawing.
+     */
+    fun draftWeightExtremes(thin: GlyphCorner, bold: GlyphCorner) {
+        if (weightDraftBlockedReason() != null) return
+        val lo = anchors.getValue(Axis.WEIGHT.lo)
+        val hi = anchors.getValue(Axis.WEIGHT.hi)
+        groupUndo(
+            owners = listOf(lo, hi),
+            block = { lo.replaceWithHistory(thin); hi.replaceWithHistory(bold) },
+            undo = { hi.undo(); lo.undo() },
+        )
+        selectedAxis = Axis.WEIGHT
+        activeAnchor = Axis.WEIGHT.lo
+        setStatus("Drafted ${ANCHOR_LABELS[Axis.WEIGHT.lo]} and ${ANCHOR_LABELS[Axis.WEIGHT.hi]} from Regular. Reshape either, keeping its nodes. Undo removes both.")
     }
 
     // ---------------------------------------------------------- Regular, derived

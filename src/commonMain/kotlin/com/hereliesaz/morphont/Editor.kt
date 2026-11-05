@@ -184,7 +184,11 @@ private fun Stage(app: AppState, host: EditorHost, touchScale: Float, modifier: 
             SuggestionsRow(app, suggestions)
             GhostBar(app)
             if (app.activeGhost == null && app.activeAnchor == "regular" && nodeCount(app) > 0) {
-                Caps("Regular follows the extremes", color = Mono.inkDim, size = 10)
+                if (app.weightDraftBlockedReason() == null) {
+                    MonoButton(onClick = { suggestions.firstOrNull { it.label.startsWith("Draft thin and bold") }?.apply?.invoke(app) }, selected = true) {
+                        Text("Draft thin and bold from this")
+                    }
+                } else Caps("Regular follows the extremes", color = Mono.inkDim, size = 10)
             }
             Toast(app)
         }
@@ -541,7 +545,14 @@ fun WelcomeScreen(app: AppState, host: EditorHost, actions: List<Pair<String, ()
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             MorphontHero(trySample)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("No glyph is open.", fontSize = Type.Row, color = Mono.ink)
+                Text("Load a font, a UFO or a project below to get glyphs to edit, or name a new glyph at the bottom and draw it.",
+                    fontSize = Type.Body, color = Mono.inkDim)
+            }
+            Caps("Load")
             StartList(ways)
+            Caps("Or start a new glyph")
             NewGlyphRow(name, { name = it }) { if (host.createGlyph(name)) name = "" }
             if (app.glyphNames.isNotEmpty()) {
                 Caps("Saved glyphs")

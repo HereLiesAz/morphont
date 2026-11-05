@@ -489,8 +489,8 @@ never starts from Regular.
   bought in the store itself.
 - **Ghost look.** While any ghost is showing the working glyph's fill is
   see-through (Ghosts panel → Glyph opacity, default 50%) so ghosts read
-  underneath it. Each ghost's outline is dotted or solid and one of six
-  colours, chosen on its row in the Ghosts panel; both save with the glyph.
+  underneath it. Each ghost's outline is solid, in one of six
+  colours (one swatch on its row that opens the list), and the ghost is filled or empty; both save with the glyph.
 - **Ghosts.** Reference outlines behind every panel: primitive shapes, a
   character from any TrueType file (static or variable, scaled to this
   project's UPM; loaded per session) or from a font installed from the

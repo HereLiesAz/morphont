@@ -99,7 +99,7 @@ fun PreviewCanvas(app: AppState, modifier: Modifier = Modifier, showGhosts: Bool
                         drawPath(
                             buildOutlinePath(g, map),
                             color = if (layer.color == 0) Mono.secondary else GhostStyle.color(layer.color),
-                            style = if (layer.solid) Stroke(width = 1.4f) else Stroke(width = 1.2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 4f))),
+                            style = Stroke(width = 1.4f),
                         )
                     }
                 }
