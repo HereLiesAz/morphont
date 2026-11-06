@@ -3,8 +3,8 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">@color/morphont_ground</item>
-        <item name="android:navigationBarColor">@color/morphont_ground</item>
+        <!-- No bar colours here: statusBarColor/navigationBarColor are deprecated on API 35.
+             MainActivity.enableEdgeToEdge() owns the bars; screens pad themselves with system-bar insets. -->
         <item name="android:windowBackground">@color/morphont_ground</item>
         <item name="android:colorAccent">@color/morphont_primary</item>
     </style>
