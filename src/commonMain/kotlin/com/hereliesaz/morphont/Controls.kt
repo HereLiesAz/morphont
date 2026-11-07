@@ -164,11 +164,18 @@ fun EditorMenuButton(
     var updatesOpen by remember { mutableStateOf(false) }
     var howOpen by remember { mutableStateOf(false) }
     var keysOpen by remember { mutableStateOf(false) }
+    var exportOpen by remember { mutableStateOf(false) }
+    var confirming by remember { mutableStateOf<String?>(null) }
     val v = app.view
     @Composable fun section(title: String) = MonoMenuHeader(title)
     Box {
         IconAction(MIcons.More, "Menu", { open = true }, size = size)
         MonoMenu(open, { open = false }) {
+            section("Save, load, export")
+            for ((label, action) in host.fileActions) {
+                MonoMenuItem(label, { open = false; if (label in host.confirmBefore) confirming = label else action() })
+            }
+            if (host.fontExport != null) MonoMenuItem("Export as a font\u2026", { open = false; exportOpen = true })
             section("Go to")
             MonoMenuItem("Glyphs and files…", { open = false; openBrowser() })
             if (host.projects != null) MonoMenuItem("Projects…", { open = false; projectsOpen = true })
@@ -199,6 +206,15 @@ fun EditorMenuButton(
             MonoMenuItem("Keys and gestures…", { open = false; keysOpen = true })
             if (host.updates != null) MonoMenuItem("Check for updates…", { open = false; updatesOpen = true })
         }
+    }
+    confirming?.let { label ->
+        ConfirmDialog(label, host.confirmBefore.getValue(label), confirmLabel = "Replace", onDismiss = { confirming = null }) {
+            confirming = null
+            host.fileActions.firstOrNull { it.first == label }?.second?.invoke()
+        }
+    }
+    host.fontExport?.let { exportHost ->
+        if (exportOpen) FontExportDialog(app, exportHost, onDismiss = { exportOpen = false }, onExported = { exportOpen = false })
     }
     host.projects?.let { actions ->
         if (projectsOpen) ProjectsDialog(app, actions, onDismiss = { projectsOpen = false }, onSwitched = { projectsOpen = false })
@@ -240,6 +256,24 @@ fun StatesMenuButton(app: AppState, size: Int = IconSize.LARGE) {
                     differ -> "Match the nodes first."
                     else -> "Regular is already halfway."
                 })
+        }
+    }
+}
+
+/** The ghost outline colour as one swatch; tapping it lists the colours. */
+@Composable
+private fun GhostColorPicker(selected: Int, onPick: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Box(Modifier.size(40.dp).clip(CircleShape).focusRing(CircleShape)
+            .clickable(role = Role.Button) { open = true }
+            .semantics { contentDescription = "Outline colour: ${GhostStyle.colors[selected.coerceIn(0, GhostStyle.colors.lastIndex)].first}" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.size(24.dp).clip(CircleShape).background(GhostStyle.color(selected)).border(1.dp, Mono.ink, CircleShape))
+        }
+        MonoMenu(open, { open = false }) {
+            for ((i, entry) in GhostStyle.colors.withIndex()) MonoMenuItem(entry.first, { open = false; onPick(i) }, checked = i == selected)
         }
     }
 }
@@ -616,20 +650,8 @@ fun GhostsSection(app: AppState, host: EditorHost) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Segmented(listOf("Over", "Beside"), if (g.beside) 1 else 0) { g.beside = it == 1 }
-                        Segmented(listOf("Dotted", "Solid"), if (g.solid) 1 else 0) { g.solid = it == 1 }
-                        for ((i, entry) in GhostStyle.colors.withIndex()) {
-                            Box(Modifier.size(40.dp).clip(CircleShape).focusRing(CircleShape)
-                                .selectable(selected = g.color == i, role = Role.RadioButton, onClick = { g.color = i })
-                                .semantics { contentDescription = "Outline colour: ${entry.first}" },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Box(
-                                    Modifier.size(24.dp).clip(CircleShape)
-                                        .background(entry.second)
-                                        .border(if (g.color == i) 2.dp else 0.dp, Mono.ink, CircleShape),
-                                )
-                            }
-                        }
+                        Segmented(listOf("Empty", "Filled"), if (g.filled) 1 else 0) { g.filled = it == 1 }
+                        GhostColorPicker(g.color) { g.color = it }
                         if (g.isLinked) IconAction(
                             MIcons.Axes, "Ghost weight, width and axes",
                             { ghostAxisId = g.id }, size = IconSize.LARGE,

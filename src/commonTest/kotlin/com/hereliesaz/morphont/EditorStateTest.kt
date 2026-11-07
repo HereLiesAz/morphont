@@ -368,4 +368,28 @@ class EditorStateTest {
         app.undo()
         assertEquals(0, other.glyph.contours.size)
     }
+
+    @Test
+    fun aHandleNearTheLineThroughItsNodeAndTheOtherHandleStraightensOntoIt() {
+        fun o(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(x, y)
+        // Node at the origin, other handle at (-100,0): the straight continuation is the +x axis.
+        val on = collinearHandleSnap(o(0f, 0f), o(-100f, 0f), 50f, 2f, 3f)!!
+        assertEquals(50f, on.x, 1e-3f); assertEquals(0f, on.y, 1e-3f)
+        assertEquals(null, collinearHandleSnap(o(0f, 0f), o(-100f, 0f), 50f, 10f, 3f), "too far from the line")
+        assertEquals(null, collinearHandleSnap(o(0f, 0f), o(-100f, 0f), -50f, 1f, 3f), "wrong side of the node")
+    }
+
+    @Test
+    fun blendedHandlesOfAStraightCornerNodeAreRealignedAndKeepTheirLengths() {
+        fun pt(x: Float, y: Float, on: Boolean = false) = Pt(x, y, on)
+        // Node 0 at the origin: out-arm index 1, in-arm index 5, vertical and straight in the drawn shape.
+        fun contour(outX: Float) = mutableListOf(
+            pt(0f, 0f, true), pt(outX, 30f), pt(60f, 80f), pt(60f, 100f, true), pt(60f, 120f), pt(0f, -20f),
+        )
+        val drawn = listOf(contour(0f))
+        val blended = contour(6f)
+        keepStraightNodesStraight(drawn, blended)
+        assertEquals(3.015f, blended[1].x, 0.01f); assertEquals(30.445f, blended[1].y, 0.01f)
+        assertEquals(-1.971f, blended[5].x, 0.01f); assertEquals(-19.903f, blended[5].y, 0.01f)
+    }
 }

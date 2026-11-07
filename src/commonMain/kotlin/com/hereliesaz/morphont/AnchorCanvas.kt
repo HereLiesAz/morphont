@@ -253,12 +253,8 @@ fun AnchorCanvas(
             if (g.id == app.activeGhostId) continue // drawn solid, over the glyph, below
             val path = buildOutlinePath(contours, map)
             val tint = GhostStyle.color(g.color)
-            drawPath(path, color = if (g.color == 0) ghostFill else tint.copy(alpha = 0.12f))
-            drawPath(
-                path, color = tint,
-                style = if (g.solid) Stroke(width = 1.4f * hair)
-                else Stroke(width = hair, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f * uiScale, 4f * uiScale))),
-            )
+            if (g.filled) drawPath(path, color = if (g.color == 0) ghostFill else tint.copy(alpha = 0.12f))
+            drawPath(path, color = tint, style = Stroke(width = 1.4f * hair))
         }
 
         travelPathOverlay?.let { overlay ->

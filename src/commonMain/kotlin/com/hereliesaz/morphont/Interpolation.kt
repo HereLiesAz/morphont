@@ -1,5 +1,8 @@
 package com.hereliesaz.morphont
 
+import kotlin.math.abs
+import kotlin.math.hypot
+
 /**
  * 0 at t=0 and t=1, exactly 1 at t=0.5 -- used to blend the regular
  * anchor's correction in at the center and fade it out to nothing at
@@ -122,6 +125,52 @@ fun interpolateGlyph(
         }.toMutableList()
         ContourData(pts)
     }.toMutableList()
+    outContours.forEachIndexed { ci, c -> keepStraightNodesStraight(glyphs.values.map { it.contours[ci].points }, c.points) }
 
     return GlyphCorner(outWidth, outContours)
+}
+
+/** Whether node [i] of [pts] has two real handles lying on one straight line, on opposite sides of it. */
+private fun straightAt(pts: List<Pt>, i: Int): Boolean {
+    val n = pts[i]
+    val a = inArmIndex(pts, i) ?: return false
+    val b = outArmIndex(pts, i) ?: return false
+    if (a == b || isRetracted(pts, a) || isRetracted(pts, b)) return false
+    val al = hypot(pts[a].x - n.x, pts[a].y - n.y); val bl = hypot(pts[b].x - n.x, pts[b].y - n.y)
+    val ax = (pts[a].x - n.x) / al; val ay = (pts[a].y - n.y) / al
+    val bx = (pts[b].x - n.x) / bl; val by = (pts[b].y - n.y) / bl
+    return ax * bx + ay * by < 0f && abs(ax * by - ay * bx) <= 0.003f
+}
+
+/**
+ * A corner node whose two handles sit on one straight line in every drawn shape is drawn as a smooth join, but blending
+ * each handle on its own bends that line in between the drawn shapes -- a visible nick in the curve at the
+ * node. Where the handles are collinear (and opposite) in every drawn shape, the blended ones are put back on one line: the
+ * mean of their two directions, each keeping its own blended length. A blend that has drifted more than about
+ * 15 degrees from straight is a deliberate corner and is left alone. Mirrored (smooth) nodes already stay
+ * straight and are skipped.
+ */
+internal fun keepStraightNodesStraight(drawn: List<List<Pt>>, out: MutableList<Pt>) {
+    val reg = drawn.first()
+    for (i in reg.indices) {
+        val node = reg[i]
+        if (!node.onCurve || node.smooth) continue
+        val a = inArmIndex(reg, i) ?: continue
+        val b = outArmIndex(reg, i) ?: continue
+        if (a == b || isRetracted(reg, a) || isRetracted(reg, b)) continue
+        if (!drawn.all { straightAt(it, i) }) continue
+        val n = out[i]
+        val il = hypot(out[a].x - n.x, out[a].y - n.y)
+        val ol = hypot(out[b].x - n.x, out[b].y - n.y)
+        if (il < 1e-3f || ol < 1e-3f) continue
+        val iux = (out[a].x - n.x) / il; val iuy = (out[a].y - n.y) / il
+        val oux = (out[b].x - n.x) / ol; val ouy = (out[b].y - n.y) / ol
+        if (abs(iux * ouy - iuy * oux) > 0.26f) continue
+        var dx = oux - iux; var dy = ouy - iuy
+        val dl = hypot(dx, dy)
+        if (dl < 1e-6f) continue
+        dx /= dl; dy /= dl
+        out[b].x = n.x + dx * ol; out[b].y = n.y + dy * ol
+        out[a].x = n.x - dx * il; out[a].y = n.y - dy * il
+    }
 }

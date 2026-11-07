@@ -160,8 +160,8 @@ data class GhostData(
     val referenceCorners: Map<String, GlyphCorner> = emptyMap(),
     /** Axes the source actually supports; empty for ordinary static references. */
     val supportedAxes: List<String> = emptyList(),
-    /** Outline drawn solid (true) or dotted (false, the default). */
-    val solid: Boolean = false,
+    /** Ghost's inside tinted (true, the default) or left empty so only its outline shows. Outlines are always solid. */
+    val filled: Boolean = true,
     /** Index into the ghost outline palette; 0 is the quiet grey every ghost used to have. */
     val color: Int = 0,
 )

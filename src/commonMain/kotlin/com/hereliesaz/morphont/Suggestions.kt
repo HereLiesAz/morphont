@@ -175,6 +175,23 @@ private fun replaceActive(app: AppState, what: String, make: (GlyphCorner) -> Gl
     a.setStatus("$what. Undo puts it back.")
 }
 
+/** How far each edge moves for a weight draft from Regular: out for the bold extreme, in for the thin one. */
+private fun weightDraftOffset(stem: Float, bold: Boolean): Float = round(stem * (if (bold) 0.45f else -0.3f))
+
+/** Regular with every edge moved by [d] (horizontals a little less), kept centred in a wider or narrower advance. */
+private fun weightDraft(g: GlyphCorner, d: Float): GlyphCorner =
+    corner(g, translateContours(offsetOutline(g.contours, d, d * 0.6f), d, 0f), g.width + 2 * d)
+
+/** Regular is drawn but the weight extremes are not: offer both, drafted from it, in one go. */
+private fun weightDrafts(app: AppState): List<Suggestion> {
+    if (app.activeAnchor != "regular" || app.weightDraftBlockedReason() != null) return emptyList()
+    val reg = app.anchors.getValue("regular").glyph
+    val stem = stemWidth(reg, app.metrics) ?: app.metrics.unitsPerEm * 0.08f
+    return listOf(Suggestion("Draft thin and bold from Regular", "stems ${stem.toInt()} → ${(stem + 2 * weightDraftOffset(stem, false)).toInt()}u and ${(stem + 2 * weightDraftOffset(stem, true)).toInt()}u, then tweak them") { a ->
+        a.draftWeightExtremes(weightDraft(reg, weightDraftOffset(stem, false)), weightDraft(reg, weightDraftOffset(stem, true)))
+    })
+}
+
 private fun generate(app: AppState): List<Suggestion> {
     val name = app.activeAnchor
     if (name == "regular") return emptyList()
@@ -190,10 +207,8 @@ private fun generate(app: AppState): List<Suggestion> {
         out.add(Suggestion(label, detail, replaceActive(app, label, make)))
     when (axis.tag) {
         "wght" -> {
-            val d = round(stem * (if (hi) 0.45f else -0.3f))
-            s(if (hi) "Embolden from Regular" else "Lighten from Regular", "stems ${stem.toInt()} → ${(stem + 2 * d).toInt()}u") { g ->
-                corner(g, translateContours(offsetOutline(g.contours, d, d * 0.6f), d, 0f), g.width + 2 * d)
-            }
+            val d = weightDraftOffset(stem, hi)
+            s(if (hi) "Embolden from Regular" else "Lighten from Regular", "stems ${stem.toInt()} → ${(stem + 2 * d).toInt()}u") { g -> weightDraft(g, d) }
         }
         "GRAD" -> {
             val d = round(stem * (if (hi) 0.15f else -0.12f))
@@ -419,6 +434,6 @@ private fun naturalPath(app: AppState): List<Suggestion> {
 fun suggestionsFor(app: AppState): List<Suggestion> {
     if (app.currentGlyphName == null || app.activeGhost != null || app.reduction != null) return emptyList()
     val g = app.anchors.getValue(app.activeAnchor).glyph
-    return interpolation(app) + naturalPath(app) + generate(app) +
+    return weightDrafts(app) + interpolation(app) + naturalPath(app) + generate(app) +
         (if (points(g) == 0) emptyList() else cleanup(app) + alignment(app) + consistency(app))
 }
