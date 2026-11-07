@@ -2,6 +2,7 @@ package com.hereliesaz.morphont
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +26,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
@@ -55,7 +57,6 @@ private val ghostStroke get() = Mono.canvas.ghostStroke
 private val ghostActive get() = Mono.canvas.ghostActive
 private val rulerBg get() = Mono.canvas.rulerBg
 private val measureColor get() = Mono.canvas.measure
-private val labelFamily = androidx.compose.ui.text.font.FontFamily.Monospace
 
 /** A "nice" ruler/grid step (1, 2 or 5 x 10^n font units) at least [minPx] wide on screen. */
 private fun niceStep(scale: Float, minPx: Float): Float {
@@ -91,6 +92,8 @@ fun AnchorCanvas(
     var canvasOrigin by remember { mutableStateOf(Offset.Zero) }
     val feedback = remember { CanvasFeedback() }
     val textMeasurer = rememberTextMeasurer()
+    // Rulers and measurements are set in the UI's own Azrienoch, read from the theme.
+    val labelFamily = MaterialTheme.typography.labelSmall.fontFamily
     val density = LocalDensity.current.density
     val uiScale = density * interactionScale
     // interactionScale enlarges hit targets; it does not identify pointer
@@ -302,7 +305,7 @@ fun AnchorCanvas(
             drawPath(outlinePath, color = outlineStroke.copy(alpha = 0.5f), style = Stroke(width = hair))
         }
 
-        if (view.showMeasure) drawMeasurements(app, anchorName, anchor, target, map, textMeasurer, uiScale)
+        if (view.showMeasure) drawMeasurements(app, anchorName, anchor, target, map, textMeasurer, uiScale, labelFamily)
 
         if (view.showGuides) {
             for (g in app.guides) drawGuide(g, map, guideColor, hair)
@@ -460,6 +463,7 @@ private fun DrawScope.drawMeasurements(
     map: (Float, Float) -> Offset,
     tm: TextMeasurer,
     uiScale: Float,
+    labelFamily: FontFamily?,
 ) {
     val hair = uiScale.coerceAtLeast(1f)
     val tick = 4f * uiScale
