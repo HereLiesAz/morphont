@@ -251,14 +251,14 @@ fun MonoButton(
     )
 }
 
-/** Small-caps monospace label: section heads, readouts, metric names. */
+/** Small-caps label in the theme's Azrienoch: section heads, readouts, metric names. */
 @Composable
 fun Caps(text: String, modifier: Modifier = Modifier, color: Color = Mono.inkDim, size: Int = 11) {
     Text(
         text.uppercase(),
         modifier = modifier,
         color = color,
-        fontFamily = FontFamily.Monospace,
+        fontFamily = MaterialTheme.typography.labelSmall.fontFamily,
         fontSize = size.sp,
         letterSpacing = 1.6.sp,
         maxLines = 1,
